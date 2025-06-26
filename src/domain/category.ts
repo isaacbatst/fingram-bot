@@ -4,6 +4,6 @@ export class Category {
     public name: string,
     readonly code: string,
     public description: string = '',
-    public transactionType: 'income' | 'expense' = 'expense',
+    public transactionType: 'income' | 'expense' | 'both' = 'expense',
   ) {}
 }

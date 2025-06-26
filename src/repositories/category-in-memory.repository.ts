@@ -63,6 +63,7 @@ export class CategoryInMemoryRepository extends CategoryRepository {
       'Outros',
       '10',
       'Despesas diversas não categorizadas',
+      'both',
     ),
     // agora categorias de receitas
     new Category(
@@ -70,13 +71,6 @@ export class CategoryInMemoryRepository extends CategoryRepository {
       '💼 Trabalho',
       '11',
       'salário, freelas, bônus, comissões',
-      'income',
-    ),
-    new Category(
-      'f507f700-d839-473e-876e-94de6fedd46f',
-      'Outros',
-      '12',
-      'vendas, aluguéis, investimentos, prêmios, presentes',
       'income',
     ),
   ];
