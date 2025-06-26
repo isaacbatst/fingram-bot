@@ -1,4 +1,4 @@
-import {describe, it} from 'vitest';
+import { describe, it } from 'vitest';
 import { Vault } from './vault';
 import { Transaction } from './transaction';
 
@@ -13,7 +13,7 @@ describe('Vault', () => {
     expect(vault.getBalance()).toBe(100);
     vault.commitTransaction('2');
     expect(vault.getBalance()).toBe(50);
-  })
+  });
 
   it('should recalculate entry when editing a transaction', () => {
     const vault = new Vault();
@@ -23,5 +23,5 @@ describe('Vault', () => {
 
     vault.editTransaction('1', 150);
     expect(vault.getBalance()).toBe(150);
-  })
+  });
 });
