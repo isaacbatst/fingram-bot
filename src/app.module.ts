@@ -8,6 +8,9 @@ import { ChatInMemoryRepository } from './repositories/chat-in-memory.repository
 import { VaultRepository } from './repositories/vault.repository';
 import { VaultInMemoryRepository } from './repositories/vault-in-memory.repository';
 import { TelegramHandler } from './telegram.handler';
+import { AiModule } from './ai/ai.module';
+import { ActionRepository } from './repositories/action.repository';
+import { ActionInMemoryRepository } from './repositories/action-in-memory.repository';
 
 @Module({
   imports: [
@@ -21,6 +24,7 @@ import { TelegramHandler } from './telegram.handler';
         return new Telegraf(token);
       },
     }),
+    AiModule,
   ],
   providers: [
     AppService,
@@ -32,6 +36,10 @@ import { TelegramHandler } from './telegram.handler';
     {
       provide: VaultRepository,
       useClass: VaultInMemoryRepository,
+    },
+    {
+      provide: ActionRepository,
+      useClass: ActionInMemoryRepository,
     },
   ],
 })

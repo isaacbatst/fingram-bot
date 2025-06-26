@@ -40,7 +40,10 @@ export class Vault {
     return right(true);
   }
 
-  editTransaction(code: string, newAmount: number): Either<string, boolean> {
+  editTransaction(
+    code: string,
+    newAmount: number,
+  ): Either<string, Transaction> {
     const transaction = this.findTransactionByCode(code);
     if (!transaction) return left(`Transação #${code} não encontrada`);
     transaction.amount = newAmount;
@@ -50,7 +53,7 @@ export class Vault {
     if (entryIndex !== -1) {
       this.entries[entryIndex].transaction = transaction;
     }
-    return right(true);
+    return right(transaction);
   }
 
   getBalance(): number {
@@ -67,33 +70,5 @@ export class Vault {
       }
     }
     return null;
-  }
-
-  toString(): string {
-    const balance = this.getBalance().toLocaleString('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
-      minimumFractionDigits: 2,
-    });
-    let text = `💰 Cofre\n`;
-    text += `Token: ${this.token}\n`;
-    text += `Criado em: ${this.createdAt.toLocaleDateString('pt-BR')}\n`;
-    text += `Saldo atual: ${balance}\n\n`;
-    if (this.entries.length === 0) {
-      text += 'Nenhuma transação registrada.';
-    } else {
-      text += '*Transações:*\n';
-      for (const entry of this.entries) {
-        const t = entry.transaction;
-        const valor = t.amount.toLocaleString('pt-BR', {
-          style: 'currency',
-          currency: 'BRL',
-        });
-        const data = t.createdAt.toLocaleDateString('pt-BR');
-        const desc = (t.description ?? '---').slice(0, 18);
-        text += `• \`#${t.code}\` | ${valor} | ${data} | ${desc}\n`;
-      }
-    }
-    return text;
   }
 }

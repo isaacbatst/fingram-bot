@@ -1,17 +1,90 @@
 import { Injectable } from '@nestjs/common';
-import { Vault } from './domain/vault';
-import { VaultRepository } from './repositories/vault.repository';
-import { ChatRepository } from './repositories/chat.repository';
+import { AiService } from './ai/ai.service';
+import { ActionType } from './domain/action';
 import { Chat } from './domain/chat';
 import { left, right } from './domain/either';
 import { Transaction } from './domain/transaction';
+import { Vault } from './domain/vault';
+import { ActionRepository } from './repositories/action.repository';
+import { ChatRepository } from './repositories/chat.repository';
+import { VaultRepository } from './repositories/vault.repository';
 
 @Injectable()
 export class AppService {
   constructor(
     private vaultRepository: VaultRepository,
     private chatRepository: ChatRepository,
+    private actionRepository: ActionRepository,
+    private aiService: AiService,
   ) {}
+
+  async parseVaultAction(input: { message: string; chatId: string }) {
+    const chat = await this.chatRepository.findByTelegramChatId(input.chatId);
+    if (!chat) {
+      return left(`Cofre não inicializado nessa conversa`);
+    }
+    if (!chat.vaultId) {
+      return left(
+        `Essa conversa não possui um cofre associado. Crie um cofre primeiro.`,
+      );
+    }
+    const vault = await this.vaultRepository.findById(chat.vaultId);
+    if (!vault) {
+      return left(`Cofre da conversa não encontrado`);
+    }
+    const [err, action] = await this.aiService.parseVaultAction(input.message);
+    if (err !== null) {
+      return left(err);
+    }
+
+    await this.actionRepository.create(action);
+    return right(action);
+  }
+
+  async handleVaultAction(input: { actionId: string; chatId: string }) {
+    const action = await this.actionRepository.findById(input.actionId);
+    if (!action) {
+      return left(`Ação não encontrada`);
+    }
+    const chat = await this.chatRepository.findByTelegramChatId(input.chatId);
+    if (!chat) {
+      return left(`Cofre não inicializado nessa conversa`);
+    }
+    if (!chat.vaultId) {
+      return left(
+        `Essa conversa não possui um cofre associado. Crie um cofre primeiro.`,
+      );
+    }
+    const vault = await this.vaultRepository.findById(chat.vaultId);
+    if (!vault) {
+      return left(`Cofre da conversa não encontrado`);
+    }
+
+    switch (action.type) {
+      case ActionType.INCOME:
+        return await this.addTransactionToVault({
+          chatId: input.chatId,
+          transaction: {
+            amount: action.payload.amount,
+            description: action.payload.description,
+            shouldCommit: true,
+          },
+        });
+        break;
+      case ActionType.EXPENSE:
+        return await this.addTransactionToVault({
+          chatId: input.chatId,
+          transaction: {
+            amount: -action.payload.amount,
+            description: action.payload.description,
+            shouldCommit: true,
+          },
+        });
+        break;
+      default:
+        return left(`Ação desconhecida`);
+    }
+  }
 
   async createVault(input: { chatId: string }) {
     const vault = Vault.create();
@@ -21,7 +94,7 @@ export class AppService {
     }
     await this.vaultRepository.create(vault);
     await this.chatRepository.upsert(chat);
-    return `Cofre criado! Use /add para adicionar transações.`;
+    return vault;
   }
 
   async getVault(input: { chatId: string }) {
@@ -53,9 +126,7 @@ export class AppService {
       chat.vaultId = vault.id;
     }
     await this.chatRepository.upsert(chat);
-    return right(
-      `Você está associado ao novo cofre. Use /add para adicionar transações.`,
-    );
+    return right(vault);
   }
 
   async addTransactionToVault(input: {
@@ -92,9 +163,10 @@ export class AppService {
       }
     }
     await this.vaultRepository.update(vault);
-    return right(
-      `Transação #${transaction.code} adicionada com sucesso!\nSeu saldo atual é: ${vault.getBalance()}`,
-    );
+    return right({
+      transaction,
+      vault,
+    });
   }
 
   async editTransactionInVault(input: {
@@ -116,13 +188,17 @@ export class AppService {
       return left(`Cofre da conversa não encontrado`);
     }
 
-    const [err] = vault.editTransaction(input.transactionCode, input.newAmount);
+    const [err, transaction] = vault.editTransaction(
+      input.transactionCode,
+      input.newAmount,
+    );
     if (err !== null) {
       return left(err);
     }
     await this.vaultRepository.update(vault);
-    return right(
-      `Transação #${input.transactionCode} editada com sucesso!\nSeu saldo atual é: ${vault.getBalance()}`,
-    );
+    return right({
+      transaction,
+      vault,
+    });
   }
 }
