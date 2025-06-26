@@ -40,16 +40,16 @@ export class AppService {
   }) {
     const chat = await this.chatRepository.findById(input.chatId);
     if (!chat) {
-      return left(`Chat with id ${input.chatId} not found`);
+      return left(`Cofre não inicializado nessa conversa`);
     }
     if (!chat.vaultId) {
       return left(
-        `Chat with id ${input.chatId} does not have an associated vault`,
+        `Essa conversa não possui um cofre associado. Crie um cofre primeiro.`,
       );
     }
     const vault = await this.vaultRepository.findById(chat.vaultId);
     if (!vault) {
-      return left(`Vault with id ${chat.vaultId} not found`);
+      return left(`Cofre da conversa não encontrado`);
     }
 
     const transaction = Transaction.create({
@@ -73,16 +73,16 @@ export class AppService {
   }) {
     const chat = await this.chatRepository.findById(input.chatId);
     if (!chat) {
-      return left(`Chat with id ${input.chatId} not found`);
+      return left(`Cofre não inicializado nessa conversa`);
     }
     if (!chat.vaultId) {
       return left(
-        `Chat with id ${input.chatId} does not have an associated vault`,
+        `Essa conversa não possui um cofre associado. Crie um cofre primeiro.`,
       );
     }
     const vault = await this.vaultRepository.findById(chat.vaultId);
     if (!vault) {
-      return left(`Vault with id ${chat.vaultId} not found`);
+      return left(`Cofre da conversa não encontrado`);
     }
 
     const [err] = vault.editTransaction(input.transactionId, input.newAmount);
