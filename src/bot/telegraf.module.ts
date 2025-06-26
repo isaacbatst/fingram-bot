@@ -1,6 +1,5 @@
 import { Module } from '@nestjs/common';
 import { Telegraf } from 'telegraf';
-import { TelegrafService } from './telegraf.service';
 
 @Module({})
 export class TelegrafModule {
@@ -19,8 +18,8 @@ export class TelegrafModule {
           useFactory,
           inject,
         },
-        TelegrafService,
       ],
+      exports: [Telegraf],
     };
   }
 }

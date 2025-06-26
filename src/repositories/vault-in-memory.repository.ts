@@ -18,4 +18,13 @@ export class VaultInMemoryRepository extends VaultRepository {
       this.vaults.set(vault.id, vault);
     }
   }
+
+  async findByToken(token: string): Promise<Vault | null> {
+    for (const vault of this.vaults.values()) {
+      if (vault.token === token) {
+        return vault;
+      }
+    }
+    return null;
+  }
 }

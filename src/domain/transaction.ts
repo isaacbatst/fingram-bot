@@ -10,19 +10,22 @@ export class Transaction {
     description?: string;
   }): Transaction {
     const id = crypto.randomUUID();
-    return new Transaction(id, amount, false, description);
+    const code = crypto.randomBytes(2).toString('hex');
+    return new Transaction(id, code, amount, false, description);
   }
 
   constructor(
     readonly id: string,
+    readonly code: string,
     public amount: number,
     public isCommitted: boolean = false,
     public description?: string,
+    public createdAt: Date = new Date(),
   ) {}
 
   commit(): Either<string, boolean> {
     if (this.isCommitted) {
-      return left(`Transaction with id ${this.id} is already committed`);
+      return left(`Transação #${this.code} já efetivada`);
     }
     this.isCommitted = true;
     return right(true);

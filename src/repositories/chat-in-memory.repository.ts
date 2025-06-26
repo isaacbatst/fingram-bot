@@ -9,8 +9,10 @@ export class ChatInMemoryRepository extends ChatRepository {
     return Promise.resolve();
   }
 
-  findById(id: string): Promise<Chat | null> {
-    const chat = this.chats.get(id);
+  findByTelegramChatId(id: string): Promise<Chat | null> {
+    const chat = Array.from(this.chats.values()).find(
+      (chat) => chat.telegramChatId === id,
+    );
     return Promise.resolve(chat ?? null);
   }
 }
