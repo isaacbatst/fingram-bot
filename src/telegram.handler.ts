@@ -2,18 +2,15 @@
 import { Injectable } from '@nestjs/common';
 import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
-import { AiService } from './ai/ai.service';
 import { AppService } from './app.service';
 import { ActionType } from './domain/action';
 import { Vault } from './domain/vault';
-import { Transaction } from './domain/transaction';
 
 @Injectable()
 export class TelegramHandler {
   constructor(
     private telegraf: Telegraf,
     private appService: AppService,
-    private aiService: AiService,
   ) {}
 
   async onApplicationBootstrap() {
@@ -48,10 +45,19 @@ export class TelegramHandler {
           minimumFractionDigits: 2,
         },
       );
+
+      const category =
+        action.payload.categoryName && action.payload.categoryCode
+          ? `#${action.payload.categoryCode} | ${action.payload.categoryName}`
+          : action.payload.categoryName ||
+            action.payload.categoryCode ||
+            'Nenhuma categoria especificada';
+
       await ctx.reply(
         `${emoji} Detectei que você deseja registrar a seguinte ${action.type === ActionType.INCOME ? 'receita' : 'despesa'}:\n\n` +
           `*Valor:* ${this.escapeMarkdownV2(formattedAmount)}\n` +
           `*Descrição:* ${action.payload.description ? this.escapeMarkdownV2(action.payload.description) : 'Sem descrição'}\n\n` +
+          `*Categoria:* ${this.escapeMarkdownV2(category)}\n\n` +
           `Deseja confirmar?`,
         {
           parse_mode: 'MarkdownV2',
@@ -80,6 +86,8 @@ export class TelegramHandler {
       await ctx.reply(
         `Cofre criado com sucesso\\!\n\n` +
           `*Token de Acesso:* \`${this.escapeMarkdownV2(vault.token)}\`\n\n` +
+          'Envie uma mensagem começando com `@ai`:\n\n' +
+          '_Exemplos:_ \n\n`@ai 100 salário de setembro`\n`@ai 50 compra de supermercado`\n\n' +
           `Use /help para ver os comandos disponíveis\\.`,
         { parse_mode: 'MarkdownV2' },
       );
@@ -208,6 +216,63 @@ export class TelegramHandler {
         { parse_mode: 'MarkdownV2' },
       );
     });
+
+    this.telegraf.command('setbudget', async (ctx) => {
+      const chatId = ctx.chat.id.toString();
+      // set multiple budgets in one command separated by commas
+      // format: /setbudget categoryCode amount, categoryCode amount
+      const argsText = ctx.message.text.split('/setbudget').slice(1);
+      if (argsText.length < 1) {
+        await ctx.reply(
+          'Uso: /setbudget <categoria1> <quantia1>, <categoria2> <quantia2> ...',
+        );
+        return;
+      }
+      const args = argsText[0]
+        .trim()
+        .split(',')
+        .map((arg) => arg.trim());
+      const budgets: { categoryCode: string; amount: number }[] = [];
+      for (const arg of args) {
+        const parts = arg.split(' ');
+        if (parts.length !== 2) {
+          await ctx.reply(
+            'Formato inválido. Use: /setbudget <categoria1> <quantia1>, <categoria2> <quantia2> ...',
+          );
+          return;
+        }
+        const categoryCode = parts[0];
+        const amount = parseFloat(parts[1]);
+        if (isNaN(amount)) {
+          await ctx.reply(
+            `Quantia inválida para a categoria ${categoryCode}. Use um número.`,
+          );
+          return;
+        }
+        budgets.push({ categoryCode, amount });
+      }
+      const [err, vault] = await this.appService.setBudgets({
+        chatId,
+        budgets,
+      });
+      if (err !== null) {
+        await ctx.reply(err);
+        return;
+      }
+      await ctx.reply(
+        `Orçamentos definidos com sucesso\\!\n\n` +
+          `*Saldo atual:* R$ ${this.escapeMarkdownV2(vault.getBalance().toFixed(2).replace('.', ','))}\n` +
+          `*Orçamentos:* \n` +
+          Array.from(vault.budgets.values())
+            .map(
+              (budget) =>
+                `• \`#${this.escapeMarkdownV2(budget.category.code)}\` ${this.escapeMarkdownV2(budget.category.name)} \\| R$ ${this.escapeMarkdownV2(budget.amount.toFixed(2).replace('.', ','))}`,
+            )
+            .join('\n'),
+        { parse_mode: 'MarkdownV2' },
+      );
+    });
+
     this.telegraf.command('summary', async (ctx) => {
       const chatId = ctx.chat.id.toString();
       const [err, vault] = await this.appService.getVault({ chatId });
@@ -220,20 +285,58 @@ export class TelegramHandler {
       });
     });
 
-    this.telegraf.command('help', async (ctx) => {
-      const helpText =
-        'Envie uma mensagem começando com `@ai`:\n\n' +
-        '_Exemplos:_ \n\n`@ai 100 salário de setembro`\n`@ai 50 compra de supermercado`\n\n' +
-        'Para ver todos os comandos disponíveis, digite /commands.\n\n';
-
-      await ctx.reply(helpText, {
-        parse_mode: 'Markdown',
+    this.telegraf.command('categories', async (ctx) => {
+      const categories = await this.appService.getCategories();
+      if (categories.length === 0) {
+        await ctx.reply('Nenhuma categoria disponível no momento.');
+        return;
+      }
+      let text = `*Categorias Disponíveis:*\n\n`;
+      for (const category of categories) {
+        text += `• \`#${this.escapeMarkdownV2(category.code)}\` \\| ${this.escapeMarkdownV2(category.name)}\n`;
+      }
+      text += `\nUse o código da categoria para definir orçamentos ou registrar transações\\.\n`;
+      await ctx.reply(text, {
+        parse_mode: 'MarkdownV2',
       });
     });
 
-    this.telegraf.command('commands', async (ctx) => {
+    this.telegraf.command('transactions', async (ctx) => {
+      const chatId = ctx.chat.id.toString();
+      const [err, vault] = await this.appService.getVault({ chatId });
+      if (err !== null) {
+        await ctx.reply(err);
+        return;
+      }
+      if (vault.entries.length === 0) {
+        await ctx.reply(
+          'Nenhuma transação registrada no cofre\\. Use /income ou /expense para registrar' +
+            ' uma nova transação\\.',
+        );
+        return;
+      }
+      let text = `*Transações do Cofre:*\n\n`;
+      for (const entry of vault.entries) {
+        const t = entry.transaction;
+        const valor = Math.abs(t.amount).toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+        });
+        const data = t.createdAt.toLocaleDateString('pt-BR');
+        text += `• \`#${this.escapeMarkdownV2(t.code)}\` \\| ${this.escapeMarkdownV2(valor)} \\| ${this.escapeMarkdownV2(data)} \\| ${t.description ? this.escapeMarkdownV2(t.description) : '\\-'}\n`;
+      }
+      text += `\n*Saldo atual:* R$ ${this.escapeMarkdownV2(
+        vault.getBalance().toFixed(2).replace('.', ','),
+      )}`;
+      await ctx.reply(text, {
+        parse_mode: 'MarkdownV2',
+      });
+    });
+
+    this.telegraf.command('help', async (ctx) => {
       const commandsText =
         'Comandos disponíveis:\n\n' +
+        '/setbudget <categoria1> <quantia1>, <categoria2> <quantia2> - Define orçamentos para categorias específicas. Use o código da categoria e a quantia desejada.\n' +
         '/expense <quantia> [descrição] - Registra uma despesa no cofre. A quantia deve ser um número, e a descrição é opcional.\n' +
         '/income <quantia> [descrição] - Registra uma receita no cofre. A quantia deve ser um número, e a descrição é opcional.\n' +
         '/edit <código> <nova quantia> - Edita uma transação existente no cofre. O código é o identificador da transação, e a nova quantia deve ser um número.\n' +
@@ -287,6 +390,15 @@ export class TelegramHandler {
       return;
     });
 
+    this.telegraf.catch(async (err, ctx) => {
+      console.error('Erro no Telegraf:', err);
+      if (ctx && ctx.chat) {
+        await ctx.reply(
+          'Erro interno ao processar sua solicitação. Por favor, tente novamente mais tarde.',
+        );
+      }
+    });
+
     await this.telegraf.launch();
   }
 
@@ -297,7 +409,12 @@ export class TelegramHandler {
 
   private formatTransactionSuccessMessage(
     vault: Vault,
-    transaction: Transaction,
+    transaction: {
+      amount: number;
+      description?: string;
+      createdAt: Date;
+      categoryName: string | null;
+    },
   ): string {
     const valor = this.escapeMarkdownV2(
       Math.abs(transaction.amount).toLocaleString('pt-BR', {
@@ -321,6 +438,9 @@ export class TelegramHandler {
     return (
       `${emoji} *${tipo} registrada com sucesso\\!*\n\n` +
       `*Valor:* ${valor}${desc}\n` +
+      `*Categoria:* ${this.escapeMarkdownV2(
+        transaction.categoryName ?? 'Nenhuma categoria especificada',
+      )}\n` +
       `*Saldo atual:* ${saldo}`
     );
   }
@@ -335,19 +455,31 @@ export class TelegramHandler {
     text += `Token: ${this.escapeMarkdownV2(vault.token)}\n`;
     text += `Criado em: ${this.escapeMarkdownV2(vault.createdAt.toLocaleDateString('pt-BR'))}\n`;
     text += `Saldo atual: ${this.escapeMarkdownV2(balance)}\n\n`;
-    if (vault.entries.length === 0) {
-      text += 'Nenhuma transação registrada\\.';
-    } else {
-      text += '*Transações:*\n';
-      for (const entry of vault.entries) {
-        const t = entry.transaction;
-        const valor = Math.abs(t.amount).toLocaleString('pt-BR', {
+    const budgetsSummary = vault.getBudgetsSummary();
+    if (budgetsSummary.length > 0) {
+      text += `Orçamentos:\n`;
+      for (const budget of budgetsSummary) {
+        const spent = budget.spent.toLocaleString('pt-BR', {
           style: 'currency',
           currency: 'BRL',
+          minimumFractionDigits: 2,
         });
-        const data = t.createdAt.toLocaleDateString('pt-BR');
-        text += `• \`#${this.escapeMarkdownV2(t.code)}\` \\| ${this.escapeMarkdownV2(valor)} \\| ${this.escapeMarkdownV2(data)} \\| ${t.description ? this.escapeMarkdownV2(t.description) : '\\-'}\n`;
+        const amount = budget.amount.toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+          minimumFractionDigits: 2,
+        });
+        const percentage = Math.min(100, Math.round(budget.percentageUsed));
+        const barLength = 10;
+        const filledLength = Math.round((percentage / 100) * barLength);
+        const bar =
+          '█'.repeat(filledLength) + '░'.repeat(barLength - filledLength);
+
+        text += `• \`#${this.escapeMarkdownV2(budget.category.code)}\` ${this.escapeMarkdownV2(budget.category.name)} | Orçamento: R$ ${this.escapeMarkdownV2(amount)}\n`;
+        text += `  Gastos: R$ ${this.escapeMarkdownV2(spent)} | ${bar} ${percentage}%\n`;
       }
+    } else {
+      text += `Nenhum orçamento definido\\.\n`;
     }
     return text;
   }

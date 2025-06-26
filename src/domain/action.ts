@@ -15,7 +15,11 @@ export enum ActionStatus {
 export class Action {
   static create(
     type: ActionType,
-    payload: { amount: number; description?: string },
+    payload: {
+      amount: number;
+      description?: string;
+      categoryId?: string;
+    },
   ): Action {
     return new Action(
       crypto.randomUUID(),
@@ -32,8 +36,9 @@ export class Action {
     readonly payload: {
       amount: number;
       description?: string;
+      categoryId?: string;
     },
     readonly createdAt: Date = new Date(),
-    readonly status: ActionStatus = ActionStatus.PENDING,
+    public status: ActionStatus = ActionStatus.PENDING,
   ) {}
 }

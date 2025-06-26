@@ -21,6 +21,7 @@ export class Transaction {
     public isCommitted: boolean = false,
     public description?: string,
     public createdAt: Date = new Date(),
+    public categoryId: string | null = null,
   ) {}
 
   commit(): Either<string, boolean> {

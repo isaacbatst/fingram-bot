@@ -11,6 +11,8 @@ import { TelegramHandler } from './telegram.handler';
 import { AiModule } from './ai/ai.module';
 import { ActionRepository } from './repositories/action.repository';
 import { ActionInMemoryRepository } from './repositories/action-in-memory.repository';
+import { CategoryRepository } from './repositories/category.repository';
+import { CategoryInMemoryRepository } from './repositories/category-in-memory.repository';
 
 @Module({
   imports: [
@@ -40,6 +42,10 @@ import { ActionInMemoryRepository } from './repositories/action-in-memory.reposi
     {
       provide: ActionRepository,
       useClass: ActionInMemoryRepository,
+    },
+    {
+      provide: CategoryRepository,
+      useClass: CategoryInMemoryRepository,
     },
   ],
 })

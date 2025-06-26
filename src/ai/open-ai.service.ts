@@ -6,6 +6,7 @@ import { zodTextFormat } from 'openai/helpers/zod';
 import { Injectable } from '@nestjs/common';
 import { Action, ActionType } from '../domain/action';
 import { Either, left, right } from '../domain/either';
+import { Category } from '../domain/category';
 
 const schema = z.object({
   match: z.boolean(),
@@ -15,6 +16,7 @@ const schema = z.object({
       payload: z.object({
         amount: z.number(),
         description: z.string(),
+        categoryId: z.string(),
       }),
     }),
     z.object({
@@ -22,6 +24,7 @@ const schema = z.object({
       payload: z.object({
         amount: z.number(),
         description: z.string(),
+        categoryId: z.string(),
       }),
     }),
   ]),
@@ -38,7 +41,10 @@ export class OpenAiService extends AiService {
     });
   }
 
-  async parseVaultAction(input: string): Promise<Either<string, Action>> {
+  async parseVaultAction(
+    input: string,
+    categories: Category[],
+  ): Promise<Either<string, Action>> {
     const response = await this.openAi.responses.parse({
       model: 'gpt-4.1-nano',
       instructions: `Você é um assistente que interpreta comandos para um cofre financeiro.
@@ -47,9 +53,11 @@ export class OpenAiService extends AiService {
       Se o usuário não solicitar uma ação ou não puder ser interpretada, retorne uma ação 'noAction' e match false.
 
       Na maioria dos casos o usuário não dirá explicitamente que está criando uma receita ou despesa, mas você deve inferir isso a partir da descrição.
-
-      Exemplo de receita: "100 salário { amount: 100, description: 'salário' }" 
-      Exemplo de despesa: "50 café" { amount: 50, description: 'café' }, "100 gasolina" { amount: 100, description: 'gasolina' }, "1000 supermercado" { amount: 1000, description: 'supermercado' }
+      
+      Exemplo de receita: "100 salário" { amount: 100, description: 'salário' }, "salário 2000" { amount: 2000, description: 'salário' }, "500 bônus" { amount: 500, description: 'bônus' }
+      Exemplo de despesa: "50 café" { amount: 50, description: 'café' }, "100 gasolina" { amount: 100, description: 'gasolina' }, "1000 mercado" { amount: 1000, description: 'mercado' }
+      
+      Identifique também a categoria da transação, as disponíveis são: ${JSON.stringify(categories)}
       `,
       input: input,
       text: {

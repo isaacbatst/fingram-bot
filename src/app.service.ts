@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AiService } from './ai/ai.service';
-import { ActionType } from './domain/action';
+import { Action, ActionStatus, ActionType } from './domain/action';
 import { Chat } from './domain/chat';
 import { left, right } from './domain/either';
 import { Transaction } from './domain/transaction';
@@ -8,6 +8,7 @@ import { Vault } from './domain/vault';
 import { ActionRepository } from './repositories/action.repository';
 import { ChatRepository } from './repositories/chat.repository';
 import { VaultRepository } from './repositories/vault.repository';
+import { CategoryRepository } from './repositories/category.repository';
 
 @Injectable()
 export class AppService {
@@ -15,6 +16,7 @@ export class AppService {
     private vaultRepository: VaultRepository,
     private chatRepository: ChatRepository,
     private actionRepository: ActionRepository,
+    private categoryRepository: CategoryRepository,
     private aiService: AiService,
   ) {}
 
@@ -32,13 +34,28 @@ export class AppService {
     if (!vault) {
       return left(`Cofre da conversa não encontrado`);
     }
-    const [err, action] = await this.aiService.parseVaultAction(input.message);
+    const categories = await this.categoryRepository.findAll();
+    const [err, action] = await this.aiService.parseVaultAction(
+      input.message,
+      categories,
+    );
     if (err !== null) {
       return left(err);
     }
 
-    await this.actionRepository.create(action);
-    return right(action);
+    await this.actionRepository.upsert(action);
+    return right({
+      ...action,
+      payload: {
+        ...action.payload,
+        categoryName: categories.find(
+          (cat) => cat.id === action.payload.categoryId,
+        )?.name,
+        categoryCode: categories.find(
+          (cat) => cat.id === action.payload.categoryId,
+        )?.code,
+      },
+    });
   }
 
   async handleVaultAction(input: { actionId: string; chatId: string }) {
@@ -59,31 +76,69 @@ export class AppService {
     if (!vault) {
       return left(`Cofre da conversa não encontrado`);
     }
-
+    console.log('action.type', action.type);
     switch (action.type) {
       case ActionType.INCOME:
-        return await this.addTransactionToVault({
-          chatId: input.chatId,
-          transaction: {
-            amount: action.payload.amount,
-            description: action.payload.description,
-            shouldCommit: true,
-          },
-        });
-        break;
+        return this.handleIncomeAction({ action, input });
       case ActionType.EXPENSE:
-        return await this.addTransactionToVault({
-          chatId: input.chatId,
-          transaction: {
-            amount: -action.payload.amount,
-            description: action.payload.description,
-            shouldCommit: true,
-          },
-        });
-        break;
+        return this.handleExpenseAction({ action, input });
       default:
         return left(`Ação desconhecida`);
     }
+  }
+
+  private async handleIncomeAction(params: {
+    action: Action;
+    input: { chatId: string; actionId: string };
+  }) {
+    const { action, input } = params;
+    const result = await this.addTransactionToVault({
+      chatId: input.chatId,
+      transaction: {
+        amount: action.payload.amount,
+        description: action.payload.description,
+        categoryId: action.payload.categoryId,
+        shouldCommit: true,
+      },
+    });
+
+    if (result[0]) {
+      action.status = ActionStatus.FAILED;
+    }
+
+    if (result[1]) {
+      action.status = ActionStatus.EXECUTED;
+    }
+
+    await this.actionRepository.upsert(action);
+    return result;
+  }
+
+  private async handleExpenseAction(params: {
+    action: Action;
+    input: { chatId: string; actionId: string };
+  }) {
+    const { action, input } = params;
+    const result = await this.addTransactionToVault({
+      chatId: input.chatId,
+      transaction: {
+        amount:-action.payload.amount,
+        description: action.payload.description,
+        categoryId: action.payload.categoryId,
+        shouldCommit: true,
+      },
+    });
+
+    if (result[0]) {
+      action.status = ActionStatus.FAILED;
+    }
+
+    if (result[1]) {
+      action.status = ActionStatus.EXECUTED;
+    }
+
+    await this.actionRepository.upsert(action);
+    return result;
   }
 
   async createVault(input: { chatId: string }) {
@@ -134,6 +189,7 @@ export class AppService {
     transaction: {
       amount: number;
       description?: string;
+      categoryId?: string;
       shouldCommit?: boolean;
     };
   }) {
@@ -151,6 +207,10 @@ export class AppService {
       return left(`Cofre da conversa não encontrado`);
     }
 
+    const category = input.transaction.categoryId
+      ? await this.categoryRepository.findById(input.transaction.categoryId)
+      : null;
+
     const transaction = Transaction.create({
       amount: input.transaction.amount,
       description: input.transaction.description,
@@ -164,7 +224,11 @@ export class AppService {
     }
     await this.vaultRepository.update(vault);
     return right({
-      transaction,
+      transaction: {
+        ...transaction,
+        categoryName: category ? category.name : null,
+        categoryCode: category ? category.code : null,
+      },
       vault,
     });
   }
@@ -200,5 +264,49 @@ export class AppService {
       transaction,
       vault,
     });
+  }
+
+  async getCategories() {
+    const categories = await this.categoryRepository.findAll();
+    return categories;
+  }
+
+  async setBudgets(input: {
+    chatId: string;
+    budgets: { categoryCode: string; amount: number }[];
+  }) {
+    const chat = await this.chatRepository.findByTelegramChatId(input.chatId);
+    if (!chat) {
+      return left(`Cofre não inicializado nessa conversa`);
+    }
+    if (!chat.vaultId) {
+      return left(
+        `Essa conversa não possui um cofre associado. Crie um cofre primeiro.`,
+      );
+    }
+    const vault = await this.vaultRepository.findById(chat.vaultId);
+    if (!vault) {
+      return left(`Cofre da conversa não encontrado`);
+    }
+    const categories = await this.categoryRepository.findAll();
+
+    for (const budget of input.budgets) {
+      const category = categories.find(
+        (cat) => cat.code === budget.categoryCode,
+      );
+      if (!category) {
+        console.warn(
+          `Categoria com código ${budget.categoryCode} não encontrada. Ignorando o orçamento.`,
+        );
+        continue;
+      }
+      const [err] = vault.setBudget(category, budget.amount);
+      if (err !== null) {
+        return left(err);
+      }
+    }
+
+    await this.vaultRepository.update(vault);
+    return right(vault);
   }
 }

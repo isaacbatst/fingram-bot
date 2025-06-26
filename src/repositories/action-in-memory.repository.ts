@@ -5,7 +5,7 @@ import { ActionRepository } from './action.repository';
 export class ActionInMemoryRepository extends ActionRepository {
   private actions: Map<string, Action> = new Map();
 
-  async create(action: Action): Promise<void> {
+  async upsert(action: Action): Promise<void> {
     this.actions.set(action.id, action);
   }
 

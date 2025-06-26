@@ -1,3 +1,4 @@
+import { Category } from './category';
 import { Either, left, right } from './either';
 import { Transaction } from './transaction';
 import * as crypto from 'crypto';
@@ -17,6 +18,10 @@ export class Vault {
     public readonly createdAt: Date = new Date(),
     public readonly entries: { transaction: Transaction }[] = [],
     public readonly transactions: Map<string, Transaction> = new Map(),
+    public readonly budgets: Map<
+      string,
+      { category: Category; amount: number }
+    > = new Map(),
   ) {}
 
   static create(): Vault {
@@ -70,5 +75,36 @@ export class Vault {
       }
     }
     return null;
+  }
+
+  setBudget(category: Category, amount: number): Either<string, boolean> {
+    if (amount < 0) {
+      return left('O valor do orçamento não pode ser negativo');
+    }
+    this.budgets.set(category.id, { category, amount });
+    return right(true);
+  }
+
+  getBudgetsSummary() {
+    const summary: {
+      category: Category;
+      spent: number;
+      amount: number;
+      percentageUsed: number;
+    }[] = [];
+    for (const [categoryId, budget] of this.budgets.entries()) {
+      const spent = this.entries
+        .filter((entry) => entry.transaction.categoryId === categoryId)
+        .reduce((total, entry) => total + entry.transaction.amount, 0);
+      const percentageUsed =
+        budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
+      summary.push({
+        category: budget.category,
+        spent,
+        amount: budget.amount,
+        percentageUsed,
+      });
+    }
+    return summary;
   }
 }
