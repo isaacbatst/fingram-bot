@@ -1,7 +1,7 @@
+import * as crypto from 'crypto';
 import { Category } from './category';
 import { Either, left, right } from './either';
 import { Transaction } from './transaction';
-import * as crypto from 'crypto';
 
 export class Vault {
   static generateId(): string {
@@ -62,8 +62,16 @@ export class Vault {
   }
 
   getBalance(): number {
+    const sumOrSubtract = (
+      type: 'income' | 'expense',
+      amount: number,
+    ): number => {
+      return type === 'income' ? amount : -amount;
+    };
+
     return this.entries.reduce(
-      (total, entry) => total + entry.transaction.amount,
+      (total, entry) =>
+        total + sumOrSubtract(entry.transaction.type, entry.transaction.amount),
       0,
     );
   }
@@ -93,9 +101,16 @@ export class Vault {
       percentageUsed: number;
     }[] = [];
     for (const [categoryId, budget] of this.budgets.entries()) {
-      const spent = this.entries
-        .filter((entry) => entry.transaction.categoryId === categoryId)
-        .reduce((total, entry) => total + entry.transaction.amount, 0);
+      const spent = Array.from(this.transactions.values())
+        .filter(
+          (transaction) =>
+            transaction.categoryId === categoryId &&
+            transaction.type === 'expense',
+        )
+        .reduce(
+          (total, transaction) => total + Math.abs(transaction.amount),
+          0,
+        );
       const percentageUsed =
         budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
       summary.push({
@@ -106,5 +121,28 @@ export class Vault {
       });
     }
     return summary;
+  }
+
+  percentageTotalBudgetedAmount(): number {
+    const totalBudgeted = this.totalBudgetedAmount();
+    const totalSpent = this.totalSpentAmount();
+    return totalBudgeted > 0 ? (totalSpent / totalBudgeted) * 100 : 0;
+  }
+
+  totalBudgetedAmount(): number {
+    let total = 0;
+    for (const budget of this.budgets.values()) {
+      total += budget.amount;
+    }
+    return total;
+  }
+  totalSpentAmount(): number {
+    let total = 0;
+    for (const entry of this.entries) {
+      if (entry.transaction.type === 'expense') {
+        total += Math.abs(entry.transaction.amount);
+      }
+    }
+    return total;
   }
 }

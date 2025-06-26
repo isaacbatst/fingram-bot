@@ -76,7 +76,7 @@ export class AppService {
     if (!vault) {
       return left(`Cofre da conversa não encontrado`);
     }
-    console.log('action.type', action.type);
+    console.log('action', action);
     switch (action.type) {
       case ActionType.INCOME:
         return this.handleIncomeAction({ action, input });
@@ -99,6 +99,7 @@ export class AppService {
         description: action.payload.description,
         categoryId: action.payload.categoryId,
         shouldCommit: true,
+        type: 'income',
       },
     });
 
@@ -122,10 +123,11 @@ export class AppService {
     const result = await this.addTransactionToVault({
       chatId: input.chatId,
       transaction: {
-        amount:-action.payload.amount,
+        amount: action.payload.amount,
         description: action.payload.description,
         categoryId: action.payload.categoryId,
         shouldCommit: true,
+        type: 'expense',
       },
     });
 
@@ -191,6 +193,7 @@ export class AppService {
       description?: string;
       categoryId?: string;
       shouldCommit?: boolean;
+      type: 'expense' | 'income';
     };
   }) {
     const chat = await this.chatRepository.findByTelegramChatId(input.chatId);
@@ -214,6 +217,8 @@ export class AppService {
     const transaction = Transaction.create({
       amount: input.transaction.amount,
       description: input.transaction.description,
+      categoryId: input.transaction.categoryId,
+      type: input.transaction.type,
     });
     vault.addTransaction(transaction);
     if (input.transaction.shouldCommit) {

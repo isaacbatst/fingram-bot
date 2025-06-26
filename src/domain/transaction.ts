@@ -5,13 +5,26 @@ export class Transaction {
   static create({
     amount,
     description,
+    type = 'expense',
+    categoryId = null,
   }: {
     amount: number;
     description?: string;
+    type?: 'expense' | 'income';
+    categoryId?: string | null;
   }): Transaction {
     const id = crypto.randomUUID();
     const code = crypto.randomBytes(2).toString('hex');
-    return new Transaction(id, code, amount, false, description);
+    return new Transaction(
+      id,
+      code,
+      amount,
+      false,
+      description,
+      new Date(),
+      categoryId,
+      type,
+    );
   }
 
   constructor(
@@ -22,6 +35,7 @@ export class Transaction {
     public description?: string,
     public createdAt: Date = new Date(),
     public categoryId: string | null = null,
+    public type: 'expense' | 'income' = 'expense',
   ) {}
 
   commit(): Either<string, boolean> {
