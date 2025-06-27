@@ -57,6 +57,50 @@ export class TelegramHandler {
       return next();
     });
 
+    this.telegraf.on('callback_query', async (ctx) => {
+      let data: string | undefined = undefined;
+      if (
+        ctx.callbackQuery &&
+        typeof ctx.callbackQuery === 'object' &&
+        'data' in ctx.callbackQuery
+      ) {
+        const raw = (ctx.callbackQuery as { data: unknown }).data;
+        data = typeof raw === 'string' ? raw : '';
+      }
+      if (!data) return;
+      if (data === 'CANCEL') {
+        await ctx.editMessageText('Operação cancelada\\.', {
+          parse_mode: 'MarkdownV2',
+        });
+        return;
+      }
+      if (typeof data === 'string' && data.startsWith('ACTION:') && ctx.chat) {
+        try {
+          const payloadStr = data.replace('ACTION:', '');
+          const [err, success] = await this.appService.handleVaultAction({
+            actionId: payloadStr,
+            chatId: ctx.chat.id.toString(),
+          });
+          if (err !== null) {
+            await ctx.editMessageText(err);
+            return;
+          }
+          await ctx.editMessageText(
+            this.messageGenerator.formatTransactionSuccessMessage(
+              success.vault,
+              success.transaction,
+            ),
+            { parse_mode: 'MarkdownV2' },
+          );
+        } catch (err) {
+          console.error('Erro ao processar ação:', err);
+          await ctx.editMessageText('Erro ao processar a ação.');
+        }
+        return;
+      }
+      return;
+    });
+
     this.telegraf.command('create', async (ctx) => {
       const chatId = ctx.chat.id.toString();
       const vault = await this.appService.createVault({ chatId });
@@ -282,50 +326,6 @@ export class TelegramHandler {
       await ctx.reply(this.messageGenerator.formatHelp(), {
         parse_mode: 'Markdown',
       });
-    });
-
-    this.telegraf.on('callback_query', async (ctx) => {
-      let data: string | undefined = undefined;
-      if (
-        ctx.callbackQuery &&
-        typeof ctx.callbackQuery === 'object' &&
-        'data' in ctx.callbackQuery
-      ) {
-        const raw = (ctx.callbackQuery as { data: unknown }).data;
-        data = typeof raw === 'string' ? raw : '';
-      }
-      if (!data) return;
-      if (data === 'CANCEL') {
-        await ctx.editMessageText('Operação cancelada\\.', {
-          parse_mode: 'MarkdownV2',
-        });
-        return;
-      }
-      if (typeof data === 'string' && data.startsWith('ACTION:') && ctx.chat) {
-        try {
-          const payloadStr = data.replace('ACTION:', '');
-          const [err, success] = await this.appService.handleVaultAction({
-            actionId: payloadStr,
-            chatId: ctx.chat.id.toString(),
-          });
-          if (err !== null) {
-            await ctx.editMessageText(err);
-            return;
-          }
-          await ctx.editMessageText(
-            this.messageGenerator.formatTransactionSuccessMessage(
-              success.vault,
-              success.transaction,
-            ),
-            { parse_mode: 'MarkdownV2' },
-          );
-        } catch (err) {
-          console.error('Erro ao processar ação:', err);
-          await ctx.editMessageText('Erro ao processar a ação.');
-        }
-        return;
-      }
-      return;
     });
 
     this.telegraf.catch(async (err, ctx) => {
