@@ -5,5 +5,5 @@ A simple bot to help you manage your finances, accepts CSV files to extract tran
 - Create a vault
 - Attach this vault a group/conversation
 - Set your budget for each category
-- Send a CSV file with your transactions
-- Add transactions manually
+- Add transactions using ✨ natural language ✨ or bot commands
+- Send a CSV file with bank statement to automatically import transactions
