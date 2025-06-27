@@ -19,7 +19,7 @@ export class CategoryInMemoryRepository extends CategoryRepository {
     new Category(
       'f2662cda-938f-4af6-8fcc-b9d6b7bfc061',
       '🚗 Transporte',
-      '2',
+      '3',
       'combustível, manutenção, uber, ônibus, estacionamento',
     ),
     new Category(
@@ -48,7 +48,7 @@ export class CategoryInMemoryRepository extends CategoryRepository {
     ),
     new Category(
       '3562366d-861c-46de-a1f3-2d468134ec7f',
-      '👪 Família',
+      '👪 Família & Pets',
       '8',
       'filhos, pets, cuidados com parentes',
     ),

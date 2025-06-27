@@ -328,6 +328,63 @@ export class TelegramHandler {
       });
     });
 
+    this.telegraf.on(message('document'), async (ctx) => {
+      const document = ctx.message.document;
+      console.log(`[TelegramHandler] Documento recebido:`, {
+        file_id: document.file_id,
+        file_name: document.file_name,
+        mime_type: document.mime_type,
+        chat_id: ctx.chat.id,
+      });
+
+      if (document.mime_type !== 'text/csv') {
+        console.log(
+          `[TelegramHandler] Documento ignorado: tipo inválido (${document.mime_type})`,
+        );
+        return;
+      }
+
+      try {
+        await ctx.sendChatAction('typing');
+        const link = await ctx.telegram.getFileLink(document.file_id);
+        console.log(`[TelegramHandler] Link do arquivo obtido: ${link.href}`);
+        await ctx.reply('Processando arquivo. Isso pode levar alguns minutos.');
+
+        void this.appService
+          .processTransactionsFile({
+            chatId: ctx.chat.id.toString(),
+            fileUrl: link.href,
+          })
+          .then(([err, vault]) => {
+            if (err !== null) {
+              console.error(`[TelegramHandler] Erro ao processar arquivo`);
+              console.error(err);
+              return ctx.reply(err);
+            }
+
+            console.log(
+              `[TelegramHandler] Arquivo processado com sucesso para chat ${ctx.chat.id}`,
+            );
+            return ctx.reply(this.messageGenerator.formatVault(vault), {
+              parse_mode: 'MarkdownV2',
+            });
+          })
+          .catch((error) => {
+            console.error(`[TelegramHandler] Erro ao processar arquivo`);
+            console.error(error);
+            return ctx.reply(
+              'Erro ao processar o arquivo. Certifique-se de que é um PDF válido com transações.',
+            );
+          });
+      } catch (error) {
+        console.error('[TelegramHandler] Erro ao processar arquivo');
+        console.error(error);
+        await ctx.reply(
+          'Erro ao processar o arquivo. Certifique-se de que é um PDF válido com transações.',
+        );
+      }
+    });
+
     this.telegraf.catch(async (err, ctx) => {
       console.error('Erro no Telegraf:', err);
       if (ctx && ctx.chat) {

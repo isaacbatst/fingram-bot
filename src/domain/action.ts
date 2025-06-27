@@ -19,6 +19,7 @@ export class Action {
       amount: number;
       description?: string;
       categoryId?: string;
+      createdAt?: Date;
     },
   ): Action {
     return new Action(
@@ -37,6 +38,7 @@ export class Action {
       amount: number;
       description?: string;
       categoryId?: string;
+      createdAt?: Date;
     },
     readonly createdAt: Date = new Date(),
     public status: ActionStatus = ActionStatus.PENDING,

@@ -23,6 +23,7 @@ export class TelegramMessageGenerator {
     vault: Vault,
     transaction: {
       amount: number;
+      type: 'expense' | 'income';
       description?: string;
       createdAt: Date;
       categoryName: string | null;
@@ -42,8 +43,8 @@ export class TelegramMessageGenerator {
         minimumFractionDigits: 2,
       }),
     );
-    const tipo = transaction.amount > 0 ? 'Receita' : 'Despesa';
-    const emoji = transaction.amount > 0 ? '🟢' : '🔴';
+    const tipo = transaction.type === 'income' ? 'Receita' : 'Despesa';
+    const emoji = transaction.type === 'income' ? '🟢' : '🔴';
     const desc = transaction.description
       ? `\n*Descrição:* ${this.escapeMarkdownV2(transaction.description)}`
       : '';
@@ -186,13 +187,18 @@ export class TelegramMessageGenerator {
     return text;
   }
 
-  formatTransactions(vault: Vault): string {
+  formatTransactions(vault: Vault, page = 1): string {
     if (vault.entries.length === 0) {
       return 'Nenhuma transação registrada no cofre\\. Use /income ou /expense para registrar uma nova transação\\.';
     }
 
     let text = `*Transações do Cofre:*\n\n`;
-    for (const entry of vault.entries) {
+    for (const entry of vault.entries
+      .sort(
+        (a, b) =>
+          b.transaction.createdAt.getTime() - a.transaction.createdAt.getTime(),
+      )
+      .slice((page - 1) * 10, page * 10)) {
       const t = entry.transaction;
       const valor = Math.abs(t.amount).toLocaleString('pt-BR', {
         style: 'currency',
@@ -250,9 +256,10 @@ export class TelegramMessageGenerator {
           currency: 'BRL',
           minimumFractionDigits: 2,
         });
-        const percentage = Math.min(100, Math.round(budget.percentageUsed));
+        const percentage = Math.round(budget.percentageUsed);
+        const cappedPercentage = Math.max(0, Math.min(percentage, 100));
         const barLength = 10;
-        const filledLength = Math.round((percentage / 100) * barLength);
+        const filledLength = Math.round((cappedPercentage / 100) * barLength);
         const bar =
           '█'.repeat(Math.max(0, Math.min(filledLength, barLength))) +
           '░'.repeat(Math.max(0, barLength - filledLength));

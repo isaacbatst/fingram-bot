@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { TelegramMessageGenerator } from './telegram-message-generator';
-import { Vault } from '../domain/vault';
 import { Category } from '../domain/category';
 import { Transaction } from '../domain/transaction';
+import { Vault } from '../domain/vault';
+import { TelegramMessageGenerator } from './telegram-message-generator';
 
 describe('TelegramMessageGenerator', () => {
   const generator = new TelegramMessageGenerator();
@@ -31,6 +31,7 @@ describe('TelegramMessageGenerator', () => {
         description: 'Salário',
         createdAt: new Date(createdAt),
         categoryName: 'Renda',
+        type: 'income' as const,
       };
 
       const message = generator.formatTransactionSuccessMessage(
@@ -48,10 +49,11 @@ describe('TelegramMessageGenerator', () => {
     it('should format expense transaction success message', () => {
       const vault = new Vault('token123', createdAt);
       const transaction = {
-        amount: -500,
+        amount: 500,
         description: 'Aluguel',
         createdAt: new Date(createdAt),
         categoryName: 'Moradia',
+        type: 'expense' as const,
       };
 
       const message = generator.formatTransactionSuccessMessage(
@@ -72,6 +74,7 @@ describe('TelegramMessageGenerator', () => {
         amount: 1000,
         createdAt: new Date(createdAt),
         categoryName: 'Renda',
+        type: 'income' as const,
       };
 
       const message = generator.formatTransactionSuccessMessage(
@@ -88,6 +91,7 @@ describe('TelegramMessageGenerator', () => {
         amount: 1000,
         createdAt: new Date(createdAt),
         categoryName: null,
+        type: 'income' as const,
       };
 
       const message = generator.formatTransactionSuccessMessage(

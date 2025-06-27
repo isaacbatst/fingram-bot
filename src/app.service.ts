@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ReadableStream } from 'node:stream/web';
 import { AiService } from './ai/ai.service';
 import { Action, ActionStatus, ActionType } from './domain/action';
 import { Chat } from './domain/chat';
@@ -6,9 +7,11 @@ import { left, right } from './domain/either';
 import { Transaction } from './domain/transaction';
 import { Vault } from './domain/vault';
 import { ActionRepository } from './repositories/action.repository';
+import { CategoryRepository } from './repositories/category.repository';
 import { ChatRepository } from './repositories/chat.repository';
 import { VaultRepository } from './repositories/vault.repository';
-import { CategoryRepository } from './repositories/category.repository';
+import { CsvParser } from './shared/csv-parser';
+import { PdfTextExtractor } from './shared/pdf-text-extractor';
 
 @Injectable()
 export class AppService {
@@ -18,6 +21,7 @@ export class AppService {
     private actionRepository: ActionRepository,
     private categoryRepository: CategoryRepository,
     private aiService: AiService,
+    private pdfTextExtractor: PdfTextExtractor,
   ) {}
 
   async parseVaultAction(input: { message: string; chatId: string }) {
@@ -312,6 +316,102 @@ export class AppService {
     }
 
     await this.vaultRepository.update(vault);
+    return right(vault);
+  }
+
+  async processTransactionsFile(input: { chatId: string; fileUrl: string }) {
+    console.log(
+      `[processTransactionsFile] Start processing file for chatId: ${input.chatId}, fileUrl: ${input.fileUrl}`,
+    );
+    const chat = await this.chatRepository.findByTelegramChatId(input.chatId);
+    if (!chat) {
+      console.warn(
+        `[processTransactionsFile] Chat not found for chatId: ${input.chatId}`,
+      );
+      return left(`Cofre não inicializado nessa conversa`);
+    }
+    if (!chat.vaultId) {
+      console.warn(
+        `[processTransactionsFile] No vault associated with chatId: ${input.chatId}`,
+      );
+      return left(
+        `Essa conversa não possui um cofre associado. Crie um cofre primeiro.`,
+      );
+    }
+    const vault = await this.vaultRepository.findById(chat.vaultId);
+    if (!vault) {
+      console.warn(
+        `[processTransactionsFile] Vault not found for vaultId: ${chat.vaultId}`,
+      );
+      return left(`Cofre da conversa não encontrado`);
+    }
+    console.log(
+      `[processTransactionsFile] Fetching file from URL: ${input.fileUrl}`,
+    );
+    const response = await fetch(input.fileUrl);
+    if (!response.body) {
+      console.error(
+        `[processTransactionsFile] Failed to fetch file from URL: ${input.fileUrl}`,
+      );
+      return left(`Erro ao buscar arquivo: ${input.fileUrl}`);
+    }
+    const categories = await this.categoryRepository.findAll();
+    console.log(
+      `[processTransactionsFile] Parsing transactions file with AI service`,
+    );
+    const transactions = (
+      await CsvParser.parse(response.body as ReadableStream)
+    ).map((row) => {
+      const [date, value, _id, description] = row;
+      const amount = parseFloat(value);
+      return Transaction.create({
+        amount: Math.abs(amount),
+        description: description || '',
+        date: new Date(date),
+        type: amount >= 0 ? 'income' : 'expense',
+        categoryId: null,
+      });
+    });
+
+    console.log(
+      `[processTransactionsFile] CSV data parsed successfully, length: ${transactions.length}`,
+    );
+    const [err, parsedCategories] = await this.aiService.parseTransactionsFile(
+      transactions,
+      categories,
+    );
+
+    if (err !== null) {
+      console.error(
+        `[processTransactionsFile] Error parsing transactions file: ${err}`,
+      );
+      return left(`Erro ao processar transações: ${err}`);
+    }
+
+    transactions.forEach((transaction) => {
+      console.log(
+        `[processTransactionsFile] Assigning categoryId ${parsedCategories.get(transaction.id)} for transaction: ${transaction.id}`,
+      );
+      transaction.categoryId = parsedCategories.get(transaction.id) || null;
+    });
+
+    for (const transaction of transactions) {
+      vault.addTransaction(transaction);
+      const [commitErr] = vault.commitTransaction(transaction.id);
+      if (commitErr !== null) {
+        console.error(
+          `[processTransactionsFile] Error committing transaction: ${commitErr}`,
+        );
+        continue;
+      }
+      console.log(
+        `[processTransactionsFile] Transaction committed: ${transaction.id}`,
+      );
+    }
+    await this.vaultRepository.update(vault);
+    console.log(
+      `[processTransactionsFile] Vault updated successfully for vaultId: ${vault.id}`,
+    );
     return right(vault);
   }
 }

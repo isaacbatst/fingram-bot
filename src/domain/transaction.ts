@@ -7,10 +7,12 @@ export class Transaction {
     description,
     type = 'expense',
     categoryId = null,
+    date = new Date(),
   }: {
     amount: number;
     description?: string;
     type?: 'expense' | 'income';
+    date?: Date;
     categoryId?: string | null;
   }): Transaction {
     const id = crypto.randomUUID();
@@ -21,7 +23,7 @@ export class Transaction {
       amount,
       false,
       description,
-      new Date(),
+      date,
       categoryId,
       type,
     );
