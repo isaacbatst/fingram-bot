@@ -11,7 +11,6 @@ import { CategoryRepository } from './repositories/category.repository';
 import { ChatRepository } from './repositories/chat.repository';
 import { VaultRepository } from './repositories/vault.repository';
 import { CsvParser } from './shared/csv-parser';
-import { PdfTextExtractor } from './shared/pdf-text-extractor';
 
 @Injectable()
 export class AppService {
@@ -21,7 +20,6 @@ export class AppService {
     private actionRepository: ActionRepository,
     private categoryRepository: CategoryRepository,
     private aiService: AiService,
-    private pdfTextExtractor: PdfTextExtractor,
   ) {}
 
   async parseVaultAction(input: { message: string; chatId: string }) {
