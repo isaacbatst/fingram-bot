@@ -243,9 +243,7 @@ export class TelegramMessageGenerator {
     return (
       'Comandos disponíveis:\n\n' +
       '/setbudget <categoria1> <quantia1>, <categoria2> <quantia2> - Define orçamentos para categorias específicas. Use o código da categoria e a quantia desejada.\n' +
-      '/expense <quantia> [descrição] - Registra uma despesa no cofre. A quantia deve ser um número, e a descrição é opcional.\n' +
-      '/income <quantia> [descrição] - Registra uma receita no cofre. A quantia deve ser um número, e a descrição é opcional.\n' +
-      '/edit <código> <nova quantia> - Edita uma transação existente no cofre. O código é o identificador da transação, e a nova quantia deve ser um número.\n' +
+      '/edit <código> [-v valor] [-d dd/mm/yyyy] [-c categoria] [-desc "descrição"] - Edita uma transação existente. Use o código da transação e as flags para modificar o valor, data, categoria ou descrição.\n' +
       '/summary - Exibe o resumo do cofre atual.\n' +
       '/transactions -p <página> -d mm/yyyy|dd-mm-yyyy - Exibe as transações do cofre. Use -p para especificar a página (padrão é 1) e -d para filtrar por data (mês/ano ou dia-mês-ano).\n' +
       '/join <token> - Conecta-se a um cofre existente usando o token.'
