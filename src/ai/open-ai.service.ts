@@ -3,12 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
-import { Action, ActionType } from '../domain/action';
-import { Category } from '../domain/category';
-import { Either, left, right } from '../domain/either';
-import { Transaction } from '../domain/transaction';
+import { Action, ActionType } from '../vault/domain/action';
+import { Category } from '../vault/domain/category';
+import { Either, left, right } from '../vault/domain/either';
+import { Transaction } from '../vault/domain/transaction';
 import { AiService } from './ai.service';
-import { ConcurrencyQueue } from '../domain/concurrency-queue';
+import { ConcurrencyQueue } from '../vault/domain/concurrency-queue';
 
 const parseVaultActionSchema = z.object({
   match: z.boolean(),

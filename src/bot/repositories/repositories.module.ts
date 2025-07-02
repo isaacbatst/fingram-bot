@@ -3,7 +3,7 @@ import { InMemoryRepositoriesModule } from './in-memory/in-memory-repositories.m
 
 @Module({})
 export class RepositoriesModule {
-  static forRoot(config: 'in-memory' | 'sqlite') {
+  static register(config: 'in-memory' | 'sqlite') {
     if (config === 'in-memory') {
       return {
         module: RepositoriesModule,

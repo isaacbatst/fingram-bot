@@ -1,9 +1,9 @@
 /* eslint-disable no-useless-escape */
-import { ActionType } from '../domain/action';
-import { Category } from '../domain/category';
-import { Paginated } from '../domain/paginated';
-import { Vault } from '../domain/vault';
-import { TransactionDTO } from '../dto/transaction.dto,';
+import { ActionType } from '../vault/domain/action';
+import { Category } from '../vault/domain/category';
+import { Paginated } from '../vault/domain/paginated';
+import { Vault } from '../vault/domain/vault';
+import { TransactionDTO } from '../vault/dto/transaction.dto,';
 
 export class TelegramMessageGenerator {
   /**
@@ -23,13 +23,7 @@ export class TelegramMessageGenerator {
    */
   formatTransactionSuccessMessage(
     vault: Vault,
-    transaction: {
-      amount: number;
-      type: 'expense' | 'income';
-      description?: string;
-      createdAt: Date;
-      categoryName: string | null;
-    },
+    transaction: TransactionDTO,
   ): string {
     const valor = this.escapeMarkdownV2(
       Math.abs(transaction.amount).toLocaleString('pt-BR', {
@@ -54,7 +48,7 @@ export class TelegramMessageGenerator {
       `${emoji} *${tipo} registrada com sucesso\\!*\n\n` +
       `*Valor:* ${valor}${desc}\n` +
       `*Categoria:* ${this.escapeMarkdownV2(
-        transaction.categoryName ?? 'Nenhuma categoria especificada',
+        transaction.category?.name ?? 'Nenhuma categoria especificada',
       )}\n\n` +
       `*Saldo atual:* ${saldo}` +
       `\n\n` +

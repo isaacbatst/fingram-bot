@@ -1,7 +1,7 @@
-import { Action } from '../domain/action';
-import { Category } from '../domain/category';
-import { Either } from '../domain/either';
-import { Transaction } from '../domain/transaction';
+import { Action } from '@/vault/domain/action';
+import { Category } from '@/vault/domain/category';
+import { Either } from '@/vault/domain/either';
+import { Transaction } from '@/vault/domain/transaction';
 
 export abstract class AiService {
   abstract parseVaultAction(

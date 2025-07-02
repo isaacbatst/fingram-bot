@@ -1,6 +1,6 @@
 import { Action } from '../../domain/action';
 import { Category } from '../../domain/category';
-import { Chat } from '../../domain/chat';
+import { Chat } from '../../../bot/domain/chat';
 import { Vault } from '../../domain/vault';
 
 export class InMemoryStore {
