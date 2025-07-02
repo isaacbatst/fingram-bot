@@ -2,8 +2,8 @@
 import { ActionType } from '../domain/action';
 import { Category } from '../domain/category';
 import { Paginated } from '../domain/paginated';
-import { Transaction } from '../domain/transaction';
 import { Vault } from '../domain/vault';
+import { TransactionDTO } from '../dto/transaction.dto,';
 
 export class TelegramMessageGenerator {
   /**
@@ -190,7 +190,7 @@ export class TelegramMessageGenerator {
   }
 
   formatTransactions(
-    paginated: Paginated<Transaction>,
+    paginated: Paginated<TransactionDTO>,
     args: {
       date?: { day?: number; month: number; year: number };
       page?: number;
@@ -228,11 +228,10 @@ export class TelegramMessageGenerator {
         currency: 'BRL',
         minimumFractionDigits: 2,
       });
-      const data = transaction.createdAt.toLocaleDateString('pt-BR');
-      text += `• \`#${this.escapeMarkdownV2(transaction.code)}\` \\| ${this.escapeMarkdownV2(value)} \\| ${this.escapeMarkdownV2(data)} \\| ${transaction.description ? this.escapeMarkdownV2(transaction.description) : '\\-'}\n\n`;
+      const date = transaction.createdAt.toLocaleDateString('pt-BR');
+      text += `• \`#${this.escapeMarkdownV2(transaction.code)}\` \\| ${this.escapeMarkdownV2(value)} \\|${transaction.category ? ` ${this.escapeMarkdownV2(transaction.category.name)} \\|` : ''} ${this.escapeMarkdownV2(date)}${transaction.description ? `\n${this.escapeMarkdownV2(transaction.description)}` : ''}\n\n`;
     }
 
-    // Pagination navigation info
     if (totalPages > 1) {
       text += `Página ${page} de ${totalPages}\n`;
       if (page > 1) {
