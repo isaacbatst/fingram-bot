@@ -47,17 +47,40 @@ export class Vault {
 
   editTransaction(
     code: string,
-    newAmount: number,
+    options: {
+      newAmount?: number;
+      description?: string;
+      categoryId?: string;
+      date?: Date;
+    },
   ): Either<string, Transaction> {
     const transaction = this.findTransactionByCode(code);
     if (!transaction) return left(`Transação #${code} não encontrada`);
-    transaction.amount = newAmount;
+
+    if (options.newAmount !== undefined) {
+      transaction.amount = options.newAmount;
+    }
+    if (options.description !== undefined) {
+      transaction.description = options.description;
+    }
+    if (options.categoryId !== undefined) {
+      transaction.categoryId = options.categoryId;
+    }
+    if (options.date !== undefined) {
+      transaction.createdAt = options.date;
+    }
+
+    // Update the entry in entries array if needed
     const entryIndex = this.entries.findIndex(
-      (entry) => entry.transaction.id === code,
+      (entry) => entry.transaction.id === transaction.id,
     );
     if (entryIndex !== -1) {
       this.entries[entryIndex].transaction = transaction;
     }
+
+    // Also update in transactions map
+    this.transactions.set(transaction.id, transaction);
+
     return right(transaction);
   }
 

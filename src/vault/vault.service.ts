@@ -205,15 +205,44 @@ export class VaultService {
   async editTransactionInVault(input: {
     vaultId: string;
     transactionCode: string;
-    newAmount: number;
+    newAmount?: number;
+    description?: string;
+    categoryCode?: string;
+    date?: Date;
   }) {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       return left(`Cofre não encontrado`);
     }
+
+    let categoryId: string | undefined;
+    if (input.categoryCode) {
+      const category = await this.categoryRepository.findByCode(
+        input.categoryCode,
+      );
+      if (!category) {
+        return left(`Categoria não encontrada`);
+      }
+      categoryId = category.id;
+    }
+
+    const updatedData: {
+      amount?: number;
+      description?: string;
+      categoryId?: string;
+      date?: Date;
+    } = {};
+
+    if (typeof input.newAmount === 'number')
+      updatedData.amount = input.newAmount;
+    if (typeof input.description === 'string')
+      updatedData.description = input.description;
+    if (categoryId) updatedData.categoryId = categoryId;
+    if (input.date) updatedData.date = input.date;
+
     const [err, transaction] = vault.editTransaction(
       input.transactionCode,
-      input.newAmount,
+      updatedData,
     );
     if (err !== null) {
       return left(err);
