@@ -1,15 +1,20 @@
 /* eslint-disable @typescript-eslint/require-await */
+import { Injectable } from '@nestjs/common';
 import { Action } from '../../domain/action';
 import { ActionRepository } from '../action.repository';
+import { InMemoryStore } from './in-memory-store';
 
+@Injectable()
 export class ActionInMemoryRepository extends ActionRepository {
-  private actions: Map<string, Action> = new Map();
+  constructor(private store: InMemoryStore) {
+    super();
+  }
 
   async upsert(action: Action): Promise<void> {
-    this.actions.set(action.id, action);
+    this.store.actions.set(action.id, action);
   }
 
   async findById(id: string): Promise<Action | null> {
-    return this.actions.get(id) ?? null;
+    return this.store.actions.get(id) ?? null;
   }
 }

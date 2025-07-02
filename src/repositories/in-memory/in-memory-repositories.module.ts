@@ -7,6 +7,7 @@ import { ActionInMemoryRepository } from './action-in-memory.repository';
 import { CategoryInMemoryRepository } from './category-in-memory.repository';
 import { ChatInMemoryRepository } from './chat-in-memory.repository';
 import { VaultInMemoryRepository } from './vault-in-memory.repository';
+import { InMemoryStore } from './in-memory-store';
 
 @Module({
   providers: [
@@ -26,6 +27,7 @@ import { VaultInMemoryRepository } from './vault-in-memory.repository';
       provide: CategoryRepository,
       useClass: CategoryInMemoryRepository,
     },
+    InMemoryStore,
   ],
   exports: [
     ChatRepository,
