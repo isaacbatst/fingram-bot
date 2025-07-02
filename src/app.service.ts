@@ -11,11 +11,13 @@ import { CategoryRepository } from './repositories/category.repository';
 import { ChatRepository } from './repositories/chat.repository';
 import { VaultRepository } from './repositories/vault.repository';
 import { CsvParser } from './shared/csv-parser';
+import { TransactionRepository } from './repositories/transaction.repository';
 
 @Injectable()
 export class AppService {
   constructor(
     private vaultRepository: VaultRepository,
+    private transactionRepository: TransactionRepository,
     private chatRepository: ChatRepository,
     private actionRepository: ActionRepository,
     private categoryRepository: CategoryRepository,
@@ -181,6 +183,7 @@ export class AppService {
       year: number;
     };
     page?: number;
+    pageSize?: number;
   }) {
     const chat = await this.chatRepository.findByTelegramChatId(input.chatId);
     if (!chat) {
@@ -191,17 +194,15 @@ export class AppService {
         `Essa conversa não possui um cofre associado. Crie um cofre primeiro.`,
       );
     }
-    const transactions = await this.vaultRepository.findTransactionsByVaultId(
-      chat.vaultId,
-      {
+    const transactions =
+      await this.transactionRepository.findTransactionsByVaultId(chat.vaultId, {
         date: input.date ?? {
           month: new Date().getMonth() + 1, // Default to current month
           year: new Date().getFullYear(), // Default to current year
         },
         page: input.page ?? 1,
-        pageSize: 5, // Default page size
-      },
-    );
+        pageSize: input.pageSize ?? 10,
+      });
 
     return right(transactions);
   }

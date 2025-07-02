@@ -318,6 +318,7 @@ export class TelegramHandler {
         chatId,
         date: parsedArgs.date,
         page: parsedArgs.page,
+        pageSize: 5,
       });
       if (err !== null) {
         await ctx.reply(err);
