@@ -93,19 +93,28 @@ export class Vault {
     return right(true);
   }
 
-  getBudgetsSummary() {
+  getBudgetsSummary(month?: number, year?: number) {
     const summary: {
       category: Category;
       spent: number;
       amount: number;
       percentageUsed: number;
     }[] = [];
+
+    // Filtrando transações por mês e ano (se passados)
     for (const [categoryId, budget] of this.budgets.entries()) {
       const spent = Array.from(this.transactions.values())
         .filter(
           (transaction) =>
             transaction.categoryId === categoryId &&
-            transaction.type === 'expense',
+            transaction.type === 'expense' &&
+            // Filtro por data, se mês e ano forem passados
+            (month
+              ? new Date(transaction.createdAt).getMonth() + 1 === month
+              : true) &&
+            (year
+              ? new Date(transaction.createdAt).getFullYear() === year
+              : true),
         )
         .reduce(
           (total, transaction) => total + Math.abs(transaction.amount),

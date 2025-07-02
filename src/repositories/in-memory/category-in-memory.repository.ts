@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { Category } from '../domain/category';
-import { CategoryRepository } from './category.repository';
+import { Category } from '../../domain/category';
+import { CategoryRepository } from '../category.repository';
 
 export class CategoryInMemoryRepository extends CategoryRepository {
   categories: Category[] = [

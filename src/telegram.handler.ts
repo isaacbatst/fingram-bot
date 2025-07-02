@@ -4,6 +4,7 @@ import { message } from 'telegraf/filters';
 import { AppService } from './app.service';
 
 import { TelegramMessageGenerator } from './bot/telegram-message-generator';
+import { Either, left, right } from './domain/either';
 
 @Injectable()
 export class TelegramHandler {
@@ -305,21 +306,32 @@ export class TelegramHandler {
 
     this.telegraf.command('transactions', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const [err, vault] = await this.appService.getVault({ chatId });
+      const [parseArgsError, parsedArgs] = this.parseTransactionArgs(
+        ctx.message.text,
+      );
+      if (parseArgsError !== null) {
+        await ctx.reply(parseArgsError);
+        return;
+      }
+
+      const [err, transactions] = await this.appService.getTransactions({
+        chatId,
+        date: parsedArgs.date,
+        page: parsedArgs.page,
+      });
       if (err !== null) {
         await ctx.reply(err);
         return;
       }
-      if (vault.entries.length === 0) {
-        await ctx.reply(
-          'Nenhuma transação registrada no cofre\\. Use /income ou /expense para registrar' +
-            ' uma nova transação\\.',
-        );
-        return;
-      }
-      await ctx.reply(this.messageGenerator.formatTransactions(vault), {
-        parse_mode: 'MarkdownV2',
-      });
+      await ctx.reply(
+        this.messageGenerator.formatTransactions(transactions, {
+          date: parsedArgs.date,
+          page: parsedArgs.page,
+        }),
+        {
+          parse_mode: 'MarkdownV2',
+        },
+      );
     });
 
     this.telegraf.command('help', async (ctx) => {
@@ -395,5 +407,78 @@ export class TelegramHandler {
     });
 
     await this.telegraf.launch();
+  }
+
+  private parseTransactionArgs(text: string): Either<
+    string,
+    {
+      date?: {
+        day?: number;
+        month: number;
+        year: number;
+      };
+      page: number;
+    }
+  > {
+    const args = text.split(' ').slice(1);
+    let page = 1;
+    let date: { day?: number; month: number; year: number } | undefined;
+
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-p' && args[i + 1]) {
+        const parsedPage = parseInt(args[i + 1], 10);
+        if (isNaN(parsedPage) || parsedPage < 1) {
+          return left('Número de página inválido. Use um número maior que 0.');
+        }
+        page = parsedPage;
+        i++;
+        continue;
+      }
+
+      if (args[i] === '-d' && args[i + 1]) {
+        const dateParts = args[i + 1].split('/');
+        if (dateParts.length === 2) {
+          // mm/yyyy
+          const month = parseInt(dateParts[0], 10);
+          const year = parseInt(dateParts[1], 10);
+          if (
+            isNaN(month) ||
+            isNaN(year) ||
+            month < 1 ||
+            month > 12 ||
+            year < 1000
+          ) {
+            return left('Formato de data inválido. Use mm/yyyy ou dd/mm/yyyy.');
+          }
+          date = { month, year };
+          i++;
+          continue;
+        }
+        if (dateParts.length === 3) {
+          // dd/mm/yyyy
+          const day = parseInt(dateParts[0], 10);
+          const month = parseInt(dateParts[1], 10);
+          const year = parseInt(dateParts[2], 10);
+          if (
+            isNaN(day) ||
+            isNaN(month) ||
+            isNaN(year) ||
+            day < 1 ||
+            day > 31 ||
+            month < 1 ||
+            month > 12 ||
+            year < 1000
+          ) {
+            return left('Formato de data inválido. Use mm/yyyy ou dd/mm/yyyy.');
+          }
+          date = { day, month, year };
+          i++;
+          continue;
+        }
+        return left('Formato de data inválido. Use mm/yyyy ou dd/mm/yyyy.');
+      }
+    }
+
+    return right({ date, page });
   }
 }

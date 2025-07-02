@@ -1,5 +1,5 @@
-import { Chat } from '../domain/chat';
-import { ChatRepository } from './chat.repository';
+import { Chat } from '../../domain/chat';
+import { ChatRepository } from '../chat.repository';
 
 export class ChatInMemoryRepository extends ChatRepository {
   chats: Map<string, Chat> = new Map();

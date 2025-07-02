@@ -1,6 +1,8 @@
 /* eslint-disable no-useless-escape */
 import { ActionType } from '../domain/action';
 import { Category } from '../domain/category';
+import { Paginated } from '../domain/paginated';
+import { Transaction } from '../domain/transaction';
 import { Vault } from '../domain/vault';
 
 export class TelegramMessageGenerator {
@@ -187,27 +189,60 @@ export class TelegramMessageGenerator {
     return text;
   }
 
-  formatTransactions(vault: Vault, page = 1): string {
-    if (vault.entries.length === 0) {
-      return 'Nenhuma transação registrada no cofre\\. Use /income ou /expense para registrar uma nova transação\\.';
+  formatTransactions(
+    paginated: Paginated<Transaction>,
+    args: {
+      date?: { day?: number; month: number; year: number };
+      page?: number;
+    },
+  ): string {
+    const { date, page = 1 } = args;
+    const totalPages = Math.max(
+      1,
+      Math.ceil(paginated.total / paginated.pageSize),
+    );
+    let text = `*Transações do Cofre:*\n\n`;
+
+    // Metadata about filters
+    let dateArg = '';
+    if (date) {
+      if (date.day) {
+        text += `Filtro: ${date.day.toString().padStart(2, '0')}/${date.month.toString().padStart(2, '0')}/${date.year}\n`;
+        dateArg = `-d ${date.day.toString().padStart(2, '0')}/${date.month.toString().padStart(2, '0')}/${date.year}`;
+      } else {
+        text += `Filtro: ${date.month.toString().padStart(2, '0')}/${date.year}\n`;
+        dateArg = `-d ${date.month.toString().padStart(2, '0')}/${date.year}`;
+      }
     }
 
-    let text = `*Transações do Cofre:*\n\n`;
-    for (const entry of vault.entries
-      .sort(
-        (a, b) =>
-          b.transaction.createdAt.getTime() - a.transaction.createdAt.getTime(),
-      )
-      .slice((page - 1) * 10, page * 10)) {
-      const t = entry.transaction;
-      const valor = Math.abs(t.amount).toLocaleString('pt-BR', {
+    if (paginated.items.length === 0) {
+      return (
+        text + 'Nenhuma transação encontrada para os critérios especificados\\.'
+      );
+    }
+    text += `Página ${page} de ${totalPages}\n\n`;
+
+    for (const transaction of paginated.items) {
+      const value = Math.abs(transaction.amount).toLocaleString('pt-BR', {
         style: 'currency',
         currency: 'BRL',
+        minimumFractionDigits: 2,
       });
-      const data = t.createdAt.toLocaleDateString('pt-BR');
-      text += `• \`#${this.escapeMarkdownV2(t.code)}\` \\| ${this.escapeMarkdownV2(valor)} \\| ${this.escapeMarkdownV2(data)} \\| ${t.description ? this.escapeMarkdownV2(t.description) : '\\-'}\n`;
+      const data = transaction.createdAt.toLocaleDateString('pt-BR');
+      text += `• \`#${this.escapeMarkdownV2(transaction.code)}\` \\| ${this.escapeMarkdownV2(value)} \\| ${this.escapeMarkdownV2(data)} \\| ${transaction.description ? this.escapeMarkdownV2(transaction.description) : '\\-'}\n\n`;
     }
-    text += `\n*Saldo atual:* R$ ${this.escapeMarkdownV2(vault.getBalance().toFixed(2).replace('.', ','))}`;
+
+    // Pagination navigation info
+    if (totalPages > 1) {
+      text += `Página ${page} de ${totalPages}\n`;
+      if (page > 1) {
+        text += `⬅️ \`/transactions \\-p ${page - 1}${dateArg ? ' ' + dateArg : ''}\`\n`;
+      }
+      if (page < totalPages) {
+        text += `➡️ \`/transactions \\-p ${page + 1}${dateArg ? ' ' + dateArg : ''}\`\n`;
+      }
+    }
+
     return text;
   }
 
@@ -219,6 +254,7 @@ export class TelegramMessageGenerator {
       '/income <quantia> [descrição] - Registra uma receita no cofre. A quantia deve ser um número, e a descrição é opcional.\n' +
       '/edit <código> <nova quantia> - Edita uma transação existente no cofre. O código é o identificador da transação, e a nova quantia deve ser um número.\n' +
       '/summary - Exibe o resumo do cofre atual.\n' +
+      '/transactions -p <página> -d mm/yyyy|dd-mm-yyyy - Exibe as transações do cofre. Use -p para especificar a página (padrão é 1) e -d para filtrar por data (mês/ano ou dia-mês-ano).\n' +
       '/join <token> - Conecta-se a um cofre existente usando o token.'
     );
   }

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { Action } from '../domain/action';
-import { ActionRepository } from './action.repository';
+import { Action } from '../../domain/action';
+import { ActionRepository } from '../action.repository';
 
 export class ActionInMemoryRepository extends ActionRepository {
   private actions: Map<string, Action> = new Map();

@@ -173,6 +173,39 @@ export class AppService {
     return right(vault);
   }
 
+  async getTransactions(input: {
+    chatId: string;
+    date?: {
+      day?: number;
+      month: number;
+      year: number;
+    };
+    page?: number;
+  }) {
+    const chat = await this.chatRepository.findByTelegramChatId(input.chatId);
+    if (!chat) {
+      return left(`Cofre não inicializado nessa conversa`);
+    }
+    if (!chat.vaultId) {
+      return left(
+        `Essa conversa não possui um cofre associado. Crie um cofre primeiro.`,
+      );
+    }
+    const transactions = await this.vaultRepository.findTransactionsByVaultId(
+      chat.vaultId,
+      {
+        date: input.date ?? {
+          month: new Date().getMonth() + 1, // Default to current month
+          year: new Date().getFullYear(), // Default to current year
+        },
+        page: input.page ?? 1,
+        pageSize: 5, // Default page size
+      },
+    );
+
+    return right(transactions);
+  }
+
   async joinVault(input: { chatId: string; vaultToken: string }) {
     const vault = await this.vaultRepository.findByToken(input.vaultToken);
     if (!vault) {
@@ -362,10 +395,13 @@ export class AppService {
     ).map((row) => {
       const [date, value, _id, description] = row;
       const amount = parseFloat(value);
+      // Parse date from "dd/mm/yyyy"
+      const [day, month, year] = date.split('/').map(Number);
+      const parsedDate = new Date(year, month - 1, day);
       return Transaction.create({
         amount: Math.abs(amount),
         description: description || '',
-        date: new Date(date),
+        date: parsedDate,
         type: amount >= 0 ? 'income' : 'expense',
         categoryId: null,
       });

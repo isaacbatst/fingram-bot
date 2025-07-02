@@ -29,7 +29,38 @@ export class Transaction {
     );
   }
 
-  constructor(
+  static restore({
+    id,
+    code,
+    amount,
+    isCommitted = false,
+    description,
+    createdAt = new Date(),
+    categoryId = null,
+    type = 'expense',
+  }: {
+    id: string;
+    code: string;
+    amount: number;
+    isCommitted?: boolean;
+    description?: string;
+    createdAt?: Date;
+    categoryId?: string | null;
+    type?: 'expense' | 'income';
+  }): Transaction {
+    return new Transaction(
+      id,
+      code,
+      amount,
+      isCommitted,
+      description,
+      createdAt,
+      categoryId,
+      type,
+    );
+  }
+
+  private constructor(
     readonly id: string,
     readonly code: string,
     public amount: number,
