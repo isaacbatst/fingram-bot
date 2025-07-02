@@ -61,6 +61,19 @@ export class Vault {
     return right(transaction);
   }
 
+  deleteTransaction(code: string): Either<string, boolean> {
+    const transaction = this.findTransactionByCode(code);
+    if (!transaction) return left(`Transação #${code} não encontrada`);
+    this.transactions.delete(transaction.id);
+    const entryIndex = this.entries.findIndex(
+      (entry) => entry.transaction.id === transaction.id,
+    );
+    if (entryIndex !== -1) {
+      this.entries.splice(entryIndex, 1);
+    }
+    return right(true);
+  }
+
   getBalance(): number {
     const sumOrSubtract = (
       type: 'income' | 'expense',

@@ -59,6 +59,26 @@ describe('Vault', () => {
     expect(vault.getBalance()).toBe(150);
   });
 
+  it('should delete a transaction and recalculate balance', () => {
+    const vault = new Vault();
+    vault.addTransaction(
+      Transaction.restore({
+        id: '1',
+        code: '1',
+        amount: 100,
+        isCommitted: false,
+        description: 'any',
+        createdAt: new Date(),
+        categoryId: 'any',
+        type: 'income',
+      }),
+    );
+    vault.commitTransaction('1');
+    expect(vault.getBalance()).toBe(100);
+    vault.deleteTransaction('1');
+    expect(vault.getBalance()).toBe(0); // Após deletar, o saldo deve ser 0
+  });
+
   it('should generate summary for a specific month and year', () => {
     const vault = new Vault();
     const category1 = new Category('1', 'Category1', '1');
