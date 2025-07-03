@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { Category } from '../../domain/category';
 import { CategoryRepository } from '../category.repository';
-import { InMemoryStore } from './in-memory-store';
+import { InMemoryStore } from '@/shared/persistence/in-memory/in-memory-store';
 
 @Injectable()
 export class CategoryInMemoryRepository extends CategoryRepository {

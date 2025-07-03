@@ -1,15 +1,16 @@
+import { PersistenceModule } from '@/shared/persistence/persistence.module';
 import { Module } from '@nestjs/common';
 import { ActionRepository } from '../action.repository';
 import { CategoryRepository } from '../category.repository';
+import { TransactionRepository } from '../transaction.repository';
 import { VaultRepository } from '../vault.repository';
 import { ActionInMemoryRepository } from './action-in-memory.repository';
 import { CategoryInMemoryRepository } from './category-in-memory.repository';
-import { InMemoryStore } from './in-memory-store';
-import { VaultInMemoryRepository } from './vault-in-memory.repository';
-import { TransactionRepository } from '../transaction.repository';
 import { TransactionInMemoryRepository } from './transaction-in-memory.repository';
+import { VaultInMemoryRepository } from './vault-in-memory.repository';
 
 @Module({
+  imports: [PersistenceModule.register('in-memory')],
   providers: [
     {
       provide: VaultRepository,
@@ -27,7 +28,6 @@ import { TransactionInMemoryRepository } from './transaction-in-memory.repositor
       provide: TransactionRepository,
       useClass: TransactionInMemoryRepository,
     },
-    InMemoryStore,
   ],
   exports: [
     VaultRepository,

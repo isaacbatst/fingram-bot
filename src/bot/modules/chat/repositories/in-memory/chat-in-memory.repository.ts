@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Chat } from '../../domain/chat';
 import { ChatRepository } from '../chat.repository';
-import { InMemoryStore } from './in-memory-store';
+import { InMemoryStore } from '@/shared/persistence/in-memory/in-memory-store';
 
 @Injectable()
 export class ChatInMemoryRepository extends ChatRepository {

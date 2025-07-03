@@ -55,7 +55,7 @@ describe('Vault', () => {
     vault.commitTransaction('1');
     expect(vault.getBalance()).toBe(100);
 
-    vault.editTransaction('1', 150);
+    vault.editTransaction('1', { newAmount: 150 });
     expect(vault.getBalance()).toBe(150);
   });
 

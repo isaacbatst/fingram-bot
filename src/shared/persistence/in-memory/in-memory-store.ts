@@ -1,7 +1,7 @@
-import { Action } from '../../domain/action';
-import { Category } from '../../domain/category';
-import { Chat } from '../../../bot/domain/chat';
-import { Vault } from '../../domain/vault';
+import { Action } from '@/vault/domain/action';
+import { Category } from '@/vault/domain/category';
+import { Chat } from '@/bot/modules/chat/domain/chat';
+import { Vault } from '@/vault/domain/vault';
 
 export class InMemoryStore {
   actions: Map<string, Action> = new Map();

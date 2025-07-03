@@ -1,26 +1,19 @@
-import { Module } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { Telegraf } from 'telegraf';
-import { TelegramHandler } from './telegram.handler';
 import { VaultModule } from '@/vault/vault.module';
 import { BotService } from './bot.service';
-import { ChatService } from './chat.service';
-import { RepositoriesModule } from './repositories/repositories.module';
+import { ChatModule } from './modules/chat/chat.module';
+import { TelegramModule } from './modules/telegram/telegram.module';
+import { TelegramHandler } from './telegram.handler';
 
-@Module({
-  imports: [VaultModule, RepositoriesModule.register('in-memory')],
-  providers: [
-    TelegramHandler,
-    BotService,
-    ChatService,
-    {
-      provide: Telegraf,
-      useFactory: (configService: ConfigService) => {
-        const token = configService.getOrThrow<string>('TELEGRAM_BOT_TOKEN');
-        return new Telegraf(token);
-      },
-      inject: [ConfigService],
-    },
-  ],
-})
-export class BotModule {}
+export class BotModule {
+  static register(config: 'in-memory' | 'sqlite') {
+    return {
+      module: BotModule,
+      imports: [
+        VaultModule.register(config),
+        ChatModule.register(config),
+        TelegramModule,
+      ],
+      providers: [TelegramHandler, BotService],
+    };
+  }
+}

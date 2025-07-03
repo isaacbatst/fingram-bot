@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { Injectable } from '@nestjs/common';
-import { InMemoryStore } from './in-memory-store';
+import { InMemoryStore } from '@/shared/persistence/in-memory/in-memory-store';
 import { TransactionRepository } from '../transaction.repository';
 import { Paginated } from '../../domain/paginated';
 import { TransactionDTO } from '../../dto/transaction.dto,';

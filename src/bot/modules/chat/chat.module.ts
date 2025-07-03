@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common';
-import { InMemoryRepositoriesModule } from './in-memory/in-memory-repositories.module';
+import { InMemoryRepositoriesModule } from './repositories/in-memory/in-memory-repositories.module';
+import { ChatService } from './chat.service';
 
 @Module({})
-export class RepositoriesModule {
+export class ChatModule {
   static register(config: 'in-memory' | 'sqlite') {
     const modulePerConfig: Record<string, any> = {
       sqlite: null,
@@ -10,13 +11,14 @@ export class RepositoriesModule {
     };
 
     if (!modulePerConfig[config]) {
-      throw new Error(`Unsupported repository configuration: ${config}`);
+      throw new Error(`Unsupported chat configuration: ${config}`);
     }
 
     return {
-      module: RepositoriesModule,
+      module: ChatModule,
+      providers: [ChatService],
       imports: [modulePerConfig[config]],
-      exports: [modulePerConfig[config]],
+      exports: [ChatService],
     };
   }
 }

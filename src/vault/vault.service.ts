@@ -1,4 +1,4 @@
-import { AiService } from '@/ai/ai.service';
+import { AiService } from '@/shared/ai/ai.service';
 import { CsvParser } from '@/shared/csv-parser';
 import { Action, ActionStatus, ActionType } from '@/vault/domain/action';
 import { Either, left, right } from '@/vault/domain/either';

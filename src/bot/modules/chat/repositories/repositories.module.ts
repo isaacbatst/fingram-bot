@@ -4,19 +4,19 @@ import { InMemoryRepositoriesModule } from './in-memory/in-memory-repositories.m
 @Module({})
 export class RepositoriesModule {
   static register(config: 'in-memory' | 'sqlite') {
-    const modulePerConfig: Record<string, any> = {
+    const modulesPerConfig: Record<string, any> = {
       sqlite: null,
       'in-memory': InMemoryRepositoriesModule,
     };
 
-    if (!modulePerConfig[config]) {
+    if (!modulesPerConfig[config]) {
       throw new Error(`Unsupported repository configuration: ${config}`);
     }
 
     return {
       module: RepositoriesModule,
-      imports: [modulePerConfig[config]],
-      exports: [modulePerConfig[config]],
+      imports: [modulesPerConfig[config]],
+      exports: [modulesPerConfig[config]],
     };
   }
 }

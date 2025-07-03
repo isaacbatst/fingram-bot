@@ -3,12 +3,12 @@ import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
-import { Action, ActionType } from '../vault/domain/action';
-import { Category } from '../vault/domain/category';
-import { Either, left, right } from '../vault/domain/either';
-import { Transaction } from '../vault/domain/transaction';
+import { Action, ActionType } from '@/vault/domain/action';
+import { Category } from '@/vault/domain/category';
+import { Either, left, right } from '@/vault/domain/either';
+import { Transaction } from '@/vault/domain/transaction';
 import { AiService } from './ai.service';
-import { ConcurrencyQueue } from '../vault/domain/concurrency-queue';
+import { ConcurrencyQueue } from '@/vault/domain/concurrency-queue';
 
 const parseVaultActionSchema = z.object({
   match: z.boolean(),
@@ -97,7 +97,7 @@ export class OpenAiService extends AiService {
   ): Promise<Either<string, Map<string, string>>> {
     const tag = '[parseTransactionsFile]';
     console.log(
-      `${tag} Starting parsing of ${transactions.length} transactions...`,
+      `${tag} Starting parsing of ${transactions.length} transactions@.`,
     );
 
     try {
@@ -119,7 +119,7 @@ export class OpenAiService extends AiService {
         index: number,
       ): Promise<ParsedTransaction[]> => {
         console.log(
-          `${tag} Processing chunk #${index + 1} with ${chunk.length} transactions...`,
+          `${tag} Processing chunk #${index + 1} with ${chunk.length} transactions@.`,
         );
 
         const stream = this.openAi.responses

@@ -1,7 +1,7 @@
 import { VaultService } from '@/vault/vault.service';
 import { Injectable } from '@nestjs/common';
 import { left, right } from '../vault/domain/either';
-import { ChatService } from './chat.service';
+import { ChatService } from './modules/chat/chat.service';
 
 @Injectable()
 export class BotService {

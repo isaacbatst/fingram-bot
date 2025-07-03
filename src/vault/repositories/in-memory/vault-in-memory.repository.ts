@@ -2,7 +2,7 @@
 import { Injectable } from '@nestjs/common';
 import { Vault } from '../../domain/vault';
 import { VaultRepository } from '../vault.repository';
-import { InMemoryStore } from './in-memory-store';
+import { InMemoryStore } from '@/shared/persistence/in-memory/in-memory-store';
 
 @Injectable()
 export class VaultInMemoryRepository extends VaultRepository {
