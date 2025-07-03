@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Database from 'better-sqlite3';
+import { MigrationService } from './migration-service';
 
 export const SQLITE_DATABASE = 'SQLITE_DATABASE';
 
@@ -16,7 +17,7 @@ export const SQLITE_DATABASE = 'SQLITE_DATABASE';
           },
         );
         db.pragma('journal_mode = WAL');
-        // MigrationService.run(db);
+        MigrationService.migrate(db);
         console.log('SQLite database initialized successfully.');
         return db;
       },

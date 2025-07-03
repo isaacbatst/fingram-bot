@@ -12,6 +12,13 @@ export enum ActionStatus {
   CANCELLED = 'cancelled',
 }
 
+export type ActionPayload = {
+  amount: number;
+  description?: string;
+  categoryId?: string;
+  createdAt?: Date;
+};
+
 export class Action {
   static create(
     type: ActionType,
@@ -29,6 +36,22 @@ export class Action {
       new Date(),
       ActionStatus.PENDING,
     );
+  }
+
+  static restore({
+    id,
+    type,
+    payload,
+    createdAt,
+    status,
+  }: {
+    id: string;
+    type: ActionType;
+    payload: ActionPayload;
+    createdAt: Date | string;
+    status: ActionStatus;
+  }): Action {
+    return new Action(id, type, payload, new Date(createdAt), status);
   }
 
   constructor(
