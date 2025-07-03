@@ -190,7 +190,22 @@ export class TelegramMessageGenerator {
       page?: number;
     },
   ): string {
-    const { date, page = 1 } = args;
+    // Set default values
+    const now = new Date();
+    const defaultDate = {
+      day: undefined,
+      month: now.getMonth() + 1,
+      year: now.getFullYear(),
+    };
+    const date = args.date
+      ? {
+          day: args.date.day ?? undefined,
+          month: args.date.month ?? defaultDate.month,
+          year: args.date.year ?? defaultDate.year,
+        }
+      : defaultDate;
+    const page = args.page ?? 1;
+
     const totalPages = Math.max(
       1,
       Math.ceil(paginated.total / paginated.pageSize),
@@ -199,14 +214,12 @@ export class TelegramMessageGenerator {
 
     // Metadata about filters
     let dateArg = '';
-    if (date) {
-      if (date.day) {
-        text += `Filtro: ${date.day.toString().padStart(2, '0')}/${date.month.toString().padStart(2, '0')}/${date.year}\n`;
-        dateArg = `-d ${date.day.toString().padStart(2, '0')}/${date.month.toString().padStart(2, '0')}/${date.year}`;
-      } else {
-        text += `Filtro: ${date.month.toString().padStart(2, '0')}/${date.year}\n`;
-        dateArg = `-d ${date.month.toString().padStart(2, '0')}/${date.year}`;
-      }
+    if (date.day !== undefined) {
+      text += `Filtro: ${date.day.toString().padStart(2, '0')}/${date.month.toString().padStart(2, '0')}/${date.year}\n`;
+      dateArg = `-d ${date.day.toString().padStart(2, '0')}/${date.month.toString().padStart(2, '0')}/${date.year}`;
+    } else {
+      text += `Filtro: ${date.month.toString().padStart(2, '0')}/${date.year}\n`;
+      dateArg = `-d ${date.month.toString().padStart(2, '0')}/${date.year}`;
     }
 
     if (paginated.items.length === 0) {
@@ -222,8 +235,8 @@ export class TelegramMessageGenerator {
         currency: 'BRL',
         minimumFractionDigits: 2,
       });
-      const date = transaction.createdAt.toLocaleDateString('pt-BR');
-      text += `• \`#${this.escapeMarkdownV2(transaction.code)}\` \\| ${this.escapeMarkdownV2(value)} \\|${transaction.category ? ` ${this.escapeMarkdownV2(transaction.category.name)} \\|` : ''} ${this.escapeMarkdownV2(date)}${transaction.description ? `\n${this.escapeMarkdownV2(transaction.description)}` : ''}\n\n`;
+      const dateStr = transaction.createdAt.toLocaleDateString('pt-BR');
+      text += `• \`#${this.escapeMarkdownV2(transaction.code)}\` \\| ${this.escapeMarkdownV2(value)} \\|${transaction.category ? ` ${this.escapeMarkdownV2(transaction.category.name)} \\|` : ''} ${this.escapeMarkdownV2(dateStr)}${transaction.description ? `\n${this.escapeMarkdownV2(transaction.description)}` : ''}\n\n`;
     }
 
     if (totalPages > 1) {
