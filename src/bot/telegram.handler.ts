@@ -201,7 +201,6 @@ export class TelegramHandler {
         ctx.message.text.split('/summary').slice(1).join(''),
       );
 
-      console.log('result', result);
       if (err !== null) {
         await ctx.reply(err);
         return;
