@@ -24,7 +24,7 @@ export class MigrationService {
         FOREIGN KEY (vault_id) REFERENCES vault(id)
       );
 
-      CREATE TABLE IF NOT EXISTS transaction (
+      CREATE TABLE IF NOT EXISTS "transaction" (
         id TEXT PRIMARY KEY,
         code TEXT NOT NULL,
         amount REAL NOT NULL,
@@ -40,7 +40,7 @@ export class MigrationService {
         vault_id TEXT NOT NULL,
         transaction_id TEXT NOT NULL,
         FOREIGN KEY (vault_id) REFERENCES vault(id),
-        FOREIGN KEY (transaction_id) REFERENCES transaction(id)
+        FOREIGN KEY (transaction_id) REFERENCES "transaction"(id)
       );
 
       CREATE TABLE IF NOT EXISTS budget (
@@ -57,7 +57,7 @@ export class MigrationService {
         type TEXT NOT NULL CHECK (type IN ('expense', 'income')),
         payload JSON NOT NULL,
         created_at TEXT NOT NULL,
-        status TEXT NOT NULL CHECK (status IN ('pending', 'executed', 'failed', 'cancelled')),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'executed', 'failed', 'cancelled'))
       );
     `);
   }

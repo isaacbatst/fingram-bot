@@ -1,22 +1,23 @@
 import { Module } from '@nestjs/common';
 import { InMemoryRepositoriesModule } from './in-memory/in-memory-repositories.module';
+import { SqliteRepositoriesModule } from './sqlite/sqlite-repositores.module';
 
 @Module({})
 export class RepositoriesModule {
   static register(config: 'in-memory' | 'sqlite') {
-    const modulesPerConfig: Record<string, any> = {
-      sqlite: null,
+    const modulePerConfig = {
+      sqlite: SqliteRepositoriesModule,
       'in-memory': InMemoryRepositoriesModule,
     };
 
-    if (!modulesPerConfig[config]) {
+    if (!modulePerConfig[config]) {
       throw new Error(`Unsupported repository configuration: ${config}`);
     }
 
     return {
       module: RepositoriesModule,
-      imports: [modulesPerConfig[config]],
-      exports: [modulesPerConfig[config]],
+      imports: [modulePerConfig[config]],
+      exports: [modulePerConfig[config]],
     };
   }
 }
