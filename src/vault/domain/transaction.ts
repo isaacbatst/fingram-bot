@@ -5,11 +5,13 @@ export class Transaction {
   static create({
     amount,
     description,
+    vaultId,
     type = 'expense',
     categoryId = null,
     date = new Date(),
   }: {
     amount: number;
+    vaultId: string;
     description?: string;
     type?: 'expense' | 'income';
     date?: Date;
@@ -20,6 +22,7 @@ export class Transaction {
     return new Transaction(
       id,
       code,
+      vaultId,
       amount,
       false,
       description,
@@ -38,10 +41,12 @@ export class Transaction {
     createdAt = new Date(),
     categoryId = null,
     type = 'expense',
+    vaultId,
   }: {
     id: string;
     code: string;
     amount: number;
+    vaultId: string;
     isCommitted?: boolean;
     description?: string;
     createdAt?: Date;
@@ -51,6 +56,7 @@ export class Transaction {
     return new Transaction(
       id,
       code,
+      vaultId,
       amount,
       isCommitted,
       description,
@@ -63,6 +69,7 @@ export class Transaction {
   private constructor(
     readonly id: string,
     readonly code: string,
+    public readonly vaultId: string,
     public amount: number,
     public isCommitted: boolean = false,
     public description?: string,

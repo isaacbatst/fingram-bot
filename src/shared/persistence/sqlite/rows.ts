@@ -30,8 +30,9 @@ export interface TransactionRow {
   amount: number;
   type: 'expense' | 'income';
   category_id: string | null;
+  vault_id: string;
   created_at: string;
-  committed: number; // 0 or 1
+  committed: number;
   description?: string;
 }
 

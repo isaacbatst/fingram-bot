@@ -4,7 +4,13 @@ import { Vault } from '../../domain/vault';
 import { VaultRepository } from '../vault.repository';
 import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
 import { Database } from 'better-sqlite3';
-import { VaultRow } from '@/shared/persistence/sqlite/rows';
+import {
+  VaultRow,
+  TransactionRow,
+  CategoryRow,
+} from '@/shared/persistence/sqlite/rows';
+import { Transaction } from '../../domain/transaction';
+import { Category } from '../../domain/category';
 
 @Injectable()
 export class VaultSqliteRepository extends VaultRepository {
@@ -19,9 +25,76 @@ export class VaultSqliteRepository extends VaultRepository {
   }
 
   async update(vault: Vault): Promise<void> {
-    this.db
-      .prepare('UPDATE vault SET token = ?, created_at = ? WHERE id = ?')
-      .run(vault.token, vault.createdAt.toISOString(), vault.id);
+    const commit = this.db.transaction(() => {
+      const transactionsChanges = vault.transactionsTracker.getChanges();
+      for (const transaction of transactionsChanges.new) {
+        console.log(
+          'Inserting new transaction:',
+          transaction.vaultId,
+          transaction.description,
+        );
+        this.db
+          .prepare(
+            `--sql
+            INSERT INTO "transaction" (id, code, amount, type, category_id, vault_id, description, created_at, committed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            transaction.id,
+            transaction.code,
+            transaction.amount,
+            transaction.type,
+            transaction.categoryId ?? null,
+            transaction.vaultId,
+            transaction.description ?? '',
+            transaction.createdAt.toISOString(),
+            transaction.isCommitted ? 1 : 0,
+          );
+      }
+      for (const transaction of transactionsChanges.deleted) {
+        this.db
+          .prepare('DELETE FROM "transaction" WHERE vault_id = ? AND id = ?')
+          .run(vault.id, transaction.id);
+      }
+
+      for (const transaction of transactionsChanges.dirty) {
+        this.db
+          .prepare(
+            'UPDATE "transaction" SET amount = ?, category_id = ?, created_at = ?, description = ? WHERE vault_id = ? AND id = ?',
+          )
+          .run(
+            transaction.amount,
+            transaction.categoryId,
+            transaction.createdAt.toISOString(),
+            transaction.description,
+            vault.id,
+            transaction.id,
+          );
+      }
+
+      const budgetChanges = vault.budgetsTracker.getChanges();
+      for (const budget of budgetChanges.new) {
+        this.db
+          .prepare(
+            'INSERT INTO budget (vault_id, category_id, amount) VALUES (?, ?, ?)',
+          )
+          .run(vault.id, budget.category.id, budget.amount);
+      }
+      for (const budget of budgetChanges.deleted) {
+        this.db
+          .prepare('DELETE FROM budget WHERE vault_id = ? AND category_id = ?')
+          .run(vault.id, budget.category.id);
+      }
+      for (const budget of budgetChanges.dirty) {
+        this.db
+          .prepare(
+            'UPDATE budget SET amount = ? WHERE vault_id = ? AND category_id = ?',
+          )
+          .run(budget.amount, vault.id, budget.category.id);
+      }
+      vault.budgetsTracker.clearChanges();
+      vault.transactionsTracker.clearChanges();
+    });
+    commit();
   }
 
   async findById(id: string): Promise<Vault | null> {
@@ -29,7 +102,61 @@ export class VaultSqliteRepository extends VaultRepository {
       | VaultRow
       | undefined;
     if (!row) return null;
-    return new Vault(row.id, row.token, new Date(row.created_at));
+
+    // Load transactions
+    const transactionRows = this.db
+      .prepare('SELECT * FROM "transaction" WHERE vault_id = ?')
+      .all(id) as TransactionRow[];
+    const transactions = new Map<string, Transaction>();
+    for (const t of transactionRows) {
+      transactions.set(
+        t.id,
+        Transaction.restore({
+          id: t.id,
+          code: t.code,
+          amount: t.amount,
+          vaultId: t.vault_id,
+          isCommitted: !!t.committed,
+          description: t.description,
+          createdAt: new Date(t.created_at),
+          categoryId: t.category_id,
+          type: t.type,
+        }),
+      );
+    }
+
+    // Load budgets
+    const budgetRows = this.db
+      .prepare('SELECT * FROM budget WHERE vault_id = ?')
+      .all(id) as { category_id: string; amount: number }[];
+    const budgets = new Map<string, { category: Category; amount: number }>();
+    for (const b of budgetRows) {
+      // Load category for each budget
+      const catRow = this.db
+        .prepare('SELECT * FROM category WHERE id = ?')
+        .get(b.category_id) as CategoryRow | undefined;
+      if (catRow) {
+        const category = new Category(
+          catRow.id,
+          catRow.name,
+          catRow.code,
+          catRow.description,
+          catRow.transaction_type,
+        );
+        budgets.set(category.id, { category, amount: b.amount });
+      }
+    }
+
+    const vault = new Vault(
+      row.id,
+      row.token,
+      new Date(row.created_at),
+      transactions,
+      budgets,
+    );
+    vault.transactionsTracker.clearChanges();
+    vault.budgetsTracker.clearChanges();
+    return vault;
   }
 
   async findByToken(token: string): Promise<Vault | null> {
@@ -37,6 +164,60 @@ export class VaultSqliteRepository extends VaultRepository {
       .prepare('SELECT * FROM vault WHERE token = ?')
       .get(token) as VaultRow | undefined;
     if (!row) return null;
-    return new Vault(row.id, row.token, new Date(row.created_at));
+
+    // Load transactions
+    const transactionRows = this.db
+      .prepare('SELECT * FROM "transaction" WHERE vault_id = ?')
+      .all(row.id) as TransactionRow[];
+    const transactions = new Map<string, Transaction>();
+    for (const t of transactionRows) {
+      transactions.set(
+        t.id,
+        Transaction.restore({
+          id: t.id,
+          code: t.code,
+          amount: t.amount,
+          vaultId: t.vault_id,
+          isCommitted: !!t.committed,
+          description: t.description,
+          createdAt: new Date(t.created_at),
+          categoryId: t.category_id,
+          type: t.type,
+        }),
+      );
+    }
+
+    // Load budgets
+    const budgetRows = this.db
+      .prepare('SELECT * FROM budget WHERE vault_id = ?')
+      .all(row.id) as { category_id: string; amount: number }[];
+    const budgets = new Map<string, { category: Category; amount: number }>();
+    for (const b of budgetRows) {
+      // Load category for each budget
+      const catRow = this.db
+        .prepare('SELECT * FROM category WHERE id = ?')
+        .get(b.category_id) as CategoryRow | undefined;
+      if (catRow) {
+        const category = new Category(
+          catRow.id,
+          catRow.name,
+          catRow.code,
+          catRow.description,
+          catRow.transaction_type,
+        );
+        budgets.set(category.id, { category, amount: b.amount });
+      }
+    }
+
+    const vault = new Vault(
+      row.id,
+      row.token,
+      new Date(row.created_at),
+      transactions,
+      budgets,
+    );
+    vault.transactionsTracker.clearChanges();
+    vault.budgetsTracker.clearChanges();
+    return vault;
   }
 }

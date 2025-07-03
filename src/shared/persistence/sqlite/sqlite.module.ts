@@ -18,6 +18,7 @@ export const SQLITE_DATABASE = 'SQLITE_DATABASE';
         );
         db.pragma('journal_mode = WAL');
         MigrationService.migrate(db);
+        MigrationService.seed(db);
         console.log('SQLite database initialized successfully.');
         return db;
       },

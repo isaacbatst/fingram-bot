@@ -10,6 +10,7 @@ describe('Vault', () => {
       Transaction.restore({
         id: '1',
         code: '1',
+        vaultId: vault.id,
         amount: 100,
         isCommitted: false,
         description: 'any',
@@ -25,6 +26,7 @@ describe('Vault', () => {
       Transaction.restore({
         id: '2',
         code: '2',
+        vaultId: vault.id,
         amount: 50,
         isCommitted: false,
         description: 'any',
@@ -44,6 +46,7 @@ describe('Vault', () => {
       Transaction.restore({
         id: '1',
         code: '1',
+        vaultId: vault.id,
         amount: 100,
         isCommitted: false,
         description: 'any',
@@ -66,6 +69,7 @@ describe('Vault', () => {
         id: '1',
         code: '1',
         amount: 100,
+        vaultId: vault.id,
         isCommitted: false,
         description: 'any',
         createdAt: new Date(),
@@ -89,6 +93,7 @@ describe('Vault', () => {
       Transaction.restore({
         id: '1',
         code: '1',
+        vaultId: vault.id,
         amount: 100,
         isCommitted: false,
         categoryId: category1.id,
@@ -101,6 +106,7 @@ describe('Vault', () => {
         id: '2',
         code: '2',
         amount: 150,
+        vaultId: vault.id,
         isCommitted: false,
         categoryId: category1.id,
         createdAt: new Date('2023-05-20'),
@@ -111,6 +117,7 @@ describe('Vault', () => {
       Transaction.restore({
         id: '3',
         code: '3',
+        vaultId: vault.id,
         amount: 50,
         isCommitted: false,
         categoryId: category2.id,
@@ -122,6 +129,7 @@ describe('Vault', () => {
       Transaction.restore({
         id: '4',
         code: '4',
+        vaultId: vault.id,
         amount: 200,
         isCommitted: false,
         categoryId: category2.id,

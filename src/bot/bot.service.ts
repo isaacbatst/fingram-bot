@@ -201,11 +201,36 @@ export class BotService {
     });
   }
 
-  async handleSummary(chatId: string) {
+  // accept /summary with optional -d date filter mm/yyyy
+  async handleSummary(chatId: string, args: string) {
+    const parsedArgs = args.trim().split(' ');
+    let date: { year: number; month: number } | undefined;
+    if (parsedArgs.length > 0 && parsedArgs[0].startsWith('-d')) {
+      const dateArg = parsedArgs[0].substring(2).trim();
+      const dateParts = dateArg.split('/');
+      if (dateParts.length === 2) {
+        const month = parseInt(dateParts[0], 10);
+        const year = parseInt(dateParts[1], 10);
+        if (!isNaN(month) && !isNaN(year) && month > 0 && year > 0) {
+          date = { month, year };
+        } else {
+          return left('Data inválida. Use -d mm/yyyy.');
+        }
+      } else {
+        return left('Data inválida. Use -d mm/yyyy.');
+      }
+    }
     const chat = await this.chatService.findChatByTelegramChatId(chatId);
     if (!chat) return left('Cofre não encontrado.');
     if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
-    return await this.vaultService.getVault({ vaultId: chat.vaultId });
+    const [err, vault] = await this.vaultService.getVault({
+      vaultId: chat.vaultId,
+    });
+    if (err !== null) return left(err);
+    return right({
+      vault: vault,
+      budget: vault.getBudgetsSummary(date?.month, date?.year),
+    });
   }
 
   async handleCategories() {

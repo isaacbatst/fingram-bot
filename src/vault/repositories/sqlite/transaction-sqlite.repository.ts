@@ -41,18 +41,17 @@ export class TransactionSqliteRepository extends TransactionRepository {
     const pageSize = filter?.pageSize ?? 10;
     const offset = (page - 1) * pageSize;
     let query = `SELECT t.*, c.id as category_id, c.name as category_name, c.code as category_code, c.description as category_description
-                 FROM transaction t
+                 FROM "transaction" t
                  LEFT JOIN category c ON t.category_id = c.id
-                 INNER JOIN vault_entry ve ON ve.transaction_id = t.id
-                 WHERE ve.vault_id = ?`;
+                 WHERE t.vault_id = ?`;
     const params: unknown[] = [vaultId];
     if (filter?.date) {
       query +=
-        ' AND strftime("%m", t.created_at) = ? AND strftime("%Y", t.created_at) = ?';
+        " AND strftime('%m', t.created_at) = ? AND strftime('%Y', t.created_at) = ?";
       params.push(String(filter.date.month).padStart(2, '0'));
       params.push(String(filter.date.year));
       if (filter.date.day !== undefined) {
-        query += ' AND strftime("%d", t.created_at) = ?';
+        query += " AND strftime('%d', t.created_at) = ?";
         params.push(String(filter.date.day).padStart(2, '0'));
       }
     }
@@ -81,7 +80,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
     const total = (
       this.db
         .prepare(
-          'SELECT COUNT(*) as count FROM transaction t INNER JOIN vault_entry ve ON ve.transaction_id = t.id WHERE ve.vault_id = ?',
+          'SELECT COUNT(*) as count FROM "transaction" t WHERE t.vault_id = ?',
         )
         .get(vaultId) as { count: number }
     ).count;

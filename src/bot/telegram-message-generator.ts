@@ -2,7 +2,7 @@
 import { ActionType } from '../vault/domain/action';
 import { Category } from '../vault/domain/category';
 import { Paginated } from '../vault/domain/paginated';
-import { Vault } from '../vault/domain/vault';
+import { BudgetSummary, Vault } from '../vault/domain/vault';
 import { TransactionDTO } from '../vault/dto/transaction.dto,';
 
 export class TelegramMessageGenerator {
@@ -52,7 +52,7 @@ export class TelegramMessageGenerator {
       )}\n\n` +
       `*Saldo atual:* ${saldo}` +
       `\n\n` +
-      this.formatBudgetSummary(vault)
+      this.formatBudgetSummary(vault, vault.getBudgetsSummary())
     );
   }
 
@@ -61,7 +61,7 @@ export class TelegramMessageGenerator {
    * @param vault Cofre a ser formatado
    * @returns Mensagem formatada em Markdown V2
    */
-  formatVault(vault: Vault): string {
+  formatVault(vault: Vault, budget: BudgetSummary[]): string {
     const balance = vault.getBalance().toLocaleString('pt-BR', {
       style: 'currency',
       currency: 'BRL',
@@ -72,7 +72,7 @@ export class TelegramMessageGenerator {
     text += `Token: \`${this.escapeMarkdownV2(vault.token)}\`\n`;
     text += `Criado em: ${this.escapeMarkdownV2(vault.createdAt.toLocaleDateString('pt-BR'))}\n`;
     text += `Saldo atual: ${this.escapeMarkdownV2(balance)}\n\n`;
-    text += this.formatBudgetSummary(vault);
+    text += this.formatBudgetSummary(vault, budget);
 
     return text;
   }
@@ -215,19 +215,20 @@ export class TelegramMessageGenerator {
     // Metadata about filters
     let dateArg = '';
     if (date.day !== undefined) {
-      text += `Filtro: ${date.day.toString().padStart(2, '0')}/${date.month.toString().padStart(2, '0')}/${date.year}\n`;
+      text += `Filtro: ${date.day.toString().padStart(2, '0')}/${date.month.toString().padStart(2, '0')}/${date.year}`;
       dateArg = `-d ${date.day.toString().padStart(2, '0')}/${date.month.toString().padStart(2, '0')}/${date.year}`;
     } else {
-      text += `Filtro: ${date.month.toString().padStart(2, '0')}/${date.year}\n`;
+      text += `Filtro: ${date.month.toString().padStart(2, '0')}/${date.year}`;
       dateArg = `-d ${date.month.toString().padStart(2, '0')}/${date.year}`;
     }
 
     if (paginated.items.length === 0) {
       return (
-        text + 'Nenhuma transação encontrada para os critérios especificados\\.'
+        text +
+        '\n\nNenhuma transação encontrada para os critérios especificados\\.'
       );
     }
-    text += `Página ${page} de ${totalPages}\n\n`;
+    text += ` \\| Página ${page} de ${totalPages}\n\n`;
 
     for (const transaction of paginated.items) {
       const value = Math.abs(transaction.amount).toLocaleString('pt-BR', {
@@ -263,9 +264,8 @@ export class TelegramMessageGenerator {
     );
   }
 
-  formatBudgetSummary(vault: Vault): string {
+  formatBudgetSummary(vault: Vault, budgetsSummary: BudgetSummary[]): string {
     let text: string = '';
-    const budgetsSummary = vault.getBudgetsSummary();
     if (budgetsSummary.length > 0) {
       text += `• Orçamento: R$ ${this.escapeMarkdownV2(
         vault.totalBudgetedAmount().toLocaleString('pt-BR', {

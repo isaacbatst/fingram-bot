@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { Either, left, right } from '../vault/domain/either';
@@ -8,6 +8,7 @@ import { TelegramMessageGenerator } from './telegram-message-generator';
 @Injectable()
 export class TelegramHandler {
   private readonly messageGenerator = new TelegramMessageGenerator();
+  private readonly logger = new Logger(TelegramHandler.name);
 
   constructor(
     private telegraf: Telegraf,
@@ -195,14 +196,22 @@ export class TelegramHandler {
 
     this.telegraf.command('summary', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const [err, vault] = await this.botService.handleSummary(chatId);
+      const [err, result] = await this.botService.handleSummary(
+        chatId,
+        ctx.message.text.split('/summary').slice(1).join(''),
+      );
+
+      console.log('result', result);
       if (err !== null) {
         await ctx.reply(err);
         return;
       }
-      await ctx.reply(this.messageGenerator.formatVault(vault), {
-        parse_mode: 'MarkdownV2',
-      });
+      await ctx.reply(
+        this.messageGenerator.formatVault(result.vault, result.budget),
+        {
+          parse_mode: 'MarkdownV2',
+        },
+      );
     });
 
     this.telegraf.command('categories', async (ctx) => {
@@ -246,23 +255,29 @@ export class TelegramHandler {
 
     this.telegraf.on(message('document'), async (ctx) => {
       const document = ctx.message.document;
+      this.logger.log(`Received document: ${document.file_id}`);
       if (document.mime_type !== 'text/csv') {
+        this.logger.log(`Document ${document.file_id} is not a CSV file`);
         return;
       }
+      this.logger.log(`Document ${document.file_id} is a CSV file`);
       try {
         await ctx.sendChatAction('typing');
-        const link = await ctx.telegram.getFileLink(document.file_id);
+        const href = await this.getFileHrefWithRetry(document.file_id);
         await ctx.reply('Processando arquivo. Isso pode levar alguns minutos.');
         const [err, vault] = await this.botService.handleProcessFile(
           ctx.chat.id.toString(),
-          link.href,
+          href,
         );
         if (err !== null) {
           return ctx.reply(err);
         }
-        return ctx.reply(this.messageGenerator.formatVault(vault), {
-          parse_mode: 'MarkdownV2',
-        });
+        return ctx.reply(
+          this.messageGenerator.formatVault(vault, vault.getBudgetsSummary()),
+          {
+            parse_mode: 'MarkdownV2',
+          },
+        );
       } catch (error) {
         console.error('Erro ao processar arquivo:', error);
         await ctx.reply(
@@ -278,6 +293,7 @@ export class TelegramHandler {
     });
 
     this.telegraf.catch(async (err, ctx) => {
+      this.logger.error('Error in Telegram handler', err);
       if (ctx && ctx.chat) {
         await ctx.reply(
           'Erro interno ao processar sua solicitação. Por favor, tente novamente mais tarde.',
@@ -359,5 +375,24 @@ export class TelegramHandler {
     }
 
     return right({ date, page });
+  }
+
+  async getFileHrefWithRetry(fileId: string, maxRetries = 3): Promise<string> {
+    let retries = 0;
+    while (retries < maxRetries) {
+      this.logger.log(`Getting file ${fileId} (retry ${retries + 1})`);
+      try {
+        const file = await this.telegraf.telegram.getFileLink(fileId);
+        return file.href;
+      } catch (error) {
+        retries++;
+        this.logger.error(
+          `Error getting file ${fileId} (retry ${retries})`,
+          error,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+    throw new Error('Failed to get file after retries');
   }
 }

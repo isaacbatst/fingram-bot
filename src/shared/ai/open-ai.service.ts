@@ -1,14 +1,14 @@
+import { Action, ActionType } from '@/vault/domain/action';
+import { Category } from '@/vault/domain/category';
+import { ConcurrencyQueue } from '@/vault/domain/concurrency-queue';
+import { Either, left, right } from '@/vault/domain/either';
+import { Transaction } from '@/vault/domain/transaction';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
-import { Action, ActionType } from '@/vault/domain/action';
-import { Category } from '@/vault/domain/category';
-import { Either, left, right } from '@/vault/domain/either';
-import { Transaction } from '@/vault/domain/transaction';
 import { AiService } from './ai.service';
-import { ConcurrencyQueue } from '@/vault/domain/concurrency-queue';
 
 const parseVaultActionSchema = z.object({
   match: z.boolean(),
@@ -64,10 +64,27 @@ export class OpenAiService extends AiService {
 
       Na maioria dos casos o usuário não dirá explicitamente que está criando uma receita ou despesa, mas você deve inferir isso a partir da descrição.
       
-      Exemplo de receita: "100 salário" { amount: 100, description: 'salário' }, "salário 2000" { amount: 2000, description: 'salário' }, "500 bônus" { amount: 500, description: 'bônus' }
-      Exemplo de despesa: "50 café" { amount: 50, description: 'café' }, "100 gasolina" { amount: 100, description: 'gasolina' }, "1000 mercado" { amount: 1000, description: 'mercado' }
+      Exemplo de receita: "100 salário"
+      Exemplo de despesa: "50 café" 
       
-      Identifique também a categoria da transação, as disponíveis são: ${JSON.stringify(categories)}
+      Atenção, mapeie as transações para o ID da categoria, não para o nome ou descrição.
+
+      Identifique também a categoria da transação, as disponíveis são: ${JSON.stringify(
+        categories.map((c) => ({
+          id: c.id,
+          name: c.name,
+          description: c.description,
+          transactionType: c.transactionType,
+        })),
+      )}
+
+      Exemplo ERRADO:
+      - TransactionId: x, CategoryId: ${categories[0].name}
+      - TransactionId: y, CategoryId: ${categories[0].code}
+
+      Exemplo CERTO:
+      - TransactionId: x, CategoryId: ${categories[0].id}
+      - TransactionId: y, CategoryId: ${categories[1].id}
       `,
       input: input,
       text: {
@@ -109,17 +126,17 @@ export class OpenAiService extends AiService {
         `${tag} Split transactions into ${chunks.length} chunk(s) of up to ${chunkSize} each.`,
       );
 
-      const chunksLogs = chunks.map(
-        (chunk, index) =>
-          `${tag} Chunk #${index + 1}: ${chunk.length} transactions: `,
-      );
+      const chunksLogs = chunks.map((chunk, index) => ({
+        title: `${tag} Chunk #${index + 1}: ${chunk.length}`,
+        content: '',
+      }));
 
       const processChunk = async (
         chunk: Transaction[],
         index: number,
       ): Promise<ParsedTransaction[]> => {
         console.log(
-          `${tag} Processing chunk #${index + 1} with ${chunk.length} transactions@.`,
+          `${tag} Processing chunk #${index + 1} with ${chunk.length} transactions.`,
         );
 
         const stream = this.openAi.responses
@@ -142,8 +159,14 @@ export class OpenAiService extends AiService {
             },
           })
           .on('response.output_text.delta', (event) => {
-            chunksLogs[index] += event.delta;
-            console.log(chunksLogs.join('\n'));
+            chunksLogs[index].content += event.delta;
+            console.log(
+              chunksLogs
+                .map(
+                  (log) => log.title + `(${log.content.length} parsed chars)`,
+                )
+                .join('\n'),
+            );
           });
 
         const response = await stream.finalResponse();
@@ -208,6 +231,16 @@ Seu objetivo é identificar a categoria de cada transação com base na descriç
 Use apenas as categorias abaixo:
 
 ${JSON.stringify(categoriesWithDesc)}
+
+Mapeie as transações para o ID da categoria, NUNCA para o nome ou descrição.
+
+Exemplo ERRADO:
+- TransactionId: x, CategoryId: ${categories[0].name}
+- TransactionId: y, CategoryId: ${categories[0].code}
+
+Exemplo CERTO:
+- TransactionId: x, CategoryId: ${categories[0].id}
+- TransactionId: y, CategoryId: ${categories[1].id}
 `;
   }
 }
