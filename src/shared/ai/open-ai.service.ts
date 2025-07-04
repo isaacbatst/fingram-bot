@@ -19,6 +19,7 @@ const parseVaultActionSchema = z.object({
         amount: z.number(),
         description: z.string(),
         categoryId: z.string(),
+        categoryName: z.string(),
       }),
     }),
   ]),
@@ -33,7 +34,9 @@ const parseTransactionsFileSchema = z.object({
   transactions: z.array(
     z.object({
       transactionId: z.string(),
+      transactionDescription: z.string(),
       categoryId: z.string(),
+      categoryName: z.string(),
     }),
   ),
 });
@@ -54,6 +57,7 @@ export class OpenAiService extends AiService {
   async parseVaultAction(
     input: string,
     categories: Category[],
+    customPrompt = '',
   ): Promise<Either<string, Action>> {
     const response = await this.openAi.responses.parse({
       model: 'gpt-4.1-nano',
@@ -67,16 +71,26 @@ export class OpenAiService extends AiService {
       Exemplo de receita: "100 salário"
       Exemplo de despesa: "50 café" 
       
-      Atenção, mapeie as transações para o ID da categoria, não para o nome ou descrição.
-
-      Identifique também a categoria da transação, as disponíveis são: ${JSON.stringify(
+      Muitas vezes uma transação será uma transferência para uma pessoa ou empresa, o nome pode dar uma pista da categoria, como "Transferência para Curso de Inglês" ou "Pagamento Uber"
+      O usuário poderá fornecer uma customização do prompt para dar mais contexto, como deixar claro que uma transferência para "João" é uma despesa de "Transporte" ou "Educação", por exemplo.
+      
+      Identifique também a categoria da transação.
+      Atenção, mapeie as transações para o ID da categoria, não para o nome da ou descrição.
+      
+      As categorias disponíveis são:
+      
+      \`\`\`
+      ${JSON.stringify(
         categories.map((c) => ({
           id: c.id,
           name: c.name,
           description: c.description,
           transactionType: c.transactionType,
         })),
+        null,
+        2,
       )}
+      \`\`\`
 
       Exemplo ERRADO:
       - TransactionId: x, CategoryId: ${categories[0].name}
@@ -86,7 +100,10 @@ export class OpenAiService extends AiService {
       - TransactionId: x, CategoryId: ${categories[0].id}
       - TransactionId: y, CategoryId: ${categories[1].id}
       `,
-      input: input,
+      input: `
+        Contexto adicional do usuário: ${customPrompt}
+        Ação solicitada (pode ser a descrição de uma receita ou despesa): ${input}
+      `,
       text: {
         format: zodTextFormat(parseVaultActionSchema, 'action'),
       },
@@ -111,6 +128,7 @@ export class OpenAiService extends AiService {
   async parseTransactionsFile(
     transactions: Transaction[],
     categories: Category[],
+    customPrompt: string,
   ): Promise<Either<string, Map<string, string>>> {
     const tag = '[parseTransactionsFile]';
     console.log(
@@ -141,16 +159,26 @@ export class OpenAiService extends AiService {
 
         const stream = this.openAi.responses
           .stream({
-            model: 'gpt-4.1-nano',
-            instructions: this.buildParseTransactionsFile(categories),
-            input: JSON.stringify(
-              chunk.map((t) => ({
-                id: t.id,
-                description: t.description,
-                amount: t.amount,
-                type: t.type,
-              })),
-            ),
+            model: 'gpt-4.1-mini',
+            instructions: this.parseTransactionsFileInstructions(categories),
+            input: `
+            ${customPrompt ? `Contexto adicional do usuário: ${customPrompt}` : ''}
+
+            -----
+              Arquivo de transações:
+              \`\`\`
+              ${JSON.stringify(
+                chunk.map((t) => ({
+                  id: t.id,
+                  description: t.description,
+                  amount: t.amount,
+                  type: t.type,
+                })),
+                null,
+                2,
+              )}
+              \`\`\`
+            `,
             text: {
               format: zodTextFormat(
                 parseTransactionsFileSchema,
@@ -207,6 +235,7 @@ export class OpenAiService extends AiService {
       console.log(
         `${tag} All chunks processed, total mapped transactions: ${map.size}`,
       );
+      console.log('customPrompt:', customPrompt);
 
       return right(map);
     } catch (err) {
@@ -217,11 +246,12 @@ export class OpenAiService extends AiService {
     }
   }
 
-  buildParseTransactionsFile(categories: Category[]): string {
+  parseTransactionsFileInstructions(categories: Category[]): string {
     const categoriesWithDesc = categories.map((cat) => ({
       id: cat.id,
       name: cat.name,
       description: cat.description ?? `Categoria relacionada a ${cat.name}`,
+      transactionType: cat.transactionType,
     }));
 
     return `
@@ -230,17 +260,15 @@ O usuário enviou um extrato de transações financeiras.
 Seu objetivo é identificar a categoria de cada transação com base na descrição e no tipo.
 Use apenas as categorias abaixo:
 
-${JSON.stringify(categoriesWithDesc)}
+\`\`\`
+${JSON.stringify(categoriesWithDesc, null, 2)}
+\`\`\`
 
-Mapeie as transações para o ID da categoria, NUNCA para o nome ou descrição.
-
-Exemplo ERRADO:
-- TransactionId: x, CategoryId: ${categories[0].name}
-- TransactionId: y, CategoryId: ${categories[0].code}
-
-Exemplo CERTO:
-- TransactionId: x, CategoryId: ${categories[0].id}
-- TransactionId: y, CategoryId: ${categories[1].id}
+Muitas vezes uma transação será uma transferência para uma pessoa ou empresa, a descrição da transação pode dar uma pista da categoria, como "Transferência para Curso de Inglês" (despesa de Educação) ou "Pagamento Uber" (despesa de Transporte), "Pet Center" (despesa de Família & Pets).
+Transferência por PIX é descrita no seguinte formato: "Transferência enviada pelo Pix - Recipiente (Nome da Pessoa ou Empresa) - CPF/CNPJ - Informações Bancárias.
+Com base no nome da pessoa ou empresa, você deve inferir a categoria correta.
+O usuário poderá fornecer uma customização do prompt para dar mais contexto, como por exmplo informar que no contexto dele uma transferência para "João" é uma despesa de categoria X ou Y.
+Se não encontrar uma categoria adequada, marque como "Outros", mas SEMPRE marque como alguma categoria, mesmo que seja "Outros".
 `;
   }
 }

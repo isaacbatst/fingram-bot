@@ -33,6 +33,25 @@ export class VaultService {
     return vault;
   }
 
+  async deleteTransaction(input: { vaultId: string; transactionCode: string }) {
+    this.logger.log(
+      `Deleting transaction from vault: ${input.vaultId}, transactionCode: ${input.transactionCode}`,
+    );
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) {
+      this.logger.warn(`Vault not found: ${input.vaultId}`);
+      return left(`Cofre não encontrado`);
+    }
+    const [err] = vault.deleteTransaction(input.transactionCode);
+    if (err !== null) {
+      this.logger.error(`Failed to delete transaction: ${err}`);
+      return left(err);
+    }
+    await this.vaultRepository.update(vault);
+    this.logger.log(`Transaction deleted: ${input.transactionCode}`);
+    return right(true);
+  }
+
   async parseVaultAction(input: { message: string; vaultId: string }) {
     this.logger.log(`Parsing vault action for vaultId: ${input.vaultId}`);
     const vault = await this.vaultRepository.findById(input.vaultId);
@@ -44,6 +63,7 @@ export class VaultService {
     const [err, action] = await this.aiService.parseVaultAction(
       input.message,
       categories,
+      vault.getCustomPrompt(),
     );
     if (err !== null) {
       this.logger.error(`Error parsing action: ${err}`);
@@ -245,9 +265,7 @@ export class VaultService {
     categoryCode?: string;
     date?: Date;
   }) {
-    this.logger.log(
-      `Editing transaction in vault: ${input.vaultId}, transactionCode: ${input.transactionCode}`,
-    );
+    this.logger.log(`Editing transaction in vault: ${JSON.stringify(input)}`);
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
@@ -283,6 +301,11 @@ export class VaultService {
       input.transactionCode,
       updatedData,
     );
+    this.logger.log(
+      `Editing transaction: ${input.transactionCode}, new data: ${JSON.stringify(
+        transaction,
+      )}`,
+    );
     if (err !== null) {
       this.logger.error(`Failed to edit transaction: ${err}`);
       return left(err);
@@ -299,6 +322,18 @@ export class VaultService {
       transaction: transaction.toDTO(category),
       vault,
     });
+  }
+
+  async editVaultPrompt(input: { vaultId: string; customPrompt: string }) {
+    this.logger.log(`Editing vault prompt for vault: ${input.vaultId}`);
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) {
+      this.logger.warn(`Vault not found: ${input.vaultId}`);
+      return left(`Cofre não encontrado`);
+    }
+    vault.editCustomPrompt(input.customPrompt);
+    await this.vaultRepository.update(vault);
+    return right(vault);
   }
 
   async getCategories() {
@@ -376,6 +411,7 @@ export class VaultService {
     const [err, parsedCategories] = await this.aiService.parseTransactionsFile(
       transactions,
       categories,
+      vault.getCustomPrompt(),
     );
     if (err !== null) {
       this.logger.error(`Error processing transactions: ${err}`);

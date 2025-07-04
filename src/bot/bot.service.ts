@@ -1,6 +1,6 @@
 import { VaultService } from '@/vault/vault.service';
 import { Injectable } from '@nestjs/common';
-import { left, right } from '../vault/domain/either';
+import { Either, left, right } from '../vault/domain/either';
 import { ChatService } from './modules/chat/chat.service';
 
 @Injectable()
@@ -246,6 +246,7 @@ export class BotService {
     return right({
       vault: vault,
       budget: vault.getBudgetsSummary(date.month, date.year),
+      date,
     });
   }
 
@@ -306,5 +307,37 @@ export class BotService {
       actionId: input.actionId,
       vaultId: chat.vaultId,
     });
+  }
+
+  async editVaultPrompt(chatId: string, customPrompt: string) {
+    const chat = await this.chatService.findChatByTelegramChatId(chatId);
+    if (!chat || !chat.vaultId) {
+      return BotService.NOT_STARTED_MESSAGE;
+    }
+    const [err] = await this.vaultService.editVaultPrompt({
+      vaultId: chat.vaultId,
+      customPrompt,
+    });
+    if (err !== null) {
+      return left(err);
+    }
+    return right(`Prompt do cofre atualizado com sucesso:\n\n`);
+  }
+
+  async deleteTransaction(
+    chatId: string,
+    transactionCode: string,
+  ): Promise<Either<string, string>> {
+    const chat = await this.chatService.findChatByTelegramChatId(chatId);
+    if (!chat) return left('Cofre não encontrado.');
+    if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
+    const [err] = await this.vaultService.deleteTransaction({
+      vaultId: chat.vaultId,
+      transactionCode,
+    });
+    if (err !== null) {
+      return left(err);
+    }
+    return right(`Transação ${transactionCode} deletada com sucesso.`);
   }
 }

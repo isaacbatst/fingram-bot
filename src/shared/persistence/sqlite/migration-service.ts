@@ -15,6 +15,7 @@ export class MigrationService {
       CREATE TABLE IF NOT EXISTS vault (
         id TEXT PRIMARY KEY,
         token TEXT NOT NULL,
+        custom_prompt TEXT DEFAULT '',
         created_at TEXT NOT NULL
       );
 

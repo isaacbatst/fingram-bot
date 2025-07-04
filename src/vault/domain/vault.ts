@@ -19,6 +19,7 @@ export class Vault {
     return crypto.randomBytes(16).toString('hex');
   }
 
+  public isDirty = false;
   readonly transactionsTracker = new ChangesTracker<Transaction>();
   readonly budgetsTracker = new ChangesTracker<{
     category: Category;
@@ -34,10 +35,16 @@ export class Vault {
       string,
       { category: Category; amount: number }
     > = new Map(),
+    private customPrompt = '',
   ) {}
 
   static create(): Vault {
     return new Vault(Vault.generateId(), Vault.generateToken(), new Date());
+  }
+
+  editCustomPrompt(prompt: string): void {
+    this.customPrompt = prompt;
+    this.isDirty = true;
   }
 
   addTransaction(transaction: Transaction): void {
@@ -59,7 +66,7 @@ export class Vault {
   editTransaction(
     code: string,
     options: {
-      newAmount?: number;
+      amount?: number;
       description?: string;
       categoryId?: string;
       date?: Date;
@@ -68,8 +75,8 @@ export class Vault {
     const transaction = this.findTransactionByCode(code);
     if (!transaction) return left(`Transação #${code} não encontrada`);
 
-    if (options.newAmount !== undefined) {
-      transaction.amount = options.newAmount;
+    if (options.amount !== undefined) {
+      transaction.amount = options.amount;
     }
     if (options.description !== undefined) {
       transaction.description = options.description;
@@ -81,7 +88,6 @@ export class Vault {
       transaction.createdAt = options.date;
     }
 
-    this.transactions.set(transaction.id, transaction);
     this.transactionsTracker.registerDirty(transaction);
     return right(transaction);
   }
@@ -194,5 +200,15 @@ export class Vault {
       }
     }
     return total;
+  }
+
+  getCustomPrompt(): string {
+    return this.customPrompt;
+  }
+
+  clearChanges(): void {
+    this.transactionsTracker.clearChanges();
+    this.budgetsTracker.clearChanges();
+    this.isDirty = false;
   }
 }

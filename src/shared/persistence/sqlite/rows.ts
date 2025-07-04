@@ -3,6 +3,7 @@ export interface VaultRow {
   id: string;
   token: string;
   created_at: string;
+  custom_prompt?: string;
 }
 
 // Category table row

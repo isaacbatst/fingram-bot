@@ -1,16 +1,16 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { Injectable, Inject } from '@nestjs/common';
+import {
+  CategoryRow,
+  TransactionRow,
+  VaultRow,
+} from '@/shared/persistence/sqlite/rows';
+import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
+import { Inject, Injectable } from '@nestjs/common';
+import { Database } from 'better-sqlite3';
+import { Category } from '../../domain/category';
+import { Transaction } from '../../domain/transaction';
 import { Vault } from '../../domain/vault';
 import { VaultRepository } from '../vault.repository';
-import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
-import { Database } from 'better-sqlite3';
-import {
-  VaultRow,
-  TransactionRow,
-  CategoryRow,
-} from '@/shared/persistence/sqlite/rows';
-import { Transaction } from '../../domain/transaction';
-import { Category } from '../../domain/category';
 
 @Injectable()
 export class VaultSqliteRepository extends VaultRepository {
@@ -26,6 +26,12 @@ export class VaultSqliteRepository extends VaultRepository {
 
   async update(vault: Vault): Promise<void> {
     const commit = this.db.transaction(() => {
+      if (vault.isDirty) {
+        this.db
+          .prepare('UPDATE vault SET custom_prompt = ? WHERE id = ?')
+          .run(vault.getCustomPrompt(), vault.id);
+      }
+
       const transactionsChanges = vault.transactionsTracker.getChanges();
       for (const transaction of transactionsChanges.new) {
         console.log(
@@ -91,8 +97,7 @@ export class VaultSqliteRepository extends VaultRepository {
           )
           .run(budget.amount, vault.id, budget.category.id);
       }
-      vault.budgetsTracker.clearChanges();
-      vault.transactionsTracker.clearChanges();
+      vault.clearChanges();
     });
     commit();
   }
@@ -153,6 +158,7 @@ export class VaultSqliteRepository extends VaultRepository {
       new Date(row.created_at),
       transactions,
       budgets,
+      row.custom_prompt,
     );
     vault.transactionsTracker.clearChanges();
     vault.budgetsTracker.clearChanges();

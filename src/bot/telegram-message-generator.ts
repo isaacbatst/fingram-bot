@@ -60,7 +60,18 @@ export class TelegramMessageGenerator {
    * @param vault Cofre a ser formatado
    * @returns Mensagem formatada em Markdown V2
    */
-  formatVault(vault: Vault, budget: BudgetSummary[]): string {
+  formatVault(
+    vault: Vault,
+    budget: BudgetSummary[],
+    date?: {
+      month: number;
+      year: number;
+    },
+  ): string {
+    date = date ?? {
+      month: new Date().getMonth() + 1,
+      year: new Date().getFullYear(),
+    };
     const balance = vault.getBalance().toLocaleString('pt-BR', {
       style: 'currency',
       currency: 'BRL',
@@ -70,6 +81,7 @@ export class TelegramMessageGenerator {
     let text = `💰 Cofre\n`;
     text += `Token: \`${this.escapeMarkdownV2(vault.token)}\`\n`;
     text += `Criado em: ${this.escapeMarkdownV2(vault.createdAt.toLocaleDateString('pt-BR'))}\n`;
+    text += `Resumo referente a: ${date.month.toString().padStart(2, '0')}/${date.year}\n`;
     text += `Saldo atual: ${this.escapeMarkdownV2(balance)}\n\n`;
     text += this.formatBudgetSummary(vault, budget);
 
@@ -280,12 +292,28 @@ export class TelegramMessageGenerator {
 
   formatHelp(): string {
     return (
-      'Comandos disponíveis:\n\n' +
-      '/setbudget <categoria1> <quantia1>, <categoria2> <quantia2> - Define orçamentos para categorias específicas. Use o código da categoria e a quantia desejada.\n' +
-      '/edit <código> [-v valor] [-d dd/mm/yyyy] [-c categoria] [-desc "descrição"] - Edita uma transação existente. Use o código da transação e as flags para modificar o valor, data, categoria ou descrição.\n' +
-      '/summary - Exibe o resumo do cofre atual.\n' +
-      '/transactions -p <página> -d mm/yyyy|dd-mm-yyyy - Exibe as transações do cofre. Use -p para especificar a página (padrão é 1) e -d para filtrar por data (mês/ano ou dia-mês-ano).\n' +
-      '/join <token> - Conecta-se a um cofre existente usando o token.'
+      '*Como usar:*\n\n' +
+      'A forma mais rápida de registrar receitas e despesas é usando o comando `/ai`.\n\n' +
+      '*Exemplo:*\n' +
+      '`/ai 100 salário de setembro`\n' +
+      '`/ai 50 supermercado`\n\n' +
+      'O bot entende o valor, tipo (receita ou despesa) e descrição automaticamente!\n\n' +
+      '---\n\n' +
+      '*Comandos avançados/opcionais:*\n' +
+      '• /create — Cria um novo cofre.\n' +
+      '• /join <token> — Entra em um cofre existente usando o token.\n' +
+      '• /income <quantia> [descrição] — Registra uma receita manualmente.\n' +
+      '• /expense <quantia> [descrição] — Registra uma despesa manualmente.\n' +
+      '• /edit <código> [opções] — Edita uma transação existente.\n' +
+      '    Opções: -v <valor>, -d <dd/mm/yyyy>, -c <categoria>, -desc "descrição"\n' +
+      '• /setbudget <categoria1> <quantia1>, <categoria2> <quantia2> ... — Define orçamentos para categorias.\n' +
+      '• /summary [-d mm/yyyy] — Mostra o resumo do cofre.\n' +
+      '• /categories — Lista as categorias disponíveis.\n' +
+      '• /transactions [-p página] [-d mm/yyyy|dd/mm/yyyy] — Lista transações do cofre.\n' +
+      '• /editprompt <novo prompt> — Edita o prompt do cofre.\n' +
+      '• /delete <código> — Deleta uma transação pelo código.\n' +
+      '• /help — Mostra esta mensagem de ajuda.\n\n' +
+      'Para detalhes de uso de cada comando, digite o comando sem argumentos.'
     );
   }
 
@@ -299,7 +327,7 @@ export class TelegramMessageGenerator {
           minimumFractionDigits: 2,
         }),
       )}\n`;
-      text += `  Total gasto: R$ ${this.escapeMarkdownV2(
+      text += `\n  Total gasto: R$ ${this.escapeMarkdownV2(
         vault.totalSpentAmount().toLocaleString('pt-BR', {
           style: 'currency',
           currency: 'BRL',

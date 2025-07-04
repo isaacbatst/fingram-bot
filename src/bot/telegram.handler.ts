@@ -17,15 +17,15 @@ export class TelegramHandler {
 
   async onApplicationBootstrap() {
     this.telegraf.on(message('text'), async (ctx, next) => {
-      if (!ctx.message.text.startsWith('@ai')) {
+      if (!ctx.message.text.startsWith('/ai')) {
         return next();
       }
       await ctx.sendChatAction('typing');
-      const message = ctx.message.text.split('@ai')[1].trim();
+      const message = ctx.message.text.split('/ai')[1].trim();
 
       if (!message) {
         await ctx.reply(
-          'Uso: @ai <ação>\n\n' + 'Exemplo: @ai 100 salário de setembro\n\n',
+          'Uso: /ai <ação>\n\n' + 'Exemplo: /ai 100 salário de setembro\n\n',
         );
         return;
       }
@@ -106,6 +106,14 @@ export class TelegramHandler {
 
     this.telegraf.command('create', async (ctx) => {
       const chatId = ctx.chat.id.toString();
+      // No args expected for /create
+      if (ctx.message.text.trim() !== '/create') {
+        await ctx.reply(
+          'Uso: /create\n\nCria um novo cofre para o chat atual.',
+          { parse_mode: 'MarkdownV2' },
+        );
+        return;
+      }
       const { vault } = await this.botService.handleCreate(chatId);
       await ctx.reply(this.messageGenerator.formatVaultCreated(vault), {
         parse_mode: 'MarkdownV2',
@@ -115,6 +123,13 @@ export class TelegramHandler {
     this.telegraf.command('join', async (ctx) => {
       const chatId = ctx.chat.id.toString();
       const args = ctx.message.text.split(' ').slice(1);
+      if (args.length === 0) {
+        await ctx.reply(
+          'Uso: /join <token>\n\nEntre em um cofre existente usando o token de acesso. Exemplo: /join ABC123',
+          { parse_mode: 'MarkdownV2' },
+        );
+        return;
+      }
       const token = args[0];
       const [err, result] = await this.botService.handleJoin(chatId, token);
       if (err !== null) {
@@ -129,6 +144,13 @@ export class TelegramHandler {
     this.telegraf.command('income', async (ctx) => {
       const chatId = ctx.chat.id.toString();
       const args = ctx.message.text.split(' ').slice(1);
+      if (args.length === 0) {
+        await ctx.reply(
+          'Uso: /income <quantia> [descrição]\n\nRegistra uma receita no cofre atual. Exemplo: /income 100 Salário',
+          { parse_mode: 'MarkdownV2' },
+        );
+        return;
+      }
       const [err, success] = await this.botService.handleIncome(chatId, args);
       if (err !== null) {
         await ctx.reply(err);
@@ -146,6 +168,13 @@ export class TelegramHandler {
     this.telegraf.command('expense', async (ctx) => {
       const chatId = ctx.chat.id.toString();
       const args = ctx.message.text.split(' ').slice(1);
+      if (args.length === 0) {
+        await ctx.reply(
+          'Uso: /expense <quantia> [descrição]\n\nRegistra uma despesa no cofre atual. Exemplo: /expense 50 Supermercado',
+          { parse_mode: 'MarkdownV2' },
+        );
+        return;
+      }
       const [err, success] = await this.botService.handleExpense(chatId, args);
       if (err !== null) {
         await ctx.reply(err);
@@ -169,6 +198,22 @@ export class TelegramHandler {
         .trim()
         .split(' ')
         .filter((arg) => arg.trim() !== '');
+      if (args.length === 0) {
+        await ctx.reply(
+          'Para editar uma transação, você precisa fornecer o código da transação seguido dos campos que deseja alterar.\n\n' +
+            '📝 Uso: /edit <código> [opções]\n\n' +
+            'Opções disponíveis:\n' +
+            '• -v <valor> - alterar o valor\n' +
+            '• -d <dd/mm/yyyy> - alterar a data\n' +
+            '• -c <categoria> - alterar a categoria\n' +
+            '• -desc "descrição" - alterar a descrição\n\n' +
+            'Exemplos:\n' +
+            '• /edit ABC123 -v 50.00\n' +
+            '• /edit ABC123 -d 15/12/2024 -c alimentacao\n' +
+            '• /edit ABC123 -desc "Almoço no restaurante"',
+        );
+        return;
+      }
       const [err, success] = await this.botService.handleEdit(chatId, args);
       if (err !== null) {
         await ctx.reply(err);
@@ -187,6 +232,13 @@ export class TelegramHandler {
     this.telegraf.command('setbudget', async (ctx) => {
       const chatId = ctx.chat.id.toString();
       const argsText = ctx.message.text.split('/setbudget').slice(1).join('');
+      if (!argsText.trim()) {
+        await ctx.reply(
+          'Uso: /setbudget <categoria1> <quantia1>, <categoria2> <quantia2> ...\n\nDefine orçamentos para categorias específicas. Exemplo: /setbudget alimentacao 500, transporte 200',
+          { parse_mode: 'MarkdownV2' },
+        );
+        return;
+      }
       const [err, vault] = await this.botService.handleSetBudget(
         chatId,
         argsText,
@@ -202,17 +254,19 @@ export class TelegramHandler {
 
     this.telegraf.command('summary', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const [err, result] = await this.botService.handleSummary(
-        chatId,
-        ctx.message.text.split('/summary').slice(1).join(''),
-      );
+      const args = ctx.message.text.split('/summary').slice(1).join('');
+      const [err, result] = await this.botService.handleSummary(chatId, args);
 
       if (err !== null) {
         await ctx.reply(err);
         return;
       }
       await ctx.reply(
-        this.messageGenerator.formatVault(result.vault, result.budget),
+        this.messageGenerator.formatVault(
+          result.vault,
+          result.budget,
+          result.date,
+        ),
         {
           parse_mode: 'MarkdownV2',
         },
@@ -220,6 +274,14 @@ export class TelegramHandler {
     });
 
     this.telegraf.command('categories', async (ctx) => {
+      // No args expected for /categories
+      if (ctx.message.text.trim() !== '/categories') {
+        await ctx.reply(
+          'Uso: /categories\n\nLista todas as categorias disponíveis para uso em transações e orçamentos.',
+          { parse_mode: 'MarkdownV2' },
+        );
+        return;
+      }
       const categories = await this.botService.handleCategories();
       if (categories.length === 0) {
         await ctx.reply('Nenhuma categoria disponível no momento.');
@@ -236,7 +298,10 @@ export class TelegramHandler {
         ctx.message.text,
       );
       if (parseArgsError !== null) {
-        await ctx.reply(parseArgsError);
+        await ctx.reply(
+          'Uso: /transactions [-p página] [-d mm/yyyy|dd/mm/yyyy]\n\nExibe as transações do cofre. Exemplo: /transactions -p 2 -d 06/2024',
+          { parse_mode: 'MarkdownV2' },
+        );
         return;
       }
       const [err, transactions] = await this.botService.handleTransactions(
@@ -289,6 +354,48 @@ export class TelegramHandler {
           'Erro ao processar o arquivo. Certifique-se de que é um CSV válido com transações.',
         );
       }
+    });
+
+    // edit prompt command
+    this.telegraf.command('editprompt', async (ctx) => {
+      const chatId = ctx.chat.id.toString();
+      const args = ctx.message.text.split(' ').slice(1);
+      if (args.length === 0) {
+        await ctx.reply(
+          'Uso: /editprompt <novo prompt>\n\nEdita o prompt do cofre para personalizar a IA. Exemplo: /editprompt "Transferências para João são despesas de transporte"',
+          { parse_mode: 'MarkdownV2' },
+        );
+        return;
+      }
+      const newPrompt = args.join(' ');
+      const [err] = await this.botService.editVaultPrompt(chatId, newPrompt);
+      if (err !== null) {
+        await ctx.reply(err);
+        return;
+      }
+      await ctx.reply('Prompt editado com sucesso!');
+    });
+
+    // delete transaction command /delete <transaction_code>
+    this.telegraf.command('delete', async (ctx) => {
+      const chatId = ctx.chat.id.toString();
+      const args = ctx.message.text.split(' ').slice(1);
+      if (args.length === 0) {
+        await ctx.reply(
+          'Uso: /delete <código da transação>\n\nDeleta uma transação pelo código. Exemplo: /delete 123456',
+          { parse_mode: 'MarkdownV2' },
+        );
+        return;
+      }
+      const [err, success] = await this.botService.deleteTransaction(
+        chatId,
+        args[0],
+      );
+      if (err !== null) {
+        await ctx.reply(err);
+        return;
+      }
+      await ctx.reply(success);
     });
 
     this.telegraf.command('help', async (ctx) => {

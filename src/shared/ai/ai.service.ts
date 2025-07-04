@@ -7,9 +7,11 @@ export abstract class AiService {
   abstract parseVaultAction(
     input: string,
     categories: Category[],
+    customPrompt: string,
   ): Promise<Either<string, Action>>;
   abstract parseTransactionsFile(
     transactions: Transaction[],
     categories: Category[],
+    customPrompt: string,
   ): Promise<Either<string, Map<string, string>>>;
 }
