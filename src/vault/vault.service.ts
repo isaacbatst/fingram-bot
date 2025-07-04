@@ -9,6 +9,7 @@ import { TransactionRepository } from '@/vault/repositories/transaction.reposito
 import { VaultRepository } from '@/vault/repositories/vault.repository';
 import { Injectable, Logger } from '@nestjs/common';
 import { ReadableStream } from 'node:stream/web';
+import { Category } from './domain/category';
 import { Vault } from './domain/vault';
 import { TransactionDTO } from './dto/transaction.dto,';
 
@@ -254,10 +255,9 @@ export class VaultService {
     }
 
     let categoryId: string | undefined;
+    let category: Category | null = null;
     if (input.categoryCode) {
-      const category = await this.categoryRepository.findByCode(
-        input.categoryCode,
-      );
+      category = await this.categoryRepository.findByCode(input.categoryCode);
       if (!category) {
         this.logger.warn(`Category not found: ${input.categoryCode}`);
         return left(`Categoria não encontrada`);
@@ -287,10 +287,16 @@ export class VaultService {
       this.logger.error(`Failed to edit transaction: ${err}`);
       return left(err);
     }
+
     await this.vaultRepository.update(vault);
+
+    if (transaction.categoryId && !category) {
+      category = await this.categoryRepository.findById(transaction.categoryId);
+    }
+
     this.logger.log(`Transaction edited: ${input.transactionCode}`);
     return right({
-      transaction,
+      transaction: transaction.toDTO(category),
       vault,
     });
   }

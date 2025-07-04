@@ -175,11 +175,22 @@ export class Vault {
     }
     return total;
   }
-  totalSpentAmount(): number {
+  totalSpentAmount(date?: { month: number; year: number }): number {
     let total = 0;
     for (const transaction of this.transactions.values()) {
       if (transaction.type === 'expense') {
-        total += Math.abs(transaction.amount);
+        if (!date) {
+          const now = new Date();
+          date = { month: now.getMonth() + 1, year: now.getFullYear() };
+        }
+
+        const transactionDate = new Date(transaction.createdAt);
+        const transactionMonth = transactionDate.getMonth() + 1;
+        const transactionYear = transactionDate.getFullYear();
+
+        if (transactionMonth === date.month && transactionYear === date.year) {
+          total += Math.abs(transaction.amount);
+        }
       }
     }
     return total;

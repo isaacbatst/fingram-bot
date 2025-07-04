@@ -72,7 +72,7 @@ export const CATEGORIES_SEED: {
   },
   {
     id: 'd9837314-2262-4ff1-a74c-a1a64deedd34',
-    name: 'Outros',
+    name: '📦 Outros',
     code: '10',
     description: 'Despesas diversas não categorizadas',
     transaction_type: 'both',

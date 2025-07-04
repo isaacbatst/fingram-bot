@@ -80,10 +80,22 @@ export class BotService {
     });
   }
 
+  // /edit <code> -v <valor> -d <dd/mm/yyyy> -c <categoria> -desc "descrição"
+  // args is message.split("/edit").slice(1).join("").trim().split(" ");
   async handleEdit(chatId: string, args: string[]) {
     if (args.length < 1) {
       return left(
-        'Uso: /edit <código> [-v valor] [-d dd/mm/yyyy] [-c categoria] [-desc "descrição"]',
+        'Para editar uma transação, você precisa fornecer o código da transação seguido dos campos que deseja alterar.\n\n' +
+          '📝 Uso: /edit <código> [opções]\n\n' +
+          'Opções disponíveis:\n' +
+          '• -v <valor> - alterar o valor\n' +
+          '• -d <dd/mm/yyyy> - alterar a data\n' +
+          '• -c <categoria> - alterar a categoria\n' +
+          '• -desc "descrição" - alterar a descrição\n\n' +
+          'Exemplos:\n' +
+          '• /edit ABC123 -v 50.00\n' +
+          '• /edit ABC123 -d 15/12/2024 -c alimentacao\n' +
+          '• /edit ABC123 -desc "Almoço no restaurante"',
       );
     }
     const code = args[0];
@@ -219,6 +231,10 @@ export class BotService {
       } else {
         return left('Data inválida. Use -d mm/yyyy.');
       }
+    } else {
+      // Default to current month and year
+      const now = new Date();
+      date = { month: now.getMonth() + 1, year: now.getFullYear() };
     }
     const chat = await this.chatService.findChatByTelegramChatId(chatId);
     if (!chat) return left('Cofre não encontrado.');
@@ -229,7 +245,7 @@ export class BotService {
     if (err !== null) return left(err);
     return right({
       vault: vault,
-      budget: vault.getBudgetsSummary(date?.month, date?.year),
+      budget: vault.getBudgetsSummary(date.month, date.year),
     });
   }
 

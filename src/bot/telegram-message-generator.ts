@@ -1,4 +1,3 @@
-/* eslint-disable no-useless-escape */
 import { ActionType } from '../vault/domain/action';
 import { Category } from '../vault/domain/category';
 import { Paginated } from '../vault/domain/paginated';
@@ -134,14 +133,40 @@ export class TelegramMessageGenerator {
 
   formatTransactionEdited(
     code: string,
-    newAmount: number,
+    transaction: TransactionDTO,
     vault: { getBalance(): number },
   ): string {
-    return (
-      `Transação\#${this.escapeMarkdownV2(code)} editada com sucesso\\!\n\n` +
-      `*Novo valor:* R$ ${this.escapeMarkdownV2(newAmount.toFixed(2).replace('.', ','))}\n` +
-      `*Saldo atual:* R$ ${this.escapeMarkdownV2(vault.getBalance().toFixed(2).replace('.', ','))}`
-    );
+    const amount = Math.abs(transaction.amount).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+      minimumFractionDigits: 2,
+    });
+
+    const date = transaction.createdAt.toLocaleDateString('pt-BR');
+    const balance = vault.getBalance().toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+      minimumFractionDigits: 2,
+    });
+
+    let text = `✅ Transação \\#${this.escapeMarkdownV2(code)} editada com sucesso\\!\n\n`;
+    text += `*Detalhes da transação:*\n`;
+    text += `• *Código:* \`#${this.escapeMarkdownV2(code)}\`\n`;
+    text += `• *Valor:* ${this.escapeMarkdownV2(amount)}\n`;
+    text += `• *Tipo:* ${this.escapeMarkdownV2(transaction.type === 'income' ? 'Receita' : 'Despesa')}\n`;
+    text += `• *Data:* ${this.escapeMarkdownV2(date)}\n`;
+
+    if (transaction.description) {
+      text += `• *Descrição:* ${this.escapeMarkdownV2(transaction.description)}\n`;
+    }
+
+    if (transaction.category) {
+      text += `• *Categoria:* \`#${this.escapeMarkdownV2(transaction.category.code)}\` ${this.escapeMarkdownV2(transaction.category.name)}\n`;
+    }
+
+    text += `\n*Saldo atual:* ${this.escapeMarkdownV2(balance)}`;
+
+    return text;
   }
 
   formatBudgetsSet(vault: Vault): string {
@@ -297,15 +322,9 @@ export class TelegramMessageGenerator {
           minimumFractionDigits: 2,
         });
         const percentage = Math.round(budget.percentageUsed);
-        const cappedPercentage = Math.max(0, Math.min(percentage, 100));
-        const barLength = 10;
-        const filledLength = Math.round((cappedPercentage / 100) * barLength);
-        const bar =
-          '█'.repeat(Math.max(0, Math.min(filledLength, barLength))) +
-          '░'.repeat(Math.max(0, barLength - filledLength));
 
         text += `• \`#${this.escapeMarkdownV2(budget.category.code)}\` ${this.escapeMarkdownV2(budget.category.name)} ${this.escapeMarkdownV2(amount)}\n`;
-        text += `  Gastos: ${this.escapeMarkdownV2(spent)} \\\n ${bar} ${percentage}%\n\n`;
+        text += `  Gastos: ${this.escapeMarkdownV2(spent)} \\\n ${this.formatPercentageBar(percentage)}\n\n`;
       }
     } else {
       text += `Nenhum orçamento definido\\.\n`;
@@ -315,10 +334,16 @@ export class TelegramMessageGenerator {
   }
 
   formatPercentageBar(percentage: number, barLength: number = 10): string {
-    const filledLength = Math.round((percentage / 100) * barLength);
-    const bar =
-      '█'.repeat(Math.max(0, Math.min(filledLength, barLength))) +
-      '░'.repeat(Math.max(0, barLength - filledLength));
+    const cappedPercentage = Math.min(percentage, 100);
+    const filledLength = Math.round((cappedPercentage / 100) * barLength);
+    const isOverflow = percentage > 100;
+
+    const filledBar = isOverflow
+      ? '🟥'.repeat(filledLength)
+      : '🟩'.repeat(filledLength);
+    const emptyBar = '⬜'.repeat(Math.max(0, barLength - filledLength));
+
+    const bar = filledBar + emptyBar;
     return `${bar} ${this.escapeMarkdownV2(percentage.toFixed(0))}%`;
   }
 }

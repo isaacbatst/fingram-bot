@@ -162,7 +162,13 @@ export class TelegramHandler {
 
     this.telegraf.command('edit', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const args = ctx.message.text.split(' ').slice(1);
+      const args = ctx.message.text
+        .split('/edit')
+        .slice(1)
+        .join('')
+        .trim()
+        .split(' ')
+        .filter((arg) => arg.trim() !== '');
       const [err, success] = await this.botService.handleEdit(chatId, args);
       if (err !== null) {
         await ctx.reply(err);
@@ -171,7 +177,7 @@ export class TelegramHandler {
       await ctx.reply(
         this.messageGenerator.formatTransactionEdited(
           args[0],
-          parseFloat(args[1]),
+          success.transaction,
           success.vault,
         ),
         { parse_mode: 'MarkdownV2' },

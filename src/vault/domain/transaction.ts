@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import { Either, left, right } from './either';
+import { TransactionDTO } from '../dto/transaction.dto,';
+import { Category } from './category';
 
 export class Transaction {
   static create({
@@ -84,5 +86,19 @@ export class Transaction {
     }
     this.isCommitted = true;
     return right(true);
+  }
+
+  toDTO(category: Category | null): TransactionDTO {
+    return {
+      id: this.id,
+      code: this.code,
+      amount: this.amount,
+      isCommitted: this.isCommitted,
+      description: this.description,
+      type: this.type,
+      createdAt: this.createdAt,
+      vaultId: this.vaultId,
+      category,
+    };
   }
 }

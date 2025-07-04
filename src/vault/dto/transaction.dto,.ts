@@ -6,6 +6,7 @@ export interface TransactionDTO {
   isCommitted: boolean;
   createdAt: Date;
   type: 'expense' | 'income';
+  vaultId: string;
   category: {
     id: string;
     name: string;
