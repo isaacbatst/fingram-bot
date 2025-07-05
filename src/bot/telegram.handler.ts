@@ -15,6 +15,19 @@ export class TelegramHandler {
     private botService: BotService,
   ) {}
 
+  /**
+   * Extrai o comando e os argumentos, removendo o sufixo @DinheirosTelegramBot se presente.
+   * Retorna: { command: string, args: string[] }
+   */
+  private parseCommandAndArgs(text: string): {
+    command: string;
+    args: string[];
+  } {
+    const [cmd, ...rest] = text.trim().split(' ');
+    const command = cmd.replace(/@DinheirosTelegramBot$/i, '');
+    return { command, args: rest };
+  }
+
   async onApplicationBootstrap() {
     this.telegraf.on(message('text'), async (ctx, next) => {
       if (!ctx.message.text.startsWith('/ai')) {
@@ -106,11 +119,11 @@ export class TelegramHandler {
 
     this.telegraf.command('create', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      // No args expected for /create
-      if (ctx.message.text.trim() !== '/create') {
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
+      // Aceita /create ou /create@DinheirosTelegramBot, sem argumentos
+      if (args.length > 0) {
         await ctx.reply(
           'Uso: /create\n\nCria um novo cofre para o chat atual.',
-          { parse_mode: 'MarkdownV2' },
         );
         return;
       }
@@ -122,7 +135,7 @@ export class TelegramHandler {
 
     this.telegraf.command('join', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const args = ctx.message.text.split(' ').slice(1);
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
           'Uso: /join <token>\n\nEntre em um cofre existente usando o token de acesso. Exemplo: /join ABC123',
@@ -143,7 +156,7 @@ export class TelegramHandler {
 
     this.telegraf.command('income', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const args = ctx.message.text.split(' ').slice(1);
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
           'Uso: /income <quantia> [descrição]\n\nRegistra uma receita no cofre atual. Exemplo: /income 100 Salário',
@@ -167,7 +180,7 @@ export class TelegramHandler {
 
     this.telegraf.command('expense', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const args = ctx.message.text.split(' ').slice(1);
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
           'Uso: /expense <quantia> [descrição]\n\nRegistra uma despesa no cofre atual. Exemplo: /expense 50 Supermercado',
@@ -191,13 +204,7 @@ export class TelegramHandler {
 
     this.telegraf.command('edit', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const args = ctx.message.text
-        .split('/edit')
-        .slice(1)
-        .join('')
-        .trim()
-        .split(' ')
-        .filter((arg) => arg.trim() !== '');
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
           'Para editar uma transação, você precisa fornecer o código da transação seguido dos campos que deseja alterar.\n\n' +
@@ -231,7 +238,8 @@ export class TelegramHandler {
 
     this.telegraf.command('setbudget', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const argsText = ctx.message.text.split('/setbudget').slice(1).join('');
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
+      const argsText = args.join(' ');
       if (!argsText.trim()) {
         await ctx.reply(
           'Uso: /setbudget <categoria1> <quantia1>, <categoria2> <quantia2> ...\n\nDefine orçamentos para categorias específicas. Exemplo: /setbudget alimentacao 500, transporte 200',
@@ -254,8 +262,12 @@ export class TelegramHandler {
 
     this.telegraf.command('summary', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const args = ctx.message.text.split('/summary').slice(1).join('');
-      const [err, result] = await this.botService.handleSummary(chatId, args);
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
+      const argsText = args.join(' ');
+      const [err, result] = await this.botService.handleSummary(
+        chatId,
+        argsText,
+      );
 
       if (err !== null) {
         await ctx.reply(err);
@@ -274,8 +286,9 @@ export class TelegramHandler {
     });
 
     this.telegraf.command('categories', async (ctx) => {
-      // No args expected for /categories
-      if (ctx.message.text.trim() !== '/categories') {
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
+      // Aceita /categories ou /categories@DinheirosTelegramBot, sem argumentos
+      if (args.length > 0) {
         await ctx.reply(
           'Uso: /categories\n\nLista todas as categorias disponíveis para uso em transações e orçamentos.',
           { parse_mode: 'MarkdownV2' },
@@ -294,8 +307,11 @@ export class TelegramHandler {
 
     this.telegraf.command('transactions', async (ctx) => {
       const chatId = ctx.chat.id.toString();
+      // Usa o texto original para garantir compatibilidade com /transactions@DinheirosTelegramBot
       const [parseArgsError, parsedArgs] = this.parseTransactionArgs(
-        ctx.message.text,
+        this.parseCommandAndArgs(ctx.message.text).command +
+          ' ' +
+          this.parseCommandAndArgs(ctx.message.text).args.join(' '),
       );
       if (parseArgsError !== null) {
         await ctx.reply(
@@ -359,7 +375,7 @@ export class TelegramHandler {
     // edit prompt command
     this.telegraf.command('editprompt', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const args = ctx.message.text.split(' ').slice(1);
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
           'Uso: /editprompt <novo prompt>\n\nEdita o prompt do cofre para personalizar a IA. Exemplo: /editprompt "Transferências para João são despesas de transporte"',
@@ -379,7 +395,7 @@ export class TelegramHandler {
     // delete transaction command /delete <transaction_code>
     this.telegraf.command('delete', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      const args = ctx.message.text.split(' ').slice(1);
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
           'Uso: /delete <código da transação>\n\nDeleta uma transação pelo código. Exemplo: /delete 123456',
