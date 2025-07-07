@@ -29,29 +29,26 @@ export class TelegramHandler {
   }
 
   async onApplicationBootstrap() {
-    this.telegraf.on(message('text'), async (ctx, next) => {
-      if (!ctx.message.text.startsWith('/ai')) {
-        return next();
-      }
-      await ctx.sendChatAction('typing');
-      const message = ctx.message.text.split('/ai')[1].trim();
-
-      if (!message) {
+    this.telegraf.command('ai', async (ctx) => {
+      const chatId = ctx.chat.id.toString();
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
+      if (args.length === 0) {
         await ctx.reply(
-          'Uso: /ai <ação>\n\n' + 'Exemplo: /ai 100 salário de setembro\n\n',
+          'Uso: /ai <ação>\n\nExemplo: /ai 100 salário de setembro\n\n',
         );
         return;
       }
-
+      await ctx.sendChatAction('typing');
+      const message = args.join(' ');
       // Refatorado: usar botService para parseVaultAction
       const [err, action] = await this.botService.parseVaultAction({
-        chatId: ctx.chat.id.toString(),
+        chatId,
         message,
       });
       if (err !== null) {
-        return ctx.reply(err);
+        await ctx.reply(err);
+        return;
       }
-
       await ctx.reply(this.messageGenerator.formatActionDetected(action), {
         parse_mode: 'MarkdownV2',
         reply_markup: {
@@ -69,7 +66,6 @@ export class TelegramHandler {
           ],
         },
       });
-      return next();
     });
 
     this.telegraf.on('callback_query', async (ctx) => {
