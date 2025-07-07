@@ -214,7 +214,11 @@ export class TelegramMessageGenerator {
 
     let text = `*Categorias Disponíveis:*\n\n`;
     for (const category of categories) {
-      text += `• \`#${this.escapeMarkdownV2(category.code)}\` \\| ${this.escapeMarkdownV2(category.name)}\n`;
+      text += `• \`#${this.escapeMarkdownV2(category.code)}\` \\| ${this.escapeMarkdownV2(category.name)}`;
+      if (category.description) {
+        text += ` \\- ${this.escapeMarkdownV2(category.description)}`;
+      }
+      text += `\n`;
     }
     text += `\nUse o código da categoria para definir orçamentos ou registrar transações\\.\n`;
     return text;
