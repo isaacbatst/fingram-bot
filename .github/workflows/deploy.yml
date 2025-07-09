@@ -19,11 +19,9 @@ jobs:
           node-version: '22.x'
       - name: Install dependencies
         run: |
-          cd ./bot
           npm clean-install
       - name: Test with the Node.js CLI
         run: |
-          cd ./bot
           npm test
 
   build-and-push:

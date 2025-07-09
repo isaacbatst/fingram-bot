@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { Either, left, right } from '../vault/domain/either';
@@ -13,6 +14,7 @@ export class TelegramHandler {
   constructor(
     private telegraf: Telegraf,
     private botService: BotService,
+    private configService: ConfigService,
   ) {}
 
   /**
@@ -28,7 +30,7 @@ export class TelegramHandler {
     return { command, args: rest };
   }
 
-  async onApplicationBootstrap() {
+  onApplicationBootstrap() {
     this.telegraf.command('ai', async (ctx) => {
       const chatId = ctx.chat.id.toString();
       const { args } = this.parseCommandAndArgs(ctx.message.text);
@@ -424,8 +426,6 @@ export class TelegramHandler {
         );
       }
     });
-
-    await this.telegraf.launch();
   }
 
   private parseTransactionArgs(text: string): Either<
