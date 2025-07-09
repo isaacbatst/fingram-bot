@@ -42,7 +42,6 @@ jobs:
       - name: Build and push Docker image for Bot
         uses: docker/build-push-action@v6
         with:
-          context: ./bot
           push: true
           tags: |
             ghcr.io/isaacbatst/fingram-bot:latest
