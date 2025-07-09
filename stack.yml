@@ -1,0 +1,22 @@
+version: "3.8"
+
+services:
+  bot:
+    image: ghcr.io/isaacbatst/fingram-bot:${GIT_COMMIT_HASH:-latest}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bot.rule=Host(`bot.congressosimulator.com.br`)"
+      - "traefik.http.services.bot.loadbalancer.server.port=3002"
+      - "traefik.http.routers.bot.entrypoints=websecure"
+      - "traefik.http.routers.bot.tls.certresolver=myresolver"
+    deploy:
+      update_config:
+        order: start-first
+      restart_policy:
+        condition: on-failure
+    networks:
+      - traefik-public
+
+networks:
+  traefik-public:
+    external: true
