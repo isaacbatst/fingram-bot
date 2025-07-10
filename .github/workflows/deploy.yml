@@ -57,8 +57,12 @@ jobs:
 
       - name: create env file
         run: |
-          echo "GIT_COMMIT_HASH=${{ github.sha }}" >> ./envfile
-
+          echo "SQLITE_DATABASE_URL=${{ secrets.SQLITE_DATABASE_URL }}" >> envfile
+          echo "OPEN_AI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> envfile
+          echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> envfile
+          echo "TELEGRAM_WEBHOOK_DOMAIN=${{ secrets.TELEGRAM_WEBHOOK_DOMAIN }}" >> envfile
+          echo "TELEGRAM_WEBHOOK_SECRET_TOKEN=${{ secrets.TELEGRAM_WEBHOOK_SECRET_TOKEN }}" >> envfile
+          echo "GIT_COMMIT_HASH=${{ github.sha }}" >> envfile
       - name: Docker Stack Deploy
         uses: cssnr/stack-deploy-action@v1
         with:
