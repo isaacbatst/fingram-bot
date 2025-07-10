@@ -62,7 +62,7 @@ jobs:
       - name: Docker Stack Deploy
         uses: cssnr/stack-deploy-action@v1
         with:
-          name: bot
+          name: golpe
           file: stack.yml
           host: congressosimulator.com.br
           user: fingram-bot
