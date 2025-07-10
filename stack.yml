@@ -7,7 +7,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bot.rule=Host(`bot.congressosimulator.com.br`)"
-      - "traefik.http.services.bot.loadbalancer.server.port=YOUR_BOT_PORT"
+      - "traefik.http.services.bot.loadbalancer.server.port=3002"
       - "traefik.http.routers.bot.entrypoints=websecure"
       - "traefik.http.routers.bot.tls.certresolver=myresolver"
     deploy:
