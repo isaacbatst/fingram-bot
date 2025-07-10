@@ -6,7 +6,9 @@ import { TelegramHandler } from './bot/telegram.handler';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(
-    AppModule.register('in-memory'),
+    AppModule.register(
+      process.env.NODE_ENV === 'production' ? 'sqlite' : 'in-memory',
+    ),
   );
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.use((req, res, next) => {
