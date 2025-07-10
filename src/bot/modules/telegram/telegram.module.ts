@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Telegraf } from 'telegraf';
+import { TelegrafStarter } from './telegraf-starter';
 
 @Module({
   providers: [
@@ -12,6 +13,7 @@ import { Telegraf } from 'telegraf';
       },
       inject: [ConfigService],
     },
+    TelegrafStarter,
   ],
   exports: [Telegraf],
 })
