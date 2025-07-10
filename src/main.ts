@@ -8,6 +8,13 @@ async function bootstrap() {
     AppModule.register('sqlite'),
   );
   const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.use((req, res, next) => {
+    // Log incoming requests
+    console.log(
+      `Incoming request: ${req.method} ${req.originalUrl} from ${req.ip}`,
+    );
+    next();
+  });
   expressApp.set('trust proxy', true);
   const telegrafStarter = app.get(TelegrafStarter);
   await telegrafStarter.start(expressApp);

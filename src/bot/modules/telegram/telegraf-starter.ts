@@ -34,14 +34,9 @@ export class TelegrafStarter {
     );
 
     server.use('/webhooks/telegram', (req, res, next) => {
-      // Log incoming requests to the webhook
       this.logger.log(
-        `Incoming request: ${req.method} ${req.originalUrl} from ${req.ip}`,
+        `Received request for Telegram webhook: ${req.method} ${req.originalUrl}`,
       );
-      next();
-    });
-
-    server.use('/webhooks/telegram', (req, res, next) => {
       if (req.headers['x-telegram-bot-api-secret-token'] !== secretToken) {
         this.logger.warn(
           `Invalid token for request: ${req.method} ${req.originalUrl}`,
