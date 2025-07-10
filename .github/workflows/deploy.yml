@@ -58,7 +58,7 @@ jobs:
       - name: create env file
         run: |
           echo "SQLITE_DATABASE_URL=${{ secrets.SQLITE_DATABASE_URL }}" >> envfile
-          echo "OPEN_AI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> envfile
+          echo "OPEN_AI_API_KEY=${{ secrets.OPEN_AI_API_KEY }}" >> envfile
           echo "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" >> envfile
           echo "TELEGRAM_WEBHOOK_DOMAIN=${{ secrets.TELEGRAM_WEBHOOK_DOMAIN }}" >> envfile
           echo "TELEGRAM_WEBHOOK_SECRET_TOKEN=${{ secrets.TELEGRAM_WEBHOOK_SECRET_TOKEN }}" >> envfile
