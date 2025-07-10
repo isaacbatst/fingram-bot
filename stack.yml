@@ -18,6 +18,8 @@ services:
       - traefik-public
     volumes:
       - /home/fingram-bot/database:/app/database
+    env_file:
+      - envfile
 
 networks:
   traefik-public:
