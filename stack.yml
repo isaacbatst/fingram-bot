@@ -3,6 +3,7 @@ version: "3.8"
 services:
   bot:
     image: ghcr.io/isaacbatst/fingram-bot:${GIT_COMMIT_HASH:-latest}
+    user: "1000:1000"
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bot.rule=Host(`bot.congressosimulator.com.br`)"
