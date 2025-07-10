@@ -2,11 +2,11 @@ version: "3.8"
 
 services:
   bot:
-    image: ghcr.io/isaacbatst/fingram-bot:${GIT_COMMIT_HASH:-latest}
+    image: ghcr.io/isaacbatst/golpe-bot:${GIT_COMMIT_HASH:-latest}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.bot.rule=Host(`bot.congressosimulator.com.br`)"
-      - "traefik.http.services.bot.loadbalancer.server.port=3002"
+      - "traefik.http.services.bot.loadbalancer.server.port=YOUR_BOT_PORT"
       - "traefik.http.routers.bot.entrypoints=websecure"
       - "traefik.http.routers.bot.tls.certresolver=myresolver"
     deploy:
@@ -16,6 +16,8 @@ services:
         condition: on-failure
     networks:
       - traefik-public
+    volumes:
+      - /home/fingram-bot/database:/app/database
 
 networks:
   traefik-public:
