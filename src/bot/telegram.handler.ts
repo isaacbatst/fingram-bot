@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { Either, left, right } from '../vault/domain/either';
@@ -14,7 +13,6 @@ export class TelegramHandler {
   constructor(
     private telegraf: Telegraf,
     private botService: BotService,
-    private configService: ConfigService,
   ) {}
 
   /**
@@ -30,7 +28,9 @@ export class TelegramHandler {
     return { command, args: rest };
   }
 
-  onApplicationBootstrap() {
+  register() {
+    this.logger.debug('Configuring Telegram bot commands and handlers...');
+
     this.telegraf.command('ai', async (ctx) => {
       const chatId = ctx.chat.id.toString();
       const { args } = this.parseCommandAndArgs(ctx.message.text);
@@ -136,7 +136,7 @@ export class TelegramHandler {
       const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
-          'Uso: /join <token>\n\nEntre em um cofre existente usando o token de acesso. Exemplo: /join ABC123',
+          'Uso: /join <token\\>\n\nEntre em um cofre existente usando o token de acesso\\. Exemplo: /join ABC123',
           { parse_mode: 'MarkdownV2' },
         );
         return;

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Express } from 'express';
 import { Telegraf } from 'telegraf';
+import { message } from 'telegraf/filters';
 
 @Injectable()
 export class TelegrafStarter {
@@ -18,10 +19,28 @@ export class TelegrafStarter {
       this.logger.log(
         'Running in development mode, bare launching Telegraf...',
       );
-      await this.telegraf.launch();
+
+      this.telegraf.on(message('text'), (ctx, next) => {
+        this.logger.log(
+          `Received message: ${ctx.message.text} from ${ctx.from.username}`,
+        );
+        return next();
+      });
+
+      await this.telegraf.launch(() => {
+        this.logger.log(
+          'Telegraf bot launched successfully in development mode',
+        );
+      });
       return;
     }
 
+    this.logger.log('Running in production mode, setting up webhook...');
+    server.set('trust proxy', true);
+    await this.setupWebhook(server);
+  }
+
+  private async setupWebhook(server: Express) {
     const domain = this.configService.getOrThrow<string>(
       'TELEGRAM_WEBHOOK_DOMAIN',
     );
