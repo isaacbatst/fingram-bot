@@ -377,7 +377,6 @@ export class TelegramHandler {
       if (args.length === 0) {
         await ctx.reply(
           'Uso: /editprompt <novo prompt>\n\nEdita o prompt do cofre para personalizar a IA. Exemplo: /editprompt "Transferências para João são despesas de transporte"',
-          { parse_mode: 'MarkdownV2' },
         );
         return;
       }
@@ -387,7 +386,47 @@ export class TelegramHandler {
         await ctx.reply(err);
         return;
       }
-      await ctx.reply('Prompt editado com sucesso!');
+      await ctx.reply(
+        `Prompt editado com sucesso! Novo prompt:\n\n${newPrompt}`,
+      );
+    });
+
+    // Comando para ler o prompt atual do cofre
+    this.telegraf.command('getprompt', async (ctx) => {
+      const chatId = ctx.chat.id.toString();
+      const [err, prompt] = await this.botService.getVaultPrompt(chatId);
+      if (err !== null) {
+        await ctx.reply(err);
+        return;
+      }
+      await ctx.reply(
+        `Prompt atual do cofre:\n\n${prompt || 'Nenhum prompt definido.'}`,
+      );
+    });
+
+    // Comando para adicionar texto ao prompt existente do cofre
+    this.telegraf.command('appendprompt', async (ctx) => {
+      const chatId = ctx.chat.id.toString();
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
+      if (args.length === 0) {
+        await ctx.reply(
+          'Uso: /appendprompt \\<texto para adicionar\\>\n\nAdiciona texto ao prompt atual do cofre\\.',
+          { parse_mode: 'MarkdownV2' },
+        );
+        return;
+      }
+      const appendText = args.join(' ');
+      const [err, updated] = await this.botService.appendVaultPrompt(
+        chatId,
+        appendText,
+      );
+      if (err !== null) {
+        await ctx.reply(err);
+        return;
+      }
+      await ctx.reply(
+        `Texto adicionado ao prompt com sucesso! Novo prompt:\n\n${updated}`,
+      );
     });
 
     // delete transaction command /delete <transaction_code>

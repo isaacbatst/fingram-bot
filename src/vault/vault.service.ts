@@ -333,7 +333,7 @@ export class VaultService {
     }
     vault.editCustomPrompt(input.customPrompt);
     await this.vaultRepository.update(vault);
-    return right(vault);
+    return right(vault.getCustomPrompt());
   }
 
   async getCategories() {
@@ -449,5 +449,30 @@ export class VaultService {
       this.logger.warn(`No vault found for token`);
     }
     return vault;
+  }
+
+  async getVaultPrompt(input: { vaultId: string }) {
+    this.logger.log(`Getting vault prompt for vault: ${input.vaultId}`);
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) {
+      this.logger.warn(`Vault not found: ${input.vaultId}`);
+      return left(`Cofre não encontrado`);
+    }
+    return right(vault.getCustomPrompt());
+  }
+
+  async appendVaultPrompt(input: { vaultId: string; appendText: string }) {
+    this.logger.log(`Appending to vault prompt for vault: ${input.vaultId}`);
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) {
+      this.logger.warn(`Vault not found: ${input.vaultId}`);
+      return left(`Cofre não encontrado`);
+    }
+    const current = vault.getCustomPrompt() || '';
+    vault.editCustomPrompt(
+      current ? current + '\n' + input.appendText : input.appendText,
+    );
+    await this.vaultRepository.update(vault);
+    return right(vault.getCustomPrompt());
   }
 }

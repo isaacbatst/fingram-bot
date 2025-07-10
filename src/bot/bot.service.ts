@@ -340,4 +340,23 @@ export class BotService {
     }
     return right(`Transação ${transactionCode} deletada com sucesso.`);
   }
+
+  async getVaultPrompt(chatId: string) {
+    const chat = await this.chatService.findChatByTelegramChatId(chatId);
+    if (!chat || !chat.vaultId) {
+      return left(BotService.NOT_STARTED_MESSAGE);
+    }
+    return await this.vaultService.getVaultPrompt({ vaultId: chat.vaultId });
+  }
+
+  async appendVaultPrompt(chatId: string, appendText: string) {
+    const chat = await this.chatService.findChatByTelegramChatId(chatId);
+    if (!chat || !chat.vaultId) {
+      return left(BotService.NOT_STARTED_MESSAGE);
+    }
+    return await this.vaultService.appendVaultPrompt({
+      vaultId: chat.vaultId,
+      appendText,
+    });
+  }
 }
