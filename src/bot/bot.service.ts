@@ -91,6 +91,7 @@ export class BotService {
           '• -v <valor> - alterar o valor\n' +
           '• -d <dd/mm/yyyy> - alterar a data\n' +
           '• -c <categoria> - alterar a categoria\n' +
+          '• -t <tipo> - alterar o tipo (income/expense)\n' +
           '• -desc "descrição" - alterar a descrição\n\n' +
           'Exemplos:\n' +
           '• /edit ABC123 -v 50.00\n' +
@@ -99,12 +100,13 @@ export class BotService {
       );
     }
     const code = args[0];
-    // Parse flags: -v value -d dd/mm/yyyy -c categoryCode -desc "description with spaces"
+    // Parse flags: -v value -d dd/mm/yyyy -c categoryCode -t type -desc "description with spaces"
     const flags = args.slice(1);
     let newAmount: number | undefined;
     let newDate: Date | undefined;
     let newCategory: string | undefined;
     let newDescription: string | undefined;
+    let newType: 'income' | 'expense' | undefined;
 
     for (let i = 0; i < flags.length; i++) {
       const flag = flags[i];
@@ -137,6 +139,14 @@ export class BotService {
       } else if (flag === '-c' && flags[i + 1]) {
         newCategory = flags[i + 1];
         i++;
+      } else if (flag === '-t' && flags[i + 1]) {
+        const typeValue = flags[i + 1].toLowerCase();
+        if (typeValue === 'income' || typeValue === 'expense') {
+          newType = typeValue;
+        } else {
+          return left('Tipo inválido para -t. Use income ou expense.');
+        }
+        i++;
       } else if (flag === '-desc' && flags[i + 1]) {
         newDescription = flags[i + 1];
         // If description is quoted, join until closing quote
@@ -157,10 +167,11 @@ export class BotService {
       newAmount === undefined &&
       newDate === undefined &&
       newCategory === undefined &&
-      newDescription === undefined
+      newDescription === undefined &&
+      newType === undefined
     ) {
       return left(
-        'Nenhum campo para editar informado. Use -v, -d, -c ou -desc.',
+        'Nenhum campo para editar informado. Use -v, -d, -c, -t ou -desc.',
       );
     }
 
@@ -174,6 +185,7 @@ export class BotService {
       date: newDate,
       categoryCode: newCategory,
       description: newDescription,
+      type: newType,
     });
   }
 

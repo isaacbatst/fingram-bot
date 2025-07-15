@@ -70,6 +70,7 @@ export class Vault {
       description?: string;
       categoryId?: string;
       date?: Date;
+      type?: 'income' | 'expense';
     },
   ): Either<string, Transaction> {
     const transaction = this.findTransactionByCode(code);
@@ -86,6 +87,15 @@ export class Vault {
     }
     if (options.date !== undefined) {
       transaction.createdAt = options.date;
+    }
+
+    if (options.type !== undefined) {
+      if (options.type !== 'income' && options.type !== 'expense') {
+        return left(
+          'Tipo de transação inválido. Deve ser "income" ou "expense".',
+        );
+      }
+      transaction.type = options.type;
     }
 
     this.transactionsTracker.registerDirty(transaction);

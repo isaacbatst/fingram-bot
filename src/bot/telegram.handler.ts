@@ -211,6 +211,7 @@ export class TelegramHandler {
             '• -v <valor> - alterar o valor\n' +
             '• -d <dd/mm/yyyy> - alterar a data\n' +
             '• -c <categoria> - alterar a categoria\n' +
+            '• -t <tipo> - alterar o tipo (income/expense)\n' +
             '• -desc "descrição" - alterar a descrição\n\n' +
             'Exemplos:\n' +
             '• /edit ABC123 -v 50.00\n' +
