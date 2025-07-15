@@ -93,4 +93,12 @@ export const CATEGORIES_SEED: {
       'Salário, freelance, bônus, comissão, décimo terceiro, férias recebidas, pagamento por serviços, renda extra, remuneração, prêmios, horas extras, recebimentos de trabalho, job, consultoria. Palavras-chave: salário, freelance, bônus, comissão, prêmio, hora extra, job, consultoria, remuneração, férias, renda.',
     transaction_type: 'income',
   },
+  {
+    id: '4aaf2ae5-7f40-4bd1-a3bb-3e0c5f3d112a',
+    name: '🧾 Impostos & Taxas',
+    code: '12',
+    description:
+      'Imposto de Renda, taxas governamentais, taxas de cartório, taxas bancárias (manutenção de conta, transferências), taxas de serviços públicos, anuidades, emolumentos, tributos municipais, estaduais e federais, INSS, DARF, multas administrativas. Palavras-chave: imposto, IR, IRPF, tributo, taxa, cartório, anuidade, INSS, DARF, boleto, emolumento, bancária, taxa extra.',
+    transaction_type: 'expense',
+  },
 ];
