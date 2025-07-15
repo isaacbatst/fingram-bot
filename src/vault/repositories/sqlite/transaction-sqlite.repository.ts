@@ -63,6 +63,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
     const items = rows.map<TransactionDTO>((row) => ({
       id: row.id,
       code: row.code,
+      vaultId: row.vault_id,
       description: row.description,
       amount: row.amount,
       isCommitted: !!row.committed,

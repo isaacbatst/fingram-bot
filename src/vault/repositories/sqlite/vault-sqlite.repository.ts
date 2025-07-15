@@ -65,13 +65,14 @@ export class VaultSqliteRepository extends VaultRepository {
       for (const transaction of transactionsChanges.dirty) {
         this.db
           .prepare(
-            'UPDATE "transaction" SET amount = ?, category_id = ?, created_at = ?, description = ? WHERE vault_id = ? AND id = ?',
+            'UPDATE "transaction" SET amount = ?, category_id = ?, created_at = ?, description = ?, type = ? WHERE vault_id = ? AND id = ?',
           )
           .run(
             transaction.amount,
             transaction.categoryId,
             transaction.createdAt.toISOString(),
             transaction.description,
+            transaction.type,
             vault.id,
             transaction.id,
           );
