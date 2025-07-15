@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BotModule } from './bot/bot.module';
 import { ConfigModule } from '@nestjs/config';
+import { AppController } from './app.controller';
 
 @Module({})
 export class AppModule {
@@ -13,6 +14,7 @@ export class AppModule {
         }),
         BotModule.register(config),
       ],
+      controllers: [AppController],
     };
   }
 }

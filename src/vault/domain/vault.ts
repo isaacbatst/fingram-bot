@@ -4,6 +4,41 @@ import { Either, left, right } from './either';
 import { Transaction } from './transaction';
 import { ChangesTracker } from './changes-tracker';
 
+// Interfaces para serialização
+export interface SerializedCategory {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+}
+
+export interface SerializedTransaction {
+  id: string;
+  code: string;
+  amount: number;
+  isCommitted: boolean;
+  description?: string;
+  createdAt: string; // Date como string JSON
+  categoryId: string | null;
+  type: 'expense' | 'income';
+  vaultId: string;
+}
+
+export interface SerializedVault {
+  id: string;
+  token: string;
+  balance: number;
+  customPrompt: string;
+  createdAt: string;
+  transactions: [string, SerializedTransaction][];
+  budgets: [string, { category: SerializedCategory; amount: number }][];
+  totalBudgetedAmount: number;
+  percentageTotalBudgetedAmount: number;
+  totalSpentAmount: number;
+  totalIncome: number;
+  budgetsSummary: BudgetSummary[];
+}
+
 export type BudgetSummary = {
   category: Category;
   spent: number;
@@ -202,6 +237,25 @@ export class Vault {
     return total;
   }
 
+  totalIncomeAmount(date?: { month: number; year: number }): number {
+    let total = 0;
+    for (const transaction of this.transactions.values()) {
+      if (transaction.type === 'income') {
+        if (!date) {
+          const now = new Date();
+          date = { month: now.getMonth() + 1, year: now.getFullYear() };
+        }
+        const transactionDate = new Date(transaction.createdAt);
+        const transactionMonth = transactionDate.getMonth() + 1;
+        const transactionYear = transactionDate.getFullYear();
+        if (transactionMonth === date.month && transactionYear === date.year) {
+          total += transaction.amount;
+        }
+      }
+    }
+    return total;
+  }
+
   getCustomPrompt(): string {
     return this.customPrompt;
   }
@@ -210,5 +264,67 @@ export class Vault {
     this.transactionsTracker.clearChanges();
     this.budgetsTracker.clearChanges();
     this.isDirty = false;
+  }
+
+  /**
+   * Serializa o vault no formato necessário para o front-end
+   * @returns SerializedVault - Representação serializada do vault
+   */
+  toJSON(
+    options: {
+      date?: { month: number; year: number };
+    } = {},
+  ): SerializedVault {
+    // Serializar transações
+    const serializedTransactions: [string, SerializedTransaction][] =
+      Array.from(this.transactions.entries()).map(([id, transaction]) => [
+        id,
+        {
+          id: transaction.id,
+          code: transaction.code,
+          amount: transaction.amount,
+          isCommitted: transaction.isCommitted,
+          description: transaction.description,
+          createdAt: transaction.createdAt.toISOString(),
+          categoryId: transaction.categoryId,
+          type: transaction.type,
+          vaultId: transaction.vaultId,
+        },
+      ]);
+
+    // Serializar orçamentos
+    const serializedBudgets: [
+      string,
+      { category: SerializedCategory; amount: number },
+    ][] = Array.from(this.budgets.entries()).map(([id, budget]) => [
+      id,
+      {
+        category: {
+          id: budget.category.id,
+          name: budget.category.name,
+          code: budget.category.code,
+          description: budget.category.description,
+        },
+        amount: budget.amount,
+      },
+    ]);
+
+    return {
+      id: this.id,
+      token: this.token,
+      customPrompt: this.customPrompt,
+      createdAt: this.createdAt.toISOString(),
+      transactions: serializedTransactions,
+      budgets: serializedBudgets,
+      balance: this.getBalance(),
+      totalBudgetedAmount: this.totalBudgetedAmount(),
+      percentageTotalBudgetedAmount: this.percentageTotalBudgetedAmount(),
+      totalSpentAmount: this.totalSpentAmount(options.date),
+      totalIncome: this.totalIncomeAmount(options.date),
+      budgetsSummary: this.getBudgetsSummary(
+        options.date?.month,
+        options.date?.year,
+      ),
+    };
   }
 }

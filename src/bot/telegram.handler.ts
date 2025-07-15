@@ -4,19 +4,31 @@ import { message } from 'telegraf/filters';
 import { Either, left, right } from '../vault/domain/either';
 import { BotService } from './bot.service';
 import { TelegramMessageGenerator } from './telegram-message-generator';
+import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class TelegramHandler {
   private readonly messageGenerator = new TelegramMessageGenerator();
   private readonly logger = new Logger(TelegramHandler.name);
+  private readonly WEB_APP_URL: string;
+  private readonly BOT_USERNAME: string;
 
   constructor(
     private telegraf: Telegraf,
     private botService: BotService,
-  ) {}
+    private configService: ConfigService,
+  ) {
+    this.WEB_APP_URL = this.configService.getOrThrow<string>(
+      'TELEGRAM_MINIAPP_URL',
+    );
+    this.BOT_USERNAME = this.configService.getOrThrow<string>(
+      'TELEGRAM_BOT_USERNAME',
+    );
+  }
 
   /**
-   * Extrai o comando e os argumentos, removendo o sufixo @DinheirosTelegramBot se presente.
+   * Extrai o comando e os argumentos, removendo o sufixo @BOT_USERNAME se presente.
    * Retorna: { command: string, args: string[] }
    */
   private parseCommandAndArgs(text: string): {
@@ -24,7 +36,7 @@ export class TelegramHandler {
     args: string[];
   } {
     const [cmd, ...rest] = text.trim().split(' ');
-    const command = cmd.replace(/@DinheirosTelegramBot$/i, '');
+    const command = cmd.replace(new RegExp(`@${this.BOT_USERNAME}$`, 'i'), '');
     return { command, args: rest };
   }
 
@@ -101,7 +113,7 @@ export class TelegramHandler {
           }
           await ctx.editMessageText(
             this.messageGenerator.formatTransactionSuccessMessage(
-              success.vault,
+              success.vault.toJSON(),
               success.transaction,
             ),
             { parse_mode: 'MarkdownV2' },
@@ -115,10 +127,15 @@ export class TelegramHandler {
       return;
     });
 
+    this.telegraf.on(message('text'), async (ctx, next) => {
+      console.log('Received text message:', ctx.chat);
+      return next();
+    });
+
     this.telegraf.command('create', async (ctx) => {
       const chatId = ctx.chat.id.toString();
       const { args } = this.parseCommandAndArgs(ctx.message.text);
-      // Aceita /create ou /create@DinheirosTelegramBot, sem argumentos
+      // Aceita /create ou /create@BOT_USERNAME, sem argumentos
       if (args.length > 0) {
         await ctx.reply(
           'Uso: /create\n\nCria um novo cofre para o chat atual.',
@@ -162,14 +179,25 @@ export class TelegramHandler {
         );
         return;
       }
-      const [err, success] = await this.botService.handleIncome(chatId, args);
+
+      // Parse income args
+      const [parseError, parsedParams] = this.parseIncomeArgs(args);
+      if (parseError !== null) {
+        await ctx.reply(parseError);
+        return;
+      }
+
+      const [err, success] = await this.botService.handleIncome(
+        chatId,
+        parsedParams,
+      );
       if (err !== null) {
         await ctx.reply(err);
         return;
       }
       await ctx.reply(
         this.messageGenerator.formatTransactionSuccessMessage(
-          success.vault,
+          success.vault.toJSON(),
           success.transaction,
         ),
         { parse_mode: 'MarkdownV2' },
@@ -193,7 +221,7 @@ export class TelegramHandler {
       }
       await ctx.reply(
         this.messageGenerator.formatTransactionSuccessMessage(
-          success.vault,
+          success.vault.toJSON(),
           success.transaction,
         ),
         { parse_mode: 'MarkdownV2' },
@@ -219,14 +247,25 @@ export class TelegramHandler {
         );
         return;
       }
-      const [err, success] = await this.botService.handleEdit(chatId, args);
+
+      // Parse edit transaction args
+      const [parseError, parsedParams] = this.parseEditTransactionArgs(args);
+      if (parseError !== null) {
+        await ctx.reply(parseError);
+        return;
+      }
+
+      const [err, success] = await this.botService.handleEdit(
+        chatId,
+        parsedParams,
+      );
       if (err !== null) {
         await ctx.reply(err);
         return;
       }
       await ctx.reply(
         this.messageGenerator.formatTransactionEdited(
-          args[0],
+          parsedParams.transactionCode,
           success.transaction,
           success.vault,
         ),
@@ -285,7 +324,7 @@ export class TelegramHandler {
 
     this.telegraf.command('categories', async (ctx) => {
       const { args } = this.parseCommandAndArgs(ctx.message.text);
-      // Aceita /categories ou /categories@DinheirosTelegramBot, sem argumentos
+      // Aceita /categories ou /categories@BOT_USERNAME, sem argumentos
       if (args.length > 0) {
         await ctx.reply(
           'Uso: /categories\n\nLista todas as categorias disponíveis para uso em transações e orçamentos.',
@@ -305,7 +344,7 @@ export class TelegramHandler {
 
     this.telegraf.command('transactions', async (ctx) => {
       const chatId = ctx.chat.id.toString();
-      // Usa o texto original para garantir compatibilidade com /transactions@DinheirosTelegramBot
+      // Usa o texto original para garantir compatibilidade com /transactions@BOT_USERNAME
       const [parseArgsError, parsedArgs] = this.parseTransactionArgs(
         this.parseCommandAndArgs(ctx.message.text).command +
           ' ' +
@@ -318,7 +357,7 @@ export class TelegramHandler {
         );
         return;
       }
-      const [err, transactions] = await this.botService.handleTransactions(
+      const [err, transactions] = await this.botService.getTransactions(
         chatId,
         parsedArgs,
       );
@@ -357,7 +396,10 @@ export class TelegramHandler {
           return ctx.reply(err);
         }
         return ctx.reply(
-          this.messageGenerator.formatVault(vault, vault.getBudgetsSummary()),
+          this.messageGenerator.formatVault(
+            vault.toJSON(),
+            vault.getBudgetsSummary(),
+          ),
           {
             parse_mode: 'MarkdownV2',
           },
@@ -449,6 +491,42 @@ export class TelegramHandler {
         return;
       }
       await ctx.reply(success);
+    });
+
+    this.telegraf.on('message', async (ctx, next) => {
+      if (ctx.message && 'web_app_data' in ctx.message) {
+        this.logger.log('Received Web App data');
+        const webAppData = ctx.message.web_app_data;
+        if (!webAppData || !webAppData.data) {
+          await ctx.reply('Nenhum dado recebido do Mini App.');
+          return;
+        }
+        this.logger.log(`Received Web App data: ${webAppData.data}`);
+        await ctx.reply(`Dados recebidos do Mini App: ${webAppData.data}`);
+        return;
+      }
+      return next();
+    });
+
+    this.telegraf.command('miniapp', async (ctx) => {
+      const token = randomUUID();
+      this.botService.saveToken(token, ctx.chat.id);
+      this.logger.log(`Generated token: ${token} for chatId: ${ctx.chat.id}`);
+      const directLink = `https://t.me/${this.BOT_USERNAME}?startapp=${token}`;
+
+      await ctx.reply(directLink);
+    });
+    this.telegraf.on('inline_query', async (ctx) => {
+      this.logger.log('Received inline query', ctx.inlineQuery.query);
+      const webAppUrl = this.WEB_APP_URL;
+      const button = {
+        text: 'Abrir Mini App',
+        web_app: { url: webAppUrl },
+      };
+      this.logger.log(`Answering inline query with button: ${button.text}`);
+      await ctx.answerInlineQuery([], {
+        button,
+      });
     });
 
     this.telegraf.command('help', async (ctx) => {
@@ -557,5 +635,116 @@ export class TelegramHandler {
       }
     }
     throw new Error('Failed to get file after retries');
+  }
+
+  /**
+   * Parse income command arguments
+   * Format: <amount> [description]
+   */
+  private parseIncomeArgs(args: string[]): Either<
+    string,
+    {
+      amount: number;
+      description?: string;
+    }
+  > {
+    if (args.length < 1) {
+      return left('Uso: /income <quantia> [descrição]');
+    }
+
+    const amount = parseFloat(args[0]);
+    if (isNaN(amount)) {
+      return left('Quantia inválida. Use um número.');
+    }
+
+    const description = args.slice(1).join(' ') || undefined;
+
+    return right({
+      amount,
+      description,
+    });
+  }
+
+  /**
+   * Parse transaction edit command arguments
+   * Format: <code> -v <valor> -d <dd/mm/yyyy> -c <categoria> -desc "descrição"
+   */
+  private parseEditTransactionArgs(args: string[]): Either<
+    string,
+    {
+      transactionCode: string;
+      newAmount?: number;
+      newDate?: Date;
+      newCategory?: string;
+      newDescription?: string;
+    }
+  > {
+    if (args.length < 1) {
+      return left(
+        'Para editar uma transação, você precisa fornecer o código da transação seguido dos campos que deseja alterar.',
+      );
+    }
+
+    const transactionCode = args[0];
+    const flags = args.slice(1);
+    let newAmount: number | undefined;
+    let newDate: Date | undefined;
+    let newCategory: string | undefined;
+    let newDescription: string | undefined;
+
+    for (let i = 0; i < flags.length; i++) {
+      const flag = flags[i];
+      if (flag === '-v' && flags[i + 1]) {
+        const value = parseFloat(flags[i + 1]);
+        if (isNaN(value)) return left('Valor inválido para -v. Use um número.');
+        newAmount = value;
+        i++;
+      } else if (flag === '-d' && flags[i + 1]) {
+        // Accept date as dd/mm/yyyy
+        const dateParts = flags[i + 1].split('/');
+        if (dateParts.length === 3) {
+          const [day, month, year] = dateParts.map(Number);
+          if (
+            !isNaN(day) &&
+            !isNaN(month) &&
+            !isNaN(year) &&
+            day > 0 &&
+            month > 0 &&
+            year > 0
+          ) {
+            newDate = new Date(year, month - 1, day);
+          } else {
+            return left('Data inválida para -d. Use dd/mm/yyyy.');
+          }
+        } else {
+          return left('Data inválida para -d. Use dd/mm/yyyy.');
+        }
+        i++;
+      } else if (flag === '-c' && flags[i + 1]) {
+        newCategory = flags[i + 1];
+        i++;
+      } else if (flag === '-desc' && flags[i + 1]) {
+        newDescription = flags[i + 1];
+        // If description is quoted, join until closing quote
+        if (newDescription.startsWith('"')) {
+          let desc = newDescription;
+          let j = i + 2;
+          while (!desc.endsWith('"') && j < flags.length) {
+            desc += ' ' + flags[j];
+            j++;
+          }
+          newDescription = desc.replace(/^"|"$/g, '');
+          i = j - 1;
+        }
+      }
+    }
+
+    return right({
+      transactionCode,
+      newAmount,
+      newDate,
+      newCategory,
+      newDescription,
+    });
   }
 }

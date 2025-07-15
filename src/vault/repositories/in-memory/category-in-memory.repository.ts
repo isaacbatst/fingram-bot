@@ -17,4 +17,13 @@ export class CategoryInMemoryRepository extends CategoryRepository {
   async findById(id: string): Promise<Category | null> {
     return this.store.categories.get(id) ?? null;
   }
+
+  async findByCode(code: string): Promise<Category | null> {
+    for (const category of this.store.categories.values()) {
+      if (category.code === code) {
+        return category;
+      }
+    }
+    return null;
+  }
 }

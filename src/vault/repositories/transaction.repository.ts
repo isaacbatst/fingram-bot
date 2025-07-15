@@ -10,6 +10,7 @@ export abstract class TransactionRepository {
         month: number;
         year: number;
       };
+      categoryId?: string;
       page?: number;
       pageSize?: number;
     },

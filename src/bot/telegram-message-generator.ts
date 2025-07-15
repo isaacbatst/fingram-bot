@@ -1,7 +1,7 @@
 import { ActionType } from '../vault/domain/action';
 import { Category } from '../vault/domain/category';
 import { Paginated } from '../vault/domain/paginated';
-import { BudgetSummary, Vault } from '../vault/domain/vault';
+import { BudgetSummary, SerializedVault, Vault } from '../vault/domain/vault';
 import { TransactionDTO } from '../vault/dto/transaction.dto,';
 
 export class TelegramMessageGenerator {
@@ -21,10 +21,10 @@ export class TelegramMessageGenerator {
    * @returns Mensagem formatada em Markdown V2
    */
   formatTransactionSuccessMessage(
-    vault: Vault,
+    vault: SerializedVault,
     transaction: TransactionDTO,
   ): string {
-    const valor = this.escapeMarkdownV2(
+    const value = this.escapeMarkdownV2(
       Math.abs(transaction.amount).toLocaleString('pt-BR', {
         style: 'currency',
         currency: 'BRL',
@@ -32,7 +32,7 @@ export class TelegramMessageGenerator {
       }),
     );
     const saldo = this.escapeMarkdownV2(
-      vault.getBalance().toLocaleString('pt-BR', {
+      vault.balance.toLocaleString('pt-BR', {
         style: 'currency',
         currency: 'BRL',
         minimumFractionDigits: 2,
@@ -45,13 +45,13 @@ export class TelegramMessageGenerator {
       : '';
     return (
       `${emoji} *${tipo} registrada com sucesso\\!*\n\n` +
-      `*Valor:* ${valor}${desc}\n` +
+      `*Valor:* ${value}${desc}\n` +
       `*Categoria:* ${this.escapeMarkdownV2(
         transaction.category?.name ?? 'Nenhuma categoria especificada',
       )}\n\n` +
       `*Saldo atual:* ${saldo}` +
       `\n\n` +
-      this.formatBudgetSummary(vault, vault.getBudgetsSummary())
+      this.formatBudgetSummary(vault, vault.budgetsSummary)
     );
   }
 
@@ -61,7 +61,7 @@ export class TelegramMessageGenerator {
    * @returns Mensagem formatada em Markdown V2
    */
   formatVault(
-    vault: Vault,
+    vault: SerializedVault,
     budget: BudgetSummary[],
     date?: {
       month: number;
@@ -72,7 +72,7 @@ export class TelegramMessageGenerator {
       month: new Date().getMonth() + 1,
       year: new Date().getFullYear(),
     };
-    const balance = vault.getBalance().toLocaleString('pt-BR', {
+    const balance = vault.balance.toLocaleString('pt-BR', {
       style: 'currency',
       currency: 'BRL',
       minimumFractionDigits: 2,
@@ -80,7 +80,7 @@ export class TelegramMessageGenerator {
 
     let text = `💰 Cofre\n`;
     text += `Token: \`${this.escapeMarkdownV2(vault.token)}\`\n`;
-    text += `Criado em: ${this.escapeMarkdownV2(vault.createdAt.toLocaleDateString('pt-BR'))}\n`;
+    text += `Criado em: ${this.escapeMarkdownV2(new Date(vault.createdAt).toLocaleDateString('pt-BR'))}\n`;
     text += `Resumo referente a: ${date.month.toString().padStart(2, '0')}/${date.year}\n`;
     text += `Saldo atual: ${this.escapeMarkdownV2(balance)}\n\n`;
     text += this.formatBudgetSummary(vault, budget);
@@ -321,24 +321,27 @@ export class TelegramMessageGenerator {
     );
   }
 
-  formatBudgetSummary(vault: Vault, budgetsSummary: BudgetSummary[]): string {
+  formatBudgetSummary(
+    vault: SerializedVault,
+    budgetsSummary: BudgetSummary[],
+  ): string {
     let text: string = '';
     if (budgetsSummary.length > 0) {
       text += `• Orçamento: R$ ${this.escapeMarkdownV2(
-        vault.totalBudgetedAmount().toLocaleString('pt-BR', {
+        vault.totalBudgetedAmount.toLocaleString('pt-BR', {
           style: 'currency',
           currency: 'BRL',
           minimumFractionDigits: 2,
         }),
       )}\n`;
       text += `\n  Total gasto: R$ ${this.escapeMarkdownV2(
-        vault.totalSpentAmount().toLocaleString('pt-BR', {
+        vault.totalSpentAmount.toLocaleString('pt-BR', {
           style: 'currency',
           currency: 'BRL',
           minimumFractionDigits: 2,
         }),
       )}\n`;
-      text += `  ${this.formatPercentageBar(vault.percentageTotalBudgetedAmount())}\n\n`;
+      text += `  ${this.formatPercentageBar(vault.percentageTotalBudgetedAmount)}\n\n`;
 
       text += `*Categorias*:\n\n`;
 

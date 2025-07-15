@@ -27,11 +27,16 @@ export class TelegrafStarter {
         return next();
       });
 
-      await this.telegraf.launch(() => {
-        this.logger.log(
-          'Telegraf bot launched successfully in development mode',
-        );
-      });
+      this.telegraf
+        .launch(() => {
+          this.logger.log(
+            'Telegraf bot launched successfully in development mode',
+          );
+        })
+        .catch((error) => {
+          this.logger.error('Failed to launch Telegraf bot:', error);
+          throw error;
+        });
       return;
     }
 

@@ -3,18 +3,17 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { TelegrafStarter } from './bot/modules/telegram/telegraf-starter';
 import { TelegramHandler } from './bot/telegram.handler';
+import { Logger } from '@nestjs/common';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(
-    AppModule.register(
-      process.env.NODE_ENV === 'production' ? 'sqlite' : 'in-memory',
-    ),
+    AppModule.register('sqlite'),
   );
+  app.enableCors();
   const expressApp = app.getHttpAdapter().getInstance();
+  const logger = new Logger('Bootstrap');
   expressApp.use((req, res, next) => {
-    console.log(
-      `Incoming request: ${req.method} ${req.originalUrl} from ${req.ip}`,
-    );
+    logger.debug(`Request: ${req.method} ${req.url}`);
     next();
   });
   const telegramHandler = app.get(TelegramHandler);

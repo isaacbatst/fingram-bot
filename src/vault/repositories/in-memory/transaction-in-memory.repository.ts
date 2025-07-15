@@ -15,6 +15,7 @@ export class TransactionInMemoryRepository extends TransactionRepository {
     vaultId: string,
     filter?: {
       date: { day?: number; month: number; year: number };
+      categoryId?: string;
       page: number;
       pageSize?: number;
     },
@@ -44,6 +45,12 @@ export class TransactionInMemoryRepository extends TransactionRepository {
       });
     }
 
+    if (filter?.categoryId) {
+      transactions = transactions.filter(
+        (transaction) => transaction.categoryId === filter.categoryId,
+      );
+    }
+
     const total = transactions.length;
     const page = filter?.page ?? 1;
     const pageSize = filter?.pageSize ?? 10;
@@ -61,6 +68,7 @@ export class TransactionInMemoryRepository extends TransactionRepository {
       );
       return {
         id: transaction.id,
+        vaultId: vault.id,
         code: transaction.code,
         description: transaction.description,
         amount: transaction.amount,

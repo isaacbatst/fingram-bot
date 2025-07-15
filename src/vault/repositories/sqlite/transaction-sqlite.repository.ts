@@ -33,6 +33,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
     vaultId: string,
     filter?: {
       date?: { day?: number; month: number; year: number };
+      categoryId?: string;
       page?: number;
       pageSize?: number;
     },
@@ -55,6 +56,10 @@ export class TransactionSqliteRepository extends TransactionRepository {
         params.push(String(filter.date.day).padStart(2, '0'));
       }
     }
+    if (filter?.categoryId) {
+      query += ' AND t.category_id = ?';
+      params.push(filter.categoryId);
+    }
     query += ' ORDER BY t.created_at DESC LIMIT ? OFFSET ?';
     params.push(pageSize, offset);
     const rows = this.db
@@ -62,6 +67,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
       .all(...params) as JoinedTransactionRow[];
     const items = rows.map<TransactionDTO>((row) => ({
       id: row.id,
+      vaultId: row.vault_id,
       code: row.code,
       description: row.description,
       amount: row.amount,
@@ -77,12 +83,26 @@ export class TransactionSqliteRepository extends TransactionRepository {
           }
         : null,
     }));
+    // Add categoryId filter to the count query as well
+    let countQuery =
+      'SELECT COUNT(*) as count FROM "transaction" t WHERE t.vault_id = ?';
+    const countParams: unknown[] = [vaultId];
+    if (filter?.categoryId) {
+      countQuery += ' AND t.category_id = ?';
+      countParams.push(filter.categoryId);
+    }
+    if (filter?.date) {
+      countQuery +=
+        " AND strftime('%m', t.created_at) = ? AND strftime('%Y', t.created_at) = ?";
+      countParams.push(String(filter.date.month).padStart(2, '0'));
+      countParams.push(String(filter.date.year));
+      if (filter.date.day !== undefined) {
+        countQuery += " AND strftime('%d', t.created_at) = ?";
+        countParams.push(String(filter.date.day).padStart(2, '0'));
+      }
+    }
     const total = (
-      this.db
-        .prepare(
-          'SELECT COUNT(*) as count FROM "transaction" t WHERE t.vault_id = ?',
-        )
-        .get(vaultId) as { count: number }
+      this.db.prepare(countQuery).get(...countParams) as { count: number }
     ).count;
     const totalPages = Math.ceil(total / pageSize);
     return { items, total, page, pageSize, totalPages };
