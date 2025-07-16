@@ -35,7 +35,7 @@ export interface SerializedVault {
   totalBudgetedAmount: number;
   percentageTotalBudgetedAmount: number;
   totalSpentAmount: number;
-  totalIncome: number;
+  totalIncomeAmount: number;
   budgetsSummary: BudgetSummary[];
 }
 
@@ -330,7 +330,7 @@ export class Vault {
       totalBudgetedAmount: this.totalBudgetedAmount(),
       percentageTotalBudgetedAmount: this.percentageTotalBudgetedAmount(),
       totalSpentAmount: this.totalSpentAmount(options.date),
-      totalIncome: this.totalIncomeAmount(options.date),
+      totalIncomeAmount: this.totalIncomeAmount(options.date),
       budgetsSummary: this.getBudgetsSummary(
         options.date?.month,
         options.date?.year,
