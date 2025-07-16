@@ -7,13 +7,6 @@ import { ChatService } from './modules/chat/chat.service';
 export class BotService {
   private static readonly NOT_STARTED_MESSAGE =
     'Cofre não inicializado. Use /create para criar um novo cofre ou /join para entrar em um cofre existente.';
-  private readonly tokenStore: Map<
-    string,
-    {
-      expiresAt: number;
-      chatId: number;
-    }
-  > = new Map();
 
   constructor(
     private readonly chatService: ChatService,
@@ -313,18 +306,5 @@ export class BotService {
       vaultId: chat.vaultId,
       appendText,
     });
-  }
-
-  saveToken(token: string, chatId: number) {
-    const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hora
-    this.tokenStore.set(token, { expiresAt, chatId });
-  }
-
-  getChatIdFromToken(token: string): number | null {
-    const entry = this.tokenStore.get(token);
-    if (entry && entry.expiresAt > Date.now()) {
-      return entry.chatId;
-    }
-    return null;
   }
 }

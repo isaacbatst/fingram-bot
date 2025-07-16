@@ -47,6 +47,14 @@ export interface MiniappError {
 export class MiniappService {
   private readonly BOT_TOKEN: string;
 
+  private readonly tokenStore: Map<
+    string,
+    {
+      expiresAt: number;
+      chatId: number;
+    }
+  > = new Map();
+
   constructor(
     private readonly configService: ConfigService,
     private readonly botService: BotService,
@@ -96,7 +104,7 @@ export class MiniappService {
           type: MiniappErrorType.UNAUTHORIZED,
         });
       }
-      const chatId = this.botService.getChatIdFromToken(data?.start_param);
+      const chatId = this.getChatIdFromToken(data?.start_param);
       if (!chatId) {
         this.debugLog('Chat ID não encontrado a partir do token', {
           startParam: data.start_param,
@@ -191,7 +199,7 @@ export class MiniappService {
           type: MiniappErrorType.UNAUTHORIZED,
         });
       }
-      const chatId = this.botService.getChatIdFromToken(data?.start_param);
+      const chatId = this.getChatIdFromToken(data?.start_param);
       if (!chatId) {
         this.debugLog('Chat ID não encontrado a partir do token', {
           startParam: data.start_param,
@@ -378,7 +386,7 @@ export class MiniappService {
         });
       }
 
-      const chatId = this.botService.getChatIdFromToken(data?.start_param);
+      const chatId = this.getChatIdFromToken(data?.start_param);
       if (!chatId) {
         return left({
           message: 'Sessão inválida ou expirada',
@@ -418,5 +426,18 @@ export class MiniappService {
         type: MiniappErrorType.INTERNAL_ERROR,
       });
     }
+  }
+
+  saveToken(token: string, chatId: number) {
+    const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hora
+    this.tokenStore.set(token, { expiresAt, chatId });
+  }
+
+  getChatIdFromToken(token: string): number | null {
+    const entry = this.tokenStore.get(token);
+    if (entry && entry.expiresAt > Date.now()) {
+      return entry.chatId;
+    }
+    return null;
   }
 }

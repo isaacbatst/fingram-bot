@@ -6,6 +6,7 @@ import { BotService } from './bot.service';
 import { TelegramMessageGenerator } from './telegram-message-generator';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
+import { MiniappService } from './miniapp.service';
 
 @Injectable()
 export class TelegramHandler {
@@ -17,6 +18,7 @@ export class TelegramHandler {
   constructor(
     private telegraf: Telegraf,
     private botService: BotService,
+    private miniappService: MiniappService,
     private configService: ConfigService,
   ) {
     this.WEB_APP_URL = this.configService.getOrThrow<string>(
@@ -511,7 +513,7 @@ export class TelegramHandler {
 
     this.telegraf.command('miniapp', async (ctx) => {
       const token = randomUUID();
-      this.botService.saveToken(token, ctx.chat.id);
+      this.miniappService.saveToken(token, ctx.chat.id);
       this.logger.log(`Generated token: ${token} for chatId: ${ctx.chat.id}`);
       const directLink = `https://t.me/${this.BOT_USERNAME}?startapp=${token}`;
 
