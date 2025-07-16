@@ -63,9 +63,7 @@ jobs:
           echo "TELEGRAM_WEBHOOK_DOMAIN=${{ secrets.TELEGRAM_WEBHOOK_DOMAIN }}" >> envfile
           echo "TELEGRAM_WEBHOOK_SECRET_TOKEN=${{ secrets.TELEGRAM_WEBHOOK_SECRET_TOKEN }}" >> envfile
           echo "TELEGRAM_BOT_USERNAME=${{ secrets.TELEGRAM_BOT_USERNAME }}" >> envfile
-          echo "GIT_COMMIT_HASH=${{ github.sha }}" >> envfile
           echo "TELEGRAM_MINIAPP_URL=${{ secrets.TELEGRAM_MINIAPP_URL }}" >> envfile
-          echo "DEPLOY_SSH_PRIVATE_KEY=${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}" >> envfile
           echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> envfile
           echo "GIT_COMMIT_HASH=${{ github.sha }}" >> envfile
       - name: Docker Stack Deploy
@@ -77,39 +75,3 @@ jobs:
           user: fingram-bot
           ssh_key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
           env_file: ./envfile
-
-
-# all variables
-# DEPLOY_SSH_PRIVATE_KEY
-	
-# Jul 9, 2025
-	
-# JWT_SECRET
-	
-# Jul 16, 2025
-	
-# OPEN_AI_API_KEY
-	
-# Jul 9, 2025
-	
-# SQLITE_DATABASE_URL
-	
-# Jul 9, 2025
-	
-# TELEGRAM_BOT_TOKEN
-	
-# Jul 9, 2025
-	
-# TELEGRAM_BOT_USERNAME
-	
-# Jul 16, 2025
-	
-# TELEGRAM_MINIAPP_URL
-	
-# Jul 16, 2025
-	
-# TELEGRAM_WEBHOOK_DOMAIN
-	
-# Jul 9, 2025
-	
-# TELEGRAM_WEBHOOK_SECRET_TOKEN
