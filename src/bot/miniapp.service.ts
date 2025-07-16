@@ -3,9 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { parse } from 'querystring';
 import { Either, left, right } from '../vault/domain/either';
-import { BotService } from './bot.service';
 import { Paginated } from '../vault/domain/paginated';
 import { TransactionDTO } from '../vault/dto/transaction.dto,';
+import { VaultService } from '../vault/vault.service';
+import { ChatService } from './modules/chat/chat.service';
 
 export interface WebAppInitData {
   query_id?: string;
@@ -57,7 +58,8 @@ export class MiniappService {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly botService: BotService,
+    private readonly chatService: ChatService,
+    private readonly vaultService: VaultService,
   ) {
     const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
 
@@ -114,34 +116,33 @@ export class MiniappService {
           type: MiniappErrorType.CHAT_NOT_FOUND,
         });
       }
-      // Buscar o resumo do cofre usando o BotService
-      const summaryResult = await this.botService.handleSummary(
-        chatId.toString(),
-        '',
-      );
-      const [summaryError, summaryData] = summaryResult;
 
-      if (summaryError !== null) {
-        this.debugLog('Erro do BotService', {
-          summaryError,
-          chatId: chatId,
-        });
+      // Buscar o vaultId a partir do chatId
+      const vaultIdResult = await this.getVaultIdFromChatId(chatId.toString());
+      const [vaultIdError, vaultId] = vaultIdResult;
+      if (vaultIdError !== null) {
+        return left(vaultIdError);
+      }
 
-        // Determinar o tipo de erro com base na mensagem
-        let errorType = MiniappErrorType.INTERNAL_ERROR;
-
-        if (summaryError.includes('Cofre não encontrado')) {
-          errorType = MiniappErrorType.VAULT_NOT_FOUND;
-        }
-
+      // Buscar o cofre diretamente usando o VaultService
+      const [vaultError, vault] = await this.vaultService.getVault({ vaultId });
+      if (vaultError !== null) {
         return left({
-          message: summaryError,
-          type: errorType,
+          message: vaultError,
+          type: MiniappErrorType.VAULT_NOT_FOUND,
         });
       }
 
-      // Retornar os dados do resumo em caso de sucesso
-      return right(summaryData);
+      // Obter resumo do orçamento para o mês atual
+      const now = new Date();
+      const date = { month: now.getMonth() + 1, year: now.getFullYear() };
+      const budget = vault.getBudgetsSummary(date.month, date.year);
+
+      return right({
+        vault: vault.toJSON(),
+        budget,
+        date,
+      });
     } catch (error) {
       const errorMessage =
         error instanceof Error
@@ -209,38 +210,39 @@ export class MiniappService {
           type: MiniappErrorType.CHAT_NOT_FOUND,
         });
       }
-      // Buscar as transações usando o BotService
-      const transactionsResult = await this.botService.getTransactions(
-        chatId.toString(),
-        {
-          categoryId: options.categoryId,
-          date: {
-            year: new Date().getFullYear(),
-            month: new Date().getMonth() + 1, // Mês é 0-indexado
-          },
-          page: options.page || 1, // Padrão para a primeira página
+
+      // Buscar o vaultId a partir do chatId
+      const vaultIdResult = await this.getVaultIdFromChatId(chatId.toString());
+      const [vaultIdError, vaultId] = vaultIdResult;
+      if (vaultIdError !== null) {
+        return left(vaultIdError);
+      }
+
+      // Buscar as transações usando o VaultService diretamente
+      const transactionsResult = await this.vaultService.getTransactions({
+        vaultId,
+        date: options.date || {
+          year: new Date().getFullYear(),
+          month: new Date().getMonth() + 1,
         },
-      );
+        page: options.page || 1,
+        categoryId: options.categoryId,
+        pageSize: 5,
+      });
+
       const [transactionsError, transactionsData] = transactionsResult;
       if (transactionsError !== null) {
-        this.debugLog('Erro do BotService ao buscar transações', {
+        this.debugLog('Erro do VaultService ao buscar transações', {
           transactionsError,
           chatId: chatId,
         });
 
-        // Determinar o tipo de erro com base na mensagem
-        let errorType = MiniappErrorType.INTERNAL_ERROR;
-
-        if (transactionsError.includes('Cofre não encontrado')) {
-          errorType = MiniappErrorType.VAULT_NOT_FOUND;
-        }
-
         return left({
           message: transactionsError,
-          type: errorType,
+          type: MiniappErrorType.INTERNAL_ERROR,
         });
       }
-      console.log(JSON.stringify(transactionsData, null, 2));
+
       // Retornar os dados das transações em caso de sucesso
       return right(transactionsData);
     } catch (error) {
@@ -394,13 +396,24 @@ export class MiniappService {
         });
       }
 
-      // Editar a transação usando o BotService
-      const editResult = await this.botService.handleEdit(
-        chatId.toString(),
-        editData,
-      );
-      const [editError, editSuccess] = editResult;
+      // Buscar o vaultId a partir do chatId
+      const vaultIdResult = await this.getVaultIdFromChatId(chatId.toString());
+      const [vaultIdError, vaultId] = vaultIdResult;
+      if (vaultIdError !== null) {
+        return left(vaultIdError);
+      }
 
+      // Editar a transação usando o VaultService diretamente
+      const editResult = await this.vaultService.editTransactionInVault({
+        vaultId,
+        transactionCode: editData.transactionCode,
+        newAmount: editData.newAmount,
+        date: editData.newDate,
+        categoryCode: editData.newCategory,
+        description: editData.newDescription,
+      });
+
+      const [editError, editSuccess] = editResult;
       if (editError !== null) {
         return left({
           message: editError,
@@ -439,5 +452,28 @@ export class MiniappService {
       return entry.chatId;
     }
     return null;
+  }
+
+  /**
+   * Busca o vaultId a partir do chatId
+   */
+  private async getVaultIdFromChatId(
+    chatId: string,
+  ): Promise<Either<MiniappError, string>> {
+    const chat = await this.chatService.findChatByTelegramChatId(chatId);
+    if (!chat) {
+      return left({
+        message: 'Chat não encontrado',
+        type: MiniappErrorType.CHAT_NOT_FOUND,
+      });
+    }
+    if (!chat.vaultId) {
+      return left({
+        message:
+          'Cofre não inicializado. É necessário criar um novo cofre ou entrar em um cofre existente.',
+        type: MiniappErrorType.VAULT_NOT_FOUND,
+      });
+    }
+    return right(chat.vaultId);
   }
 }
