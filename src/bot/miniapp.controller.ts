@@ -28,17 +28,7 @@ export class MiniappController {
       await this.miniappService.getSummaryFromInitData(initData);
 
     if (error !== null) {
-      // Se houver um erro, lançar a exceção HTTP apropriada com base no tipo de erro
-      switch (error.type) {
-        case MiniappErrorType.UNAUTHORIZED:
-          throw new UnauthorizedException(error.message);
-        case MiniappErrorType.CHAT_NOT_FOUND:
-        case MiniappErrorType.VAULT_NOT_FOUND:
-          throw new NotFoundException(error.message);
-        case MiniappErrorType.INTERNAL_ERROR:
-        default:
-          throw new InternalServerErrorException(error.message);
-      }
+      this.handleError(error.type, error.message);
     }
 
     return data;
@@ -73,17 +63,7 @@ export class MiniappController {
       });
 
     if (error !== null) {
-      // Se houver um erro, lançar a exceção HTTP apropriada com base no tipo de erro
-      switch (error.type) {
-        case MiniappErrorType.UNAUTHORIZED:
-          throw new UnauthorizedException(error.message);
-        case MiniappErrorType.CHAT_NOT_FOUND:
-        case MiniappErrorType.VAULT_NOT_FOUND:
-          throw new NotFoundException(error.message);
-        case MiniappErrorType.INTERNAL_ERROR:
-        default:
-          throw new InternalServerErrorException(error.message);
-      }
+      this.handleError(error.type, error.message);
     }
 
     return transactions;
@@ -122,17 +102,7 @@ export class MiniappController {
       );
 
     if (error !== null) {
-      // Se houver um erro, lançar a exceção HTTP apropriada com base no tipo de erro
-      switch (error.type) {
-        case MiniappErrorType.UNAUTHORIZED:
-          throw new UnauthorizedException(error.message);
-        case MiniappErrorType.CHAT_NOT_FOUND:
-        case MiniappErrorType.VAULT_NOT_FOUND:
-          throw new NotFoundException(error.message);
-        case MiniappErrorType.INTERNAL_ERROR:
-        default:
-          throw new InternalServerErrorException(error.message);
-      }
+      this.handleError(error.type, error.message);
     }
 
     return result;
@@ -145,5 +115,33 @@ export class MiniappController {
       throw new NotFoundException('Categorias não encontradas');
     }
     return categories;
+  }
+
+  @Post('exchange')
+  async exchangeInitDataForAuthToken(@Query('initData') initData: string) {
+    if (!initData) {
+      throw new UnauthorizedException('O parâmetro initData é obrigatório');
+    }
+
+    const [err, token] =
+      await this.miniappService.exchangeInitDataForAuthToken(initData);
+    if (err !== null) {
+      this.handleError(err.type, err.message);
+    }
+
+    return { token };
+  }
+
+  private handleError(error: MiniappErrorType, message: string): never {
+    switch (error) {
+      case MiniappErrorType.UNAUTHORIZED:
+        throw new UnauthorizedException(message);
+      case MiniappErrorType.CHAT_NOT_FOUND:
+      case MiniappErrorType.VAULT_NOT_FOUND:
+        throw new NotFoundException(message);
+      case MiniappErrorType.INTERNAL_ERROR:
+      default:
+        throw new InternalServerErrorException(message);
+    }
   }
 }

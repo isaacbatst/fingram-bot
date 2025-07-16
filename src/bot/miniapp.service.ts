@@ -7,6 +7,7 @@ import { Paginated } from '../vault/domain/paginated';
 import { TransactionDTO } from '../vault/dto/transaction.dto,';
 import { VaultService } from '../vault/vault.service';
 import { ChatService } from './modules/chat/chat.service';
+import { JwtService } from '@nestjs/jwt';
 
 export interface WebAppInitData {
   query_id?: string;
@@ -47,7 +48,7 @@ export interface MiniappError {
 @Injectable()
 export class MiniappService {
   private readonly BOT_TOKEN: string;
-  private readonly tokenStore: Map<
+  private readonly accessTokenStore: Map<
     string,
     {
       expiresAt: number;
@@ -60,6 +61,7 @@ export class MiniappService {
     private readonly configService: ConfigService,
     private readonly vaultService: VaultService,
     private readonly chatService: ChatService,
+    private jwtService: JwtService,
   ) {
     const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
 
@@ -432,16 +434,55 @@ export class MiniappService {
         type: MiniappErrorType.VAULT_NOT_FOUND,
       });
     }
-    this.tokenStore.set(token, { expiresAt, chatId, vaultId });
+    this.accessTokenStore.set(token, { expiresAt, chatId, vaultId });
     return right(token);
   }
 
   getVaultIdFromToken(token: string): string | null {
-    const entry = this.tokenStore.get(token);
+    const entry = this.accessTokenStore.get(token);
     if (entry && entry.expiresAt > Date.now()) {
       return entry.vaultId;
     }
     return null;
+  }
+
+  async exchangeInitDataForAuthToken(initData: string) {
+    const validationResult = this.validateTelegramInitData({
+      initData,
+      botToken: this.BOT_TOKEN,
+    });
+    const { valid, data, reason } = validationResult;
+
+    if (!valid) {
+      return left({
+        message: reason || 'Dados inválidos',
+        type: MiniappErrorType.UNAUTHORIZED,
+      });
+    }
+
+    if (!data?.chat || !data.chat.id) {
+      return left({
+        message: 'Chat ID não encontrado nos dados de inicialização',
+        type: MiniappErrorType.UNAUTHORIZED,
+      });
+    }
+
+    const [err, vaultId] = await this.getVaultIdFromChatId(data.chat.id);
+    if (err !== null) {
+      return left({
+        message: 'Erro ao obter o vaultId do chatId',
+        type: MiniappErrorType.VAULT_NOT_FOUND,
+      });
+    }
+    const sessionToken = this.jwtService.sign(
+      { chatId: data.chat.id, vaultId },
+      {
+        expiresIn: '30d',
+        secret:
+          this.configService.get<string>('JWT_SECRET') || 'default_secret',
+      },
+    );
+    return right(sessionToken);
   }
 
   private async getVaultIdFromChatId(
