@@ -7,9 +7,13 @@ import {
   Post,
   Query,
   UnauthorizedException,
+  UseGuards,
 } from '@nestjs/common';
-import { MiniappService, MiniappErrorType } from './miniapp.service';
 import { VaultService } from '../vault/vault.service';
+import { MiniappSessionTokenPayload } from './miniapp-session-token';
+import { MiniappSessionTokenGuard } from './miniapp-session-token.guard';
+import { MiniappSession } from './miniapp-session.decorator';
+import { MiniappErrorType, MiniappService } from './miniapp.service';
 
 @Controller('miniapp')
 export class MiniappController {
@@ -18,14 +22,10 @@ export class MiniappController {
     private readonly vaultService: VaultService,
   ) {}
 
+  @UseGuards(MiniappSessionTokenGuard)
   @Get('summary')
-  async getSummary(@Query('initData') initData: string) {
-    if (!initData) {
-      throw new UnauthorizedException('O parâmetro initData é obrigatório');
-    }
-
-    const [error, data] =
-      await this.miniappService.getSummaryFromInitData(initData);
+  async getSummary(@MiniappSession() session: MiniappSessionTokenPayload) {
+    const [error, data] = await this.miniappService.getSummary(session.vaultId);
 
     if (error !== null) {
       this.handleError(error.type, error.message);
@@ -34,18 +34,15 @@ export class MiniappController {
     return data;
   }
 
+  @UseGuards(MiniappSessionTokenGuard)
   @Get('transactions')
   async getTransactions(
-    @Query('initData') initData: string,
+    @MiniappSession() session: MiniappSessionTokenPayload,
     @Query('categoryId') categoryId?: string,
     @Query('year') year?: string,
     @Query('month') month?: string,
     @Query('page') page?: string,
   ) {
-    if (!initData) {
-      throw new UnauthorizedException('O parâmetro initData é obrigatório');
-    }
-
     const pageNumber = page ? parseInt(page, 10) : 1;
     const date =
       year && month
@@ -55,12 +52,14 @@ export class MiniappController {
           }
         : undefined;
 
-    const [error, transactions] =
-      await this.miniappService.getTransactionsFromInitData(initData, {
+    const [error, transactions] = await this.miniappService.getTransactions(
+      session.vaultId,
+      {
         categoryId,
         date,
         page: pageNumber,
-      });
+      },
+    );
 
     if (error !== null) {
       this.handleError(error.type, error.message);
@@ -69,9 +68,10 @@ export class MiniappController {
     return transactions;
   }
 
+  @UseGuards(MiniappSessionTokenGuard)
   @Post('edit-transaction')
   async editTransaction(
-    @Query('initData') initData: string,
+    @MiniappSession() session: MiniappSessionTokenPayload,
     @Body()
     data: {
       transactionCode: string;
@@ -81,10 +81,6 @@ export class MiniappController {
       newDescription?: string;
     },
   ) {
-    if (!initData) {
-      throw new UnauthorizedException('O parâmetro initData é obrigatório');
-    }
-
     if (!data.transactionCode) {
       throw new UnauthorizedException('O código da transação é obrigatório');
     }
@@ -95,11 +91,10 @@ export class MiniappController {
       newDate: data.newDate ? new Date(data.newDate) : undefined,
     };
 
-    const [error, result] =
-      await this.miniappService.editTransactionFromInitData(
-        initData,
-        parsedData,
-      );
+    const [error, result] = await this.miniappService.editTransaction(
+      session.vaultId,
+      parsedData,
+    );
 
     if (error !== null) {
       this.handleError(error.type, error.message);
@@ -117,7 +112,7 @@ export class MiniappController {
     return categories;
   }
 
-  @Post('exchange')
+  @Get('exchange')
   async exchangeInitDataForAuthToken(@Query('initData') initData: string) {
     if (!initData) {
       throw new UnauthorizedException('O parâmetro initData é obrigatório');
@@ -130,6 +125,20 @@ export class MiniappController {
     }
 
     return { token };
+  }
+
+  @UseGuards(MiniappSessionTokenGuard)
+  @Get('me')
+  getMe(@MiniappSession() session: MiniappSessionTokenPayload) {
+    const payload: MiniappSessionTokenPayload = {
+      chatId: session.chatId,
+      vaultId: session.vaultId,
+    };
+
+    return {
+      chatId: payload.chatId,
+      vaultId: payload.vaultId,
+    };
   }
 
   private handleError(error: MiniappErrorType, message: string): never {

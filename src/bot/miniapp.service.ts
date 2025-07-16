@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
-import { parse } from 'querystring';
 import { Either, left, right } from '../vault/domain/either';
 import { Paginated } from '../vault/domain/paginated';
 import { TransactionDTO } from '../vault/dto/transaction.dto,';
 import { VaultService } from '../vault/vault.service';
 import { ChatService } from './modules/chat/chat.service';
 import { JwtService } from '@nestjs/jwt';
+import { MiniappSessionTokenPayload } from './miniapp-session-token';
 
 export interface WebAppInitData {
   query_id?: string;
@@ -75,178 +75,72 @@ export class MiniappService {
     }
   }
 
-  async getSummaryFromInitData(
-    initDataString: string,
-  ): Promise<Either<MiniappError, SummaryData>> {
-    try {
-      this.debugLog('Iniciando getSummaryFromInitData', {
-        initDataLength: initDataString?.length || 0,
-        hasInitData: !!initDataString,
-      });
-
-      // Primeiro validar os dados de inicialização
-      const validationResult = this.validateTelegramInitData({
-        initData: initDataString,
-        botToken: this.BOT_TOKEN,
-      });
-      const { valid, data, reason } = validationResult;
-
-      if (!valid) {
-        this.debugLog('Erro na validação dos dados', {
-          reason,
-        });
-        return left({
-          message: reason || 'Dados inválidos',
-          type: MiniappErrorType.UNAUTHORIZED,
-        });
-      }
-
-      this.debugLog('Dados validados com sucesso', JSON.stringify(data));
-      if (!data || !data.start_param) {
-        return left({
-          message: 'Dados de inicialização inválidos',
-          type: MiniappErrorType.UNAUTHORIZED,
-        });
-      }
-      // Buscar o vaultId diretamente do token
-      const vaultId = this.getVaultIdFromToken(data?.start_param);
-      if (!vaultId) {
-        this.debugLog('Vault ID não encontrado a partir do token', {
-          startParam: data.start_param,
-        });
-        return left({
-          message: 'Sessão inválida ou expirada',
-          type: MiniappErrorType.UNAUTHORIZED,
-        });
-      }
-
-      // Buscar o cofre diretamente usando o VaultService
-      const [vaultError, vault] = await this.vaultService.getVault({ vaultId });
-      if (vaultError !== null) {
-        return left({
-          message: vaultError,
-          type: MiniappErrorType.VAULT_NOT_FOUND,
-        });
-      }
-
-      // Obter resumo do orçamento para o mês atual
-      const now = new Date();
-      const date = { month: now.getMonth() + 1, year: now.getFullYear() };
-      const budget = vault.getBudgetsSummary(date.month, date.year);
-
-      return right({
-        vault: vault.toJSON(),
-        budget,
-        date,
-      });
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : 'Erro ao processar a solicitação';
-
-      this.errorLog('Erro não capturado no getSummaryFromInitData', {
-        error: errorMessage,
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-
-      return left({
-        message: errorMessage,
-        type: MiniappErrorType.INTERNAL_ERROR,
-      });
-    }
+  private errorLog(message: string, data?: any): void {
+    const timestamp = new Date().toISOString();
+    console.error(
+      `[${timestamp}] [MiniAppService ERROR] ${message}`,
+      data || '',
+    );
   }
 
-  async getTransactionsFromInitData(
-    initDataString: string,
-    options: {
-      categoryId?: string;
-      date?: {
-        year: number;
-        month: number;
-        day?: number;
-      };
-      page?: number;
-    },
-  ): Promise<Either<MiniappError, Paginated<TransactionDTO>>> {
-    try {
-      this.debugLog('Iniciando getTransactionsFromInitData', {
-        initDataLength: initDataString?.length || 0,
-        hasInitData: !!initDataString,
-      });
-      // Primeiro validar os dados de inicialização
-      const validationResult = this.validateTelegramInitData({
-        initData: initDataString,
-        botToken: this.BOT_TOKEN,
-      });
-      const { valid, data, reason } = validationResult;
-      if (!valid) {
-        this.debugLog('Erro na validação dos dados', {
-          reason,
-        });
-        return left({
-          message: reason || 'Dados inválidos',
-          type: MiniappErrorType.UNAUTHORIZED,
-        });
-      }
-      this.debugLog('Dados validados com sucesso', JSON.stringify(data));
-      if (!data || !data.start_param) {
-        return left({
-          message: 'Dados de inicialização inválidos',
-          type: MiniappErrorType.UNAUTHORIZED,
-        });
-      }
-      const vaultId = this.getVaultIdFromToken(data?.start_param);
-      if (!vaultId) {
-        this.debugLog('Vault ID não encontrado a partir do token', {
-          startParam: data.start_param,
-        });
-        return left({
-          message: 'Sessão inválida ou expirada',
-          type: MiniappErrorType.UNAUTHORIZED,
-        });
-      }
-
-      // Buscar as transações usando o VaultService diretamente
-      const transactionsResult = await this.vaultService.getTransactions({
-        vaultId,
-        date: options.date || {
-          year: new Date().getFullYear(),
-          month: new Date().getMonth() + 1,
-        },
-        page: options.page || 1,
-        categoryId: options.categoryId,
-        pageSize: 5,
-      });
-
-      const [transactionsError, transactionsData] = transactionsResult;
-      if (transactionsError !== null) {
-        this.debugLog('Erro do VaultService ao buscar transações', {
-          transactionsError,
-        });
-
-        return left({
-          message: transactionsError,
-          type: MiniappErrorType.INTERNAL_ERROR,
-        });
-      }
-
-      // Retornar os dados das transações em caso de sucesso
-      return right(transactionsData);
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : 'Erro ao processar a solicitação';
-      this.errorLog('Erro não capturado no getTransactionsFromInitData', {
-        error: errorMessage,
-        stack: error instanceof Error ? error.stack : undefined,
-      });
+  async createLinkToken(chatId: string) {
+    const token = crypto.randomUUID();
+    const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hora
+    const [err, vaultId] = await this.getVaultIdFromChatId(chatId);
+    if (err !== null) {
       return left({
-        message: errorMessage,
-        type: MiniappErrorType.INTERNAL_ERROR,
+        message: 'Erro ao obter o vaultId do chatId',
+        type: MiniappErrorType.VAULT_NOT_FOUND,
       });
     }
+    this.accessTokenStore.set(token, { expiresAt, chatId, vaultId });
+    return right(token);
+  }
+
+  getAccessTokenData(token: string) {
+    const entry = this.accessTokenStore.get(token);
+    if (entry && entry.expiresAt > Date.now()) {
+      return entry;
+    }
+    return null;
+  }
+
+  async exchangeInitDataForAuthToken(initData: string) {
+    const validationResult = this.validateTelegramInitData({
+      initData,
+      botToken: this.BOT_TOKEN,
+    });
+    const { valid, data, reason } = validationResult;
+
+    if (!valid) {
+      return left({
+        message: reason || 'Dados inválidos',
+        type: MiniappErrorType.UNAUTHORIZED,
+      });
+    }
+
+    if (!data || !data.start_param) {
+      return left({
+        message: 'Dados de inicialização inválidos',
+        type: MiniappErrorType.UNAUTHORIZED,
+      });
+    }
+    const accessTokenData = this.getAccessTokenData(data?.start_param);
+    if (!accessTokenData) {
+      return left({
+        message: 'Erro ao obter o vaultId do start_param',
+        type: MiniappErrorType.UNAUTHORIZED,
+      });
+    }
+    const payload: MiniappSessionTokenPayload = {
+      chatId: accessTokenData.chatId,
+      vaultId: accessTokenData.vaultId,
+    };
+    const sessionToken = await this.jwtService.signAsync(payload, {
+      expiresIn: '30d',
+      secret: this.configService.get<string>('JWT_SECRET') || 'default_secret',
+    });
+    return right(sessionToken);
   }
 
   private validateTelegramInitData({
@@ -262,11 +156,17 @@ export class MiniappService {
     data?: WebAppInitData;
     reason?: string;
   } {
-    // 1. Parseia o querystring
-    const data = parse(initData);
+    console.log('INIT DATA RECEIVED:', initData);
+    // 1. Parseia o querystring usando URLSearchParams
+    const urlParams = new URLSearchParams(initData);
+    const data: Record<string, string> = {};
+    for (const [key, value] of urlParams.entries()) {
+      data[key] = value;
+    }
+    console.log(JSON.stringify(data, null, 2));
 
     // 2. Separa e remove o hash para o processo de validação
-    const receivedHash = data.hash as string;
+    const receivedHash = data.hash;
     if (!receivedHash) {
       return { valid: false, reason: 'hash not found in initData' };
     }
@@ -275,7 +175,7 @@ export class MiniappService {
     // 3. Monta o data_check_string conforme spec (ordem alfabética, key=<value>\n)
     const dataCheckArr = Object.keys(data)
       .sort()
-      .map((key) => `${key}=${data[key] as string}`);
+      .map((key) => `${key}=${data[key]}`);
     const dataCheckString = dataCheckArr.join('\n');
 
     // 4. Gera secret_key = HMAC_SHA256(botToken, "WebAppData")
@@ -308,183 +208,6 @@ export class MiniappService {
     return { valid: true, data: data as unknown as WebAppInitData };
   }
 
-  /**
-   * Log de debug para desenvolvimento
-   */
-  private debugLog(message: string, data?: any): void {
-    const isDevelopment =
-      this.configService.get<string>('NODE_ENV') !== 'production';
-    const isDebugEnabled =
-      this.configService.get<string>('MINIAPP_DEBUG') === 'true';
-
-    if (isDevelopment || isDebugEnabled) {
-      const timestamp = new Date().toISOString();
-      console.log(`[${timestamp}] [MiniAppService] ${message}`, data || '');
-    }
-  }
-
-  /**
-   * Log de erro que sempre aparece
-   */
-  private errorLog(message: string, data?: any): void {
-    const timestamp = new Date().toISOString();
-    console.error(
-      `[${timestamp}] [MiniAppService ERROR] ${message}`,
-      data || '',
-    );
-  }
-
-  async editTransactionFromInitData(
-    initDataString: string,
-    editData: {
-      transactionCode: string;
-      newAmount?: number;
-      newDate?: Date;
-      newCategory?: string;
-      newDescription?: string;
-    },
-  ): Promise<Either<MiniappError, { transaction: any; vault: any }>> {
-    try {
-      this.debugLog('Iniciando editTransactionFromInitData', {
-        initDataLength: initDataString?.length || 0,
-        hasInitData: !!initDataString,
-        editData,
-      });
-
-      // Primeiro validar os dados de inicialização
-      const validationResult = this.validateTelegramInitData({
-        initData: initDataString,
-        botToken: this.BOT_TOKEN,
-      });
-      const { valid, data, reason } = validationResult;
-
-      if (!valid) {
-        this.debugLog('Erro na validação dos dados', {
-          reason,
-        });
-        return left({
-          message: reason || 'Dados inválidos',
-          type: MiniappErrorType.UNAUTHORIZED,
-        });
-      }
-
-      this.debugLog('Dados validados com sucesso', JSON.stringify(data));
-      if (!data || !data.start_param) {
-        return left({
-          message: 'Parâmetro de início não encontrado',
-          type: MiniappErrorType.UNAUTHORIZED,
-        });
-      }
-      const vaultId = this.getVaultIdFromToken(data?.start_param);
-      if (!vaultId) {
-        this.debugLog('Vault ID não encontrado a partir do token', {
-          startParam: data.start_param,
-        });
-        return left({
-          message: 'Sessão inválida ou expirada',
-          type: MiniappErrorType.UNAUTHORIZED,
-        });
-      }
-
-      // Editar a transação usando o VaultService diretamente
-      const editResult = await this.vaultService.editTransactionInVault({
-        vaultId,
-        transactionCode: editData.transactionCode,
-        newAmount: editData.newAmount,
-        date: editData.newDate,
-        categoryCode: editData.newCategory,
-        description: editData.newDescription,
-      });
-
-      const [editError, editSuccess] = editResult;
-      if (editError !== null) {
-        return left({
-          message: editError,
-          type: MiniappErrorType.INTERNAL_ERROR,
-        });
-      }
-
-      // Retornar os dados da transação editada em caso de sucesso
-      return right(editSuccess);
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : 'Erro ao processar a solicitação';
-
-      this.errorLog('Erro não capturado no editTransactionFromInitData', {
-        error: errorMessage,
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-
-      return left({
-        message: errorMessage,
-        type: MiniappErrorType.INTERNAL_ERROR,
-      });
-    }
-  }
-
-  async createLinkToken(chatId: string) {
-    const token = crypto.randomUUID();
-    const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hora
-    const [err, vaultId] = await this.getVaultIdFromChatId(chatId);
-    if (err !== null) {
-      return left({
-        message: 'Erro ao obter o vaultId do chatId',
-        type: MiniappErrorType.VAULT_NOT_FOUND,
-      });
-    }
-    this.accessTokenStore.set(token, { expiresAt, chatId, vaultId });
-    return right(token);
-  }
-
-  getVaultIdFromToken(token: string): string | null {
-    const entry = this.accessTokenStore.get(token);
-    if (entry && entry.expiresAt > Date.now()) {
-      return entry.vaultId;
-    }
-    return null;
-  }
-
-  async exchangeInitDataForAuthToken(initData: string) {
-    const validationResult = this.validateTelegramInitData({
-      initData,
-      botToken: this.BOT_TOKEN,
-    });
-    const { valid, data, reason } = validationResult;
-
-    if (!valid) {
-      return left({
-        message: reason || 'Dados inválidos',
-        type: MiniappErrorType.UNAUTHORIZED,
-      });
-    }
-
-    if (!data?.chat || !data.chat.id) {
-      return left({
-        message: 'Chat ID não encontrado nos dados de inicialização',
-        type: MiniappErrorType.UNAUTHORIZED,
-      });
-    }
-
-    const [err, vaultId] = await this.getVaultIdFromChatId(data.chat.id);
-    if (err !== null) {
-      return left({
-        message: 'Erro ao obter o vaultId do chatId',
-        type: MiniappErrorType.VAULT_NOT_FOUND,
-      });
-    }
-    const sessionToken = this.jwtService.sign(
-      { chatId: data.chat.id, vaultId },
-      {
-        expiresIn: '30d',
-        secret:
-          this.configService.get<string>('JWT_SECRET') || 'default_secret',
-      },
-    );
-    return right(sessionToken);
-  }
-
   private async getVaultIdFromChatId(
     chatId: string,
   ): Promise<Either<MiniappError, string>> {
@@ -504,4 +227,146 @@ export class MiniappService {
     }
     return right(chat.vaultId);
   }
+
+  // Simplified methods that work with vaultId directly (for authenticated routes)
+  async getSummary(
+    vaultId: string,
+  ): Promise<Either<MiniappError, SummaryData>> {
+    try {
+      // Buscar o cofre diretamente usando o VaultService
+      const [vaultError, vault] = await this.vaultService.getVault({ vaultId });
+      if (vaultError !== null) {
+        return left({
+          message: vaultError,
+          type: MiniappErrorType.VAULT_NOT_FOUND,
+        });
+      }
+
+      // Obter resumo do orçamento para o mês atual
+      const now = new Date();
+      const date = { month: now.getMonth() + 1, year: now.getFullYear() };
+      const budget = vault.getBudgetsSummary(date.month, date.year);
+
+      return right({
+        vault: vault.toJSON(),
+        budget,
+        date,
+      });
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Erro ao processar a solicitação';
+
+      this.errorLog('Erro não capturado no getSummary', {
+        error: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      return left({
+        message: errorMessage,
+        type: MiniappErrorType.INTERNAL_ERROR,
+      });
+    }
+  }
+
+  async getTransactions(
+    vaultId: string,
+    options: {
+      categoryId?: string;
+      date?: {
+        year: number;
+        month: number;
+        day?: number;
+      };
+      page?: number;
+    },
+  ): Promise<Either<MiniappError, Paginated<TransactionDTO>>> {
+    try {
+      const transactionsResult = await this.vaultService.getTransactions({
+        vaultId,
+        date: options.date || {
+          year: new Date().getFullYear(),
+          month: new Date().getMonth() + 1,
+        },
+        page: options.page || 1,
+        categoryId: options.categoryId,
+        pageSize: 5,
+      });
+
+      const [transactionsError, transactionsData] = transactionsResult;
+      if (transactionsError !== null) {
+        return left({
+          message: transactionsError,
+          type: MiniappErrorType.INTERNAL_ERROR,
+        });
+      }
+
+      return right(transactionsData);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Erro ao processar a solicitação';
+
+      this.errorLog('Erro não capturado no getTransactions', {
+        error: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      return left({
+        message: errorMessage,
+        type: MiniappErrorType.INTERNAL_ERROR,
+      });
+    }
+  }
+
+  async editTransaction(
+    vaultId: string,
+    editData: {
+      transactionCode: string;
+      newAmount?: number;
+      newDate?: Date;
+      newCategory?: string;
+      newDescription?: string;
+    },
+  ): Promise<Either<MiniappError, { transaction: any; vault: any }>> {
+    try {
+      const editResult = await this.vaultService.editTransactionInVault({
+        vaultId,
+        transactionCode: editData.transactionCode,
+        newAmount: editData.newAmount,
+        date: editData.newDate,
+        categoryCode: editData.newCategory,
+        description: editData.newDescription,
+      });
+
+      const [editError, editSuccess] = editResult;
+      if (editError !== null) {
+        return left({
+          message: editError,
+          type: MiniappErrorType.INTERNAL_ERROR,
+        });
+      }
+
+      return right(editSuccess);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Erro ao processar a solicitação';
+
+      this.errorLog('Erro não capturado no editTransaction', {
+        error: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      return left({
+        message: errorMessage,
+        type: MiniappErrorType.INTERNAL_ERROR,
+      });
+    }
+  }
+
+  // Legacy methods that work with initData (for backward compatibility and exchange flow)
 }
