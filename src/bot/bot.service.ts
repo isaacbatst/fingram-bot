@@ -100,6 +100,7 @@ export class BotService {
       newDate?: Date;
       newCategory?: string;
       newDescription?: string;
+      type?: 'income' | 'expense';
     },
   ) {
     // Validar se pelo menos um campo foi fornecido para edição
@@ -107,10 +108,11 @@ export class BotService {
       params.newAmount === undefined &&
       params.newDate === undefined &&
       params.newCategory === undefined &&
-      params.newDescription === undefined
+      params.newDescription === undefined &&
+      params.type === undefined
     ) {
       return left(
-        'Nenhum campo para editar informado. Use -v, -d, -c ou -desc.',
+        'Nenhum campo para editar informado. Use -v, -d, -c, -t ou -desc.',
       );
     }
 
@@ -124,6 +126,7 @@ export class BotService {
       date: params.newDate,
       categoryCode: params.newCategory,
       description: params.newDescription,
+      type: params.type,
     });
   }
 

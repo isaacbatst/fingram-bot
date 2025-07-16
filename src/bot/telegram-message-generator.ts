@@ -278,7 +278,7 @@ export class TelegramMessageGenerator {
         minimumFractionDigits: 2,
       });
       const dateStr = transaction.createdAt.toLocaleDateString('pt-BR');
-      text += `• \`#${this.escapeMarkdownV2(transaction.code)}\` \\| ${this.escapeMarkdownV2(value)} \\|${transaction.category ? ` ${this.escapeMarkdownV2(transaction.category.name)} \\|` : ''} ${this.escapeMarkdownV2(dateStr)}${transaction.description ? `\n${this.escapeMarkdownV2(transaction.description)}` : ''}\n\n`;
+      text += `• ${transaction.type === 'income' ? '🟢' : '🔴'} \`#${this.escapeMarkdownV2(transaction.code)}\` \\| ${this.escapeMarkdownV2(value)} \\|${transaction.category ? ` ${this.escapeMarkdownV2(transaction.category.name)} \\|` : ''} ${this.escapeMarkdownV2(dateStr)}${transaction.description ? `\n${this.escapeMarkdownV2(transaction.description)}` : ''}\n\n`;
     }
 
     if (totalPages > 1) {

@@ -239,6 +239,7 @@ export class TelegramHandler {
             '• -v <valor> - alterar o valor\n' +
             '• -d <dd/mm/yyyy> - alterar a data\n' +
             '• -c <categoria> - alterar a categoria\n' +
+            '• -t <tipo> - alterar o tipo (income/expense)\n' +
             '• -desc "descrição" - alterar a descrição\n\n' +
             'Exemplos:\n' +
             '• /edit ABC123 -v 50.00\n' +
@@ -667,7 +668,7 @@ export class TelegramHandler {
 
   /**
    * Parse transaction edit command arguments
-   * Format: <code> -v <valor> -d <dd/mm/yyyy> -c <categoria> -desc "descrição"
+   * Format: <code> -v <valor> -d <dd/mm/yyyy> -c <categoria> -desc "descrição" -t <'expense' | 'income'>
    */
   private parseEditTransactionArgs(args: string[]): Either<
     string,
@@ -677,6 +678,7 @@ export class TelegramHandler {
       newDate?: Date;
       newCategory?: string;
       newDescription?: string;
+      type?: 'income' | 'expense';
     }
   > {
     if (args.length < 1) {
@@ -691,6 +693,7 @@ export class TelegramHandler {
     let newDate: Date | undefined;
     let newCategory: string | undefined;
     let newDescription: string | undefined;
+    let type: 'income' | 'expense' | undefined;
 
     for (let i = 0; i < flags.length; i++) {
       const flag = flags[i];
@@ -736,6 +739,14 @@ export class TelegramHandler {
           newDescription = desc.replace(/^"|"$/g, '');
           i = j - 1;
         }
+      } else if (flag === '-t' && flags[i + 1]) {
+        const t = flags[i + 1].toLowerCase();
+        if (t === 'income' || t === 'expense') {
+          type = t;
+        } else {
+          return left("Tipo inválido para -t. Use 'income' ou 'expense'.");
+        }
+        i++;
       }
     }
 
@@ -745,6 +756,7 @@ export class TelegramHandler {
       newDate,
       newCategory,
       newDescription,
+      type,
     });
   }
 }
