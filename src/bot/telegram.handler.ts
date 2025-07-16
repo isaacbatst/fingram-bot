@@ -512,12 +512,21 @@ export class TelegramHandler {
     });
 
     this.telegraf.command('miniapp', async (ctx) => {
-      const token = randomUUID();
-      this.miniappService.saveToken(token, ctx.chat.id);
+      const [err, token] = await this.miniappService.createLinkToken(
+        ctx.chat.id.toString(),
+      );
+      if (err !== null) {
+        this.logger.error('Error creating mini app token', err);
+        await ctx.reply(
+          'Erro ao criar link para o Mini App. Tente novamente mais tarde.',
+        );
+        return;
+      }
       this.logger.log(`Generated token: ${token} for chatId: ${ctx.chat.id}`);
       const directLink = `https://t.me/${this.BOT_USERNAME}?startapp=${token}`;
-
-      await ctx.reply(directLink);
+      await ctx.reply(`[Abrir Mini App](${directLink})`, {
+        parse_mode: 'Markdown',
+      });
     });
     this.telegraf.on('inline_query', async (ctx) => {
       this.logger.log('Received inline query', ctx.inlineQuery.query);

@@ -47,19 +47,19 @@ export interface MiniappError {
 @Injectable()
 export class MiniappService {
   private readonly BOT_TOKEN: string;
-
   private readonly tokenStore: Map<
     string,
     {
       expiresAt: number;
-      chatId: number;
+      chatId: string;
+      vaultId: string;
     }
   > = new Map();
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly chatService: ChatService,
     private readonly vaultService: VaultService,
+    private readonly chatService: ChatService,
   ) {
     const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
 
@@ -106,22 +106,16 @@ export class MiniappService {
           type: MiniappErrorType.UNAUTHORIZED,
         });
       }
-      const chatId = this.getChatIdFromToken(data?.start_param);
-      if (!chatId) {
-        this.debugLog('Chat ID não encontrado a partir do token', {
+      // Buscar o vaultId diretamente do token
+      const vaultId = this.getVaultIdFromToken(data?.start_param);
+      if (!vaultId) {
+        this.debugLog('Vault ID não encontrado a partir do token', {
           startParam: data.start_param,
         });
         return left({
-          message: 'Chat ID não encontrado',
-          type: MiniappErrorType.CHAT_NOT_FOUND,
+          message: 'Sessão inválida ou expirada',
+          type: MiniappErrorType.UNAUTHORIZED,
         });
-      }
-
-      // Buscar o vaultId a partir do chatId
-      const vaultIdResult = await this.getVaultIdFromChatId(chatId.toString());
-      const [vaultIdError, vaultId] = vaultIdResult;
-      if (vaultIdError !== null) {
-        return left(vaultIdError);
       }
 
       // Buscar o cofre diretamente usando o VaultService
@@ -200,22 +194,15 @@ export class MiniappService {
           type: MiniappErrorType.UNAUTHORIZED,
         });
       }
-      const chatId = this.getChatIdFromToken(data?.start_param);
-      if (!chatId) {
-        this.debugLog('Chat ID não encontrado a partir do token', {
+      const vaultId = this.getVaultIdFromToken(data?.start_param);
+      if (!vaultId) {
+        this.debugLog('Vault ID não encontrado a partir do token', {
           startParam: data.start_param,
         });
         return left({
-          message: 'Chat ID não encontrado',
-          type: MiniappErrorType.CHAT_NOT_FOUND,
+          message: 'Sessão inválida ou expirada',
+          type: MiniappErrorType.UNAUTHORIZED,
         });
-      }
-
-      // Buscar o vaultId a partir do chatId
-      const vaultIdResult = await this.getVaultIdFromChatId(chatId.toString());
-      const [vaultIdError, vaultId] = vaultIdResult;
-      if (vaultIdError !== null) {
-        return left(vaultIdError);
       }
 
       // Buscar as transações usando o VaultService diretamente
@@ -234,7 +221,6 @@ export class MiniappService {
       if (transactionsError !== null) {
         this.debugLog('Erro do VaultService ao buscar transações', {
           transactionsError,
-          chatId: chatId,
         });
 
         return left({
@@ -387,20 +373,15 @@ export class MiniappService {
           type: MiniappErrorType.UNAUTHORIZED,
         });
       }
-
-      const chatId = this.getChatIdFromToken(data?.start_param);
-      if (!chatId) {
+      const vaultId = this.getVaultIdFromToken(data?.start_param);
+      if (!vaultId) {
+        this.debugLog('Vault ID não encontrado a partir do token', {
+          startParam: data.start_param,
+        });
         return left({
           message: 'Sessão inválida ou expirada',
           type: MiniappErrorType.UNAUTHORIZED,
         });
-      }
-
-      // Buscar o vaultId a partir do chatId
-      const vaultIdResult = await this.getVaultIdFromChatId(chatId.toString());
-      const [vaultIdError, vaultId] = vaultIdResult;
-      if (vaultIdError !== null) {
-        return left(vaultIdError);
       }
 
       // Editar a transação usando o VaultService diretamente
@@ -441,22 +422,28 @@ export class MiniappService {
     }
   }
 
-  saveToken(token: string, chatId: number) {
+  async createLinkToken(chatId: string) {
+    const token = crypto.randomUUID();
     const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hora
-    this.tokenStore.set(token, { expiresAt, chatId });
+    const [err, vaultId] = await this.getVaultIdFromChatId(chatId);
+    if (err !== null) {
+      return left({
+        message: 'Erro ao obter o vaultId do chatId',
+        type: MiniappErrorType.VAULT_NOT_FOUND,
+      });
+    }
+    this.tokenStore.set(token, { expiresAt, chatId, vaultId });
+    return right(token);
   }
 
-  getChatIdFromToken(token: string): number | null {
+  getVaultIdFromToken(token: string): string | null {
     const entry = this.tokenStore.get(token);
     if (entry && entry.expiresAt > Date.now()) {
-      return entry.chatId;
+      return entry.vaultId;
     }
     return null;
   }
 
-  /**
-   * Busca o vaultId a partir do chatId
-   */
   private async getVaultIdFromChatId(
     chatId: string,
   ): Promise<Either<MiniappError, string>> {
