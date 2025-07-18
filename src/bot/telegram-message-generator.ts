@@ -130,6 +130,7 @@ export class TelegramMessageGenerator {
       `*Token de Acesso:* \`${this.escapeMarkdownV2(vault.token)}\`\n\n` +
       'Envie uma mensagem começando com `/ai`:\n\n' +
       '_Exemplos:_ \n\n`/ai 100 salário de setembro`\n`/ai 50 compra de supermercado`\n\n' +
+      'Você também pode usar o comando `/miniapp` para acessar o app visual do cofre\\.\n\n' +
       `Use /help para ver os comandos disponíveis\\.`
     );
   }
@@ -297,12 +298,16 @@ export class TelegramMessageGenerator {
   formatHelp(): string {
     return (
       '*Como usar:*\n\n' +
-      'A forma mais rápida de registrar receitas e despesas é usando o comando `/ai`.\n\n' +
+      'A forma mais rápida de registrar receitas e despesas é usando o comando `/ai`.\n' +
+      'Para acessar o app visual, use `/miniapp`.\n\n' +
       '*Exemplo:*\n' +
       '`/ai 100 salário de setembro`\n' +
       '`/ai 50 supermercado`\n\n' +
       'O bot entende o valor, tipo (receita ou despesa) e descrição automaticamente!\n\n' +
       '---\n\n' +
+      '*Comandos principais:*\n' +
+      '• /ai — Registra receitas e despesas rapidamente.\n' +
+      '• /miniapp — Gera um link para o app visual.\n\n' +
       '*Comandos avançados/opcionais:*\n' +
       '• /create — Cria um novo cofre.\n' +
       '• /join <token> — Entra em um cofre existente usando o token.\n' +
