@@ -128,8 +128,8 @@ export class TelegramMessageGenerator {
     return (
       `Cofre criado com sucesso\\!\n\n` +
       `*Token de Acesso:* \`${this.escapeMarkdownV2(vault.token)}\`\n\n` +
-      'Envie uma mensagem começando com `@ai`:\n\n' +
-      '_Exemplos:_ \n\n`@ai 100 salário de setembro`\n`@ai 50 compra de supermercado`\n\n' +
+      'Envie uma mensagem começando com `/ai`:\n\n' +
+      '_Exemplos:_ \n\n`/ai 100 salário de setembro`\n`/ai 50 compra de supermercado`\n\n' +
       `Use /help para ver os comandos disponíveis\\.`
     );
   }

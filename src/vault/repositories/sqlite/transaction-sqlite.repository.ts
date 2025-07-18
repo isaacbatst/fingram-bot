@@ -69,7 +69,6 @@ export class TransactionSqliteRepository extends TransactionRepository {
       id: row.id,
       vaultId: row.vault_id,
       code: row.code,
-      vaultId: row.vault_id,
       description: row.description,
       amount: row.amount,
       isCommitted: !!row.committed,
