@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -82,7 +83,7 @@ export class MiniappController {
     },
   ) {
     if (!data.transactionCode) {
-      throw new UnauthorizedException('O código da transação é obrigatório');
+      throw new BadRequestException('O código da transação é obrigatório');
     }
 
     // Converte a data de string para Date se estiver presente

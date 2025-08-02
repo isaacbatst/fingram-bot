@@ -25,7 +25,7 @@ export class MiniappSessionTokenGuard implements CanActivate {
     const request: Request = context.switchToHttp().getRequest();
     const token = this.extractTokenFromHeader(request);
     if (!token) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('No session token provided');
     }
     try {
       const payload =
@@ -34,7 +34,7 @@ export class MiniappSessionTokenGuard implements CanActivate {
         });
       request['miniapp_session'] = payload;
     } catch {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Invalid session token');
     }
     return true;
   }
