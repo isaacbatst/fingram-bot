@@ -25,8 +25,23 @@ export class MiniappController {
 
   @UseGuards(MiniappSessionTokenGuard)
   @Get('summary')
-  async getSummary(@MiniappSession() session: MiniappSessionTokenPayload) {
-    const [error, data] = await this.miniappService.getSummary(session.vaultId);
+  async getSummary(
+    @MiniappSession() session: MiniappSessionTokenPayload,
+    @Query('year') year?: string,
+    @Query('month') month?: string,
+  ) {
+    const date =
+      year && month
+        ? {
+            year: parseInt(year, 10),
+            month: parseInt(month, 10),
+          }
+        : undefined;
+
+    const [error, data] = await this.miniappService.getSummary(
+      session.vaultId,
+      date,
+    );
 
     if (error !== null) {
       this.handleError(error.type, error.message);

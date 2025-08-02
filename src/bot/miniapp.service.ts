@@ -231,6 +231,7 @@ export class MiniappService {
   // Simplified methods that work with vaultId directly (for authenticated routes)
   async getSummary(
     vaultId: string,
+    customDate?: { year: number; month: number },
   ): Promise<Either<MiniappError, SummaryData>> {
     try {
       // Buscar o cofre diretamente usando o VaultService
@@ -242,9 +243,12 @@ export class MiniappService {
         });
       }
 
-      // Obter resumo do orçamento para o mês atual
+      // Usar data customizada ou o mês atual
       const now = new Date();
-      const date = { month: now.getMonth() + 1, year: now.getFullYear() };
+      const date = customDate || {
+        month: now.getMonth() + 1,
+        year: now.getFullYear(),
+      };
       const budget = vault.getBudgetsSummary(date.month, date.year);
 
       return right({
