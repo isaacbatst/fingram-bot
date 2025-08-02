@@ -190,7 +190,7 @@ export class BotService {
     });
     if (err !== null) return left(err);
     return right({
-      vault: vault.toJSON(),
+      vault: vault.toJSON({ date }),
       budget: vault.getBudgetsSummary(date.month, date.year),
       date,
     });

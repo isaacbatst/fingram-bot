@@ -252,7 +252,7 @@ export class MiniappService {
       const budget = vault.getBudgetsSummary(date.month, date.year);
 
       return right({
-        vault: vault.toJSON(),
+        vault: vault.toJSON({ date }),
         budget,
         date,
       });

@@ -113,9 +113,15 @@ export class TelegramHandler {
             await ctx.editMessageText(err);
             return;
           }
+          const currentDate = new Date();
           await ctx.editMessageText(
             this.messageGenerator.formatTransactionSuccessMessage(
-              success.vault.toJSON(),
+              success.vault.toJSON({
+                date: {
+                  month: currentDate.getMonth() + 1,
+                  year: currentDate.getFullYear(),
+                },
+              }),
               success.transaction,
             ),
             { parse_mode: 'MarkdownV2' },
@@ -197,9 +203,15 @@ export class TelegramHandler {
         await ctx.reply(err);
         return;
       }
+      const currentDate = new Date();
       await ctx.reply(
         this.messageGenerator.formatTransactionSuccessMessage(
-          success.vault.toJSON(),
+          success.vault.toJSON({
+            date: {
+              month: currentDate.getMonth() + 1,
+              year: currentDate.getFullYear(),
+            },
+          }),
           success.transaction,
         ),
         { parse_mode: 'MarkdownV2' },
@@ -221,9 +233,15 @@ export class TelegramHandler {
         await ctx.reply(err);
         return;
       }
+      const currentDate = new Date();
       await ctx.reply(
         this.messageGenerator.formatTransactionSuccessMessage(
-          success.vault.toJSON(),
+          success.vault.toJSON({
+            date: {
+              month: currentDate.getMonth() + 1,
+              year: currentDate.getFullYear(),
+            },
+          }),
           success.transaction,
         ),
         { parse_mode: 'MarkdownV2' },
@@ -398,10 +416,19 @@ export class TelegramHandler {
         if (err !== null) {
           return ctx.reply(err);
         }
+        const currentDate = new Date();
         return ctx.reply(
           this.messageGenerator.formatVault(
-            vault.toJSON(),
-            vault.getBudgetsSummary(),
+            vault.toJSON({
+              date: {
+                month: currentDate.getMonth() + 1,
+                year: currentDate.getFullYear(),
+              },
+            }),
+            vault.getBudgetsSummary(
+              currentDate.getMonth() + 1,
+              currentDate.getFullYear(),
+            ),
           ),
           {
             parse_mode: 'MarkdownV2',
