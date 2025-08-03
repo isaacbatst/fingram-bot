@@ -55,6 +55,7 @@ export class MiniappController {
   async getTransactions(
     @MiniappSession() session: MiniappSessionTokenPayload,
     @Query('categoryId') categoryId?: string,
+    @Query('description') description?: string,
     @Query('year') year?: string,
     @Query('month') month?: string,
     @Query('page') page?: string,
@@ -72,6 +73,7 @@ export class MiniappController {
       session.vaultId,
       {
         categoryId,
+        description,
         date,
         page: pageNumber,
       },

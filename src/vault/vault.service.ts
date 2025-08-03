@@ -186,6 +186,7 @@ export class VaultService {
       year: number;
     };
     categoryId?: string;
+    description?: string;
     page?: number;
     pageSize?: number;
   }) {
@@ -204,6 +205,7 @@ export class VaultService {
             year: new Date().getFullYear(),
           },
           categoryId: input.categoryId,
+          description: input.description,
           page: input.page ?? 1,
           pageSize: input.pageSize ?? 10,
         },

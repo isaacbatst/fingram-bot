@@ -16,6 +16,7 @@ export class TransactionInMemoryRepository extends TransactionRepository {
     filter?: {
       date: { day?: number; month: number; year: number };
       categoryId?: string;
+      description?: string;
       page: number;
       pageSize?: number;
     },
@@ -48,6 +49,14 @@ export class TransactionInMemoryRepository extends TransactionRepository {
     if (filter?.categoryId) {
       transactions = transactions.filter(
         (transaction) => transaction.categoryId === filter.categoryId,
+      );
+    }
+
+    if (filter?.description) {
+      transactions = transactions.filter((transaction) =>
+        transaction.description
+          ?.toLowerCase()
+          .includes(filter.description!.toLowerCase()),
       );
     }
 

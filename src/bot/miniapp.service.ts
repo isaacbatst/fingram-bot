@@ -278,6 +278,7 @@ export class MiniappService {
     vaultId: string,
     options: {
       categoryId?: string;
+      description?: string;
       date?: {
         year: number;
         month: number;
@@ -295,6 +296,7 @@ export class MiniappService {
         },
         page: options.page || 1,
         categoryId: options.categoryId,
+        description: options.description,
         pageSize: 5,
       });
 

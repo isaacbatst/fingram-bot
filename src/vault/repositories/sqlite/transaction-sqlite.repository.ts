@@ -34,6 +34,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
     filter?: {
       date?: { day?: number; month: number; year: number };
       categoryId?: string;
+      description?: string;
       page?: number;
       pageSize?: number;
     },
@@ -59,6 +60,10 @@ export class TransactionSqliteRepository extends TransactionRepository {
     if (filter?.categoryId) {
       query += ' AND t.category_id = ?';
       params.push(filter.categoryId);
+    }
+    if (filter?.description) {
+      query += ' AND LOWER(t.description) LIKE LOWER(?)';
+      params.push(`%${filter.description}%`);
     }
     query += ' ORDER BY t.created_at DESC LIMIT ? OFFSET ?';
     params.push(pageSize, offset);
@@ -90,6 +95,10 @@ export class TransactionSqliteRepository extends TransactionRepository {
     if (filter?.categoryId) {
       countQuery += ' AND t.category_id = ?';
       countParams.push(filter.categoryId);
+    }
+    if (filter?.description) {
+      countQuery += ' AND LOWER(t.description) LIKE LOWER(?)';
+      countParams.push(`%${filter.description}%`);
     }
     if (filter?.date) {
       countQuery +=
