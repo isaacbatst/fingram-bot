@@ -121,6 +121,43 @@ export class MiniappController {
     return result;
   }
 
+  @UseGuards(MiniappSessionTokenGuard)
+  @Post('set-budgets')
+  async setBudgets(
+    @MiniappSession() session: MiniappSessionTokenPayload,
+    @Body()
+    data: {
+      budgets: { categoryCode: string; amount: number }[];
+    },
+  ) {
+    if (!data.budgets || !Array.isArray(data.budgets)) {
+      throw new BadRequestException('Lista de orçamentos é obrigatória');
+    }
+
+    // Validar estrutura dos budgets
+    for (const budget of data.budgets) {
+      if (!budget.categoryCode || typeof budget.amount !== 'number') {
+        throw new BadRequestException(
+          'Cada orçamento deve ter categoryCode (string) e amount (number)',
+        );
+      }
+      if (budget.amount < 0) {
+        throw new BadRequestException('O valor do orçamento deve ser positivo');
+      }
+    }
+
+    const [error, result] = await this.miniappService.setBudgets(
+      session.vaultId,
+      data.budgets,
+    );
+
+    if (error !== null) {
+      this.handleError(error.type, error.message);
+    }
+
+    return result as unknown;
+  }
+
   @Get('categories')
   async getCategories() {
     const categories = await this.vaultService.getCategories();

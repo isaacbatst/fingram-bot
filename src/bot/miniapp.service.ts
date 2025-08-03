@@ -374,5 +374,33 @@ export class MiniappService {
     }
   }
 
+  async setBudgets(
+    vaultId: string,
+    budgets: { categoryCode: string; amount: number }[],
+  ): Promise<Either<MiniappError, any>> {
+    try {
+      const [error, result] = await this.vaultService.setBudgets({
+        vaultId,
+        budgets,
+      });
+
+      if (error !== null) {
+        this.errorLog('Error setting budgets', { vaultId, error });
+        return left({
+          message: error,
+          type: MiniappErrorType.INTERNAL_ERROR,
+        });
+      }
+
+      return right(result);
+    } catch (error) {
+      this.errorLog('Unexpected error setting budgets', error);
+      return left({
+        message: 'Erro interno do servidor',
+        type: MiniappErrorType.INTERNAL_ERROR,
+      });
+    }
+  }
+
   // Legacy methods that work with initData (for backward compatibility and exchange flow)
 }
