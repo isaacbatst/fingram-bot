@@ -84,6 +84,86 @@ export class TelegramHandler {
       });
     });
 
+    this.telegraf.command('receita', async (ctx) => {
+      const chatId = ctx.chat.id.toString();
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
+      if (args.length === 0) {
+        await ctx.reply(
+          'Uso: /receita <valor> <descrição>\n\nExemplo: /receita 100 salário de setembro\n\n',
+        );
+        return;
+      }
+      await ctx.sendChatAction('typing');
+      const message = `receita ${args.join(' ')}`;
+      // Usar botService para parseVaultAction especificando receita
+      const [err, action] = await this.botService.parseVaultAction({
+        chatId,
+        message,
+        forceType: 'income',
+      });
+      if (err !== null) {
+        await ctx.reply(err);
+        return;
+      }
+      await ctx.reply(this.messageGenerator.formatActionDetected(action), {
+        parse_mode: 'MarkdownV2',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '✅ Confirmar',
+                callback_data: `ACTION:${action.id}`,
+              },
+              {
+                text: '❌ Cancelar',
+                callback_data: 'CANCEL',
+              },
+            ],
+          ],
+        },
+      });
+    });
+
+    this.telegraf.command('despesa', async (ctx) => {
+      const chatId = ctx.chat.id.toString();
+      const { args } = this.parseCommandAndArgs(ctx.message.text);
+      if (args.length === 0) {
+        await ctx.reply(
+          'Uso: /despesa <valor> <descrição>\n\nExemplo: /despesa 50 supermercado\n\n',
+        );
+        return;
+      }
+      await ctx.sendChatAction('typing');
+      const message = `despesa ${args.join(' ')}`;
+      // Usar botService para parseVaultAction especificando despesa
+      const [err, action] = await this.botService.parseVaultAction({
+        chatId,
+        message,
+        forceType: 'expense',
+      });
+      if (err !== null) {
+        await ctx.reply(err);
+        return;
+      }
+      await ctx.reply(this.messageGenerator.formatActionDetected(action), {
+        parse_mode: 'MarkdownV2',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '✅ Confirmar',
+                callback_data: `ACTION:${action.id}`,
+              },
+              {
+                text: '❌ Cancelar',
+                callback_data: 'CANCEL',
+              },
+            ],
+          ],
+        },
+      });
+    });
+
     this.telegraf.on('callback_query', async (ctx) => {
       let data: string | undefined = undefined;
       if (

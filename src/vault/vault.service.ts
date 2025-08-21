@@ -52,18 +52,25 @@ export class VaultService {
     return right(true);
   }
 
-  async parseVaultAction(input: { message: string; vaultId: string }) {
-    this.logger.log(`Parsing vault action for vaultId: ${input.vaultId}`);
+  async parseVaultAction(input: {
+    message: string;
+    vaultId: string;
+    forceType?: 'income' | 'expense';
+  }) {
+    this.logger.log(`Parsing vault action: ${input.message}`);
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
       return left(`Cofre não encontrado`);
     }
+
+    const customPrompt = vault.getCustomPrompt();
     const categories = await this.categoryRepository.findAll();
     const [err, action] = await this.aiService.parseVaultAction(
       input.message,
       categories,
-      vault.getCustomPrompt(),
+      customPrompt,
+      input.forceType,
     );
     if (err !== null) {
       this.logger.error(`Error parsing action: ${err}`);

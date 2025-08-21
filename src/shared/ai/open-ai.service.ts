@@ -58,6 +58,7 @@ export class OpenAiService extends AiService {
     input: string,
     categories: Category[],
     customPrompt = '',
+    forceType?: 'income' | 'expense',
   ): Promise<Either<string, Action>> {
     const response = await this.openAi.responses.parse({
       model: 'gpt-4.1-nano',
@@ -68,8 +69,10 @@ export class OpenAiService extends AiService {
 
       Na maioria dos casos o usuário não dirá explicitamente que está criando uma receita ou despesa, mas você deve inferir isso a partir da descrição.
       
-      Exemplo de receita: "100 salário"
-      Exemplo de despesa: "50 café" 
+      ${forceType ? `IMPORTANTE: Force o tipo de transação para ser ${forceType === 'income' ? 'INCOME' : 'EXPENSE'} independente do que o usuário disser.` : ''}
+      
+      Exemplo de receita: "100 salário", só com esse input você deve inferir que é uma receita de 100 reais, descrição "salário".
+      Exemplo de despesa: "50 café", só com esse input você deve inferir que é uma despesa de 50 reais, descrição "café".
       
       Muitas vezes uma transação será uma transferência para uma pessoa ou empresa, o nome pode dar uma pista da categoria, como "Transferência para Curso de Inglês" ou "Pagamento Uber"
       O usuário poderá fornecer uma customização do prompt para dar mais contexto, como deixar claro que uma transferência para "João" é uma despesa de "Transporte" ou "Educação", por exemplo.
@@ -102,7 +105,7 @@ export class OpenAiService extends AiService {
       `,
       input: `
         Contexto adicional do usuário: ${customPrompt}
-        Ação solicitada (pode ser a descrição de uma receita ou despesa): ${input}
+        Ação solicitada (tipo ${forceType ? (forceType === 'income' ? 'RECEITA' : 'DESPESA') : 'receita ou despesa'}): ${input}
       `,
       text: {
         format: zodTextFormat(parseVaultActionSchema, 'action'),

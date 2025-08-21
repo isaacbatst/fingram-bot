@@ -7,7 +7,8 @@ export abstract class AiService {
   abstract parseVaultAction(
     input: string,
     categories: Category[],
-    customPrompt: string,
+    customPrompt?: string,
+    forceType?: 'income' | 'expense',
   ): Promise<Either<string, Action>>;
   abstract parseTransactionsFile(
     transactions: Transaction[],

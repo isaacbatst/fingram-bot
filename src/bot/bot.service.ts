@@ -235,7 +235,11 @@ export class BotService {
     });
   }
 
-  async parseVaultAction(input: { chatId: string; message: string }) {
+  async parseVaultAction(input: {
+    chatId: string;
+    message: string;
+    forceType?: 'income' | 'expense';
+  }) {
     const chat = await this.chatService.findChatByTelegramChatId(input.chatId);
     if (!chat || !chat.vaultId) {
       return left(BotService.NOT_STARTED_MESSAGE);
@@ -243,6 +247,7 @@ export class BotService {
     return this.vaultService.parseVaultAction({
       message: input.message,
       vaultId: chat.vaultId,
+      forceType: input.forceType,
     });
   }
 
