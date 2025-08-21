@@ -335,6 +335,7 @@ export class MiniappService {
       newDate?: Date;
       newCategory?: string;
       newDescription?: string;
+      newType?: 'income' | 'expense';
     },
   ): Promise<Either<MiniappError, { transaction: any; vault: any }>> {
     try {
@@ -345,6 +346,7 @@ export class MiniappService {
         date: editData.newDate,
         categoryCode: editData.newCategory,
         description: editData.newDescription,
+        type: editData.newType,
       });
 
       const [editError, editSuccess] = editResult;

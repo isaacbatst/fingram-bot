@@ -97,10 +97,17 @@ export class MiniappController {
       newDate?: string; // formato ISO (YYYY-MM-DD)
       newCategory?: string;
       newDescription?: string;
+      newType?: 'income' | 'expense';
     },
   ) {
     if (!data.transactionCode) {
       throw new BadRequestException('O código da transação é obrigatório');
+    }
+
+    if (data.newType && !['income', 'expense'].includes(data.newType)) {
+      throw new BadRequestException(
+        'Tipo de transação inválido. Use "income" ou "expense"',
+      );
     }
 
     // Converte a data de string para Date se estiver presente
