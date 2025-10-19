@@ -327,6 +327,55 @@ export class MiniappService {
     }
   }
 
+  async createTransaction(
+    vaultId: string,
+    createData: {
+      amount: number;
+      description?: string;
+      categoryId?: string;
+      date?: Date;
+      type: 'income' | 'expense';
+    },
+  ): Promise<Either<MiniappError, { transaction: any; vault: any }>> {
+    try {
+      const createResult = await this.vaultService.addTransactionToVault({
+        vaultId,
+        transaction: {
+          amount: createData.amount,
+          description: createData.description,
+          categoryId: createData.categoryId,
+          type: createData.type,
+          shouldCommit: true, // Auto-commit new transactions
+        },
+      });
+
+      const [createError, createSuccess] = createResult;
+      if (createError !== null) {
+        return left({
+          message: createError,
+          type: MiniappErrorType.INTERNAL_ERROR,
+        });
+      }
+
+      return right(createSuccess);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : 'Erro ao processar a solicitação';
+
+      this.errorLog('Erro não capturado no createTransaction', {
+        error: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      return left({
+        message: errorMessage,
+        type: MiniappErrorType.INTERNAL_ERROR,
+      });
+    }
+  }
+
   async editTransaction(
     vaultId: string,
     editData: {

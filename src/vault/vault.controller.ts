@@ -7,26 +7,27 @@ import {
   NotFoundException,
   Post,
   Query,
+  Res,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { VaultService } from '../vault/vault.service';
-import { MiniappSessionTokenPayload } from './miniapp-session-token';
-import { MiniappSessionTokenGuard } from './miniapp-session-token.guard';
-import { MiniappSession } from './miniapp-session.decorator';
-import { MiniappErrorType, MiniappService } from './miniapp.service';
+import { VaultService } from './vault.service';
+import { VaultAccessTokenGuard } from './vault-access-token.guard';
+import { VaultSession } from './vault-session.decorator';
+import { VaultErrorType, VaultAuthService } from './vault-auth.service';
+import { Response } from 'express';
 
-@Controller('miniapp')
-export class MiniappController {
+@Controller('vault')
+export class VaultController {
   constructor(
-    private readonly miniappService: MiniappService,
+    private readonly vaultAuthService: VaultAuthService,
     private readonly vaultService: VaultService,
   ) {}
 
-  @UseGuards(MiniappSessionTokenGuard)
+  @UseGuards(VaultAccessTokenGuard)
   @Get('summary')
   async getSummary(
-    @MiniappSession() session: MiniappSessionTokenPayload,
+    @VaultSession() vaultId: string,
     @Query('year') year?: string,
     @Query('month') month?: string,
   ) {
@@ -38,10 +39,7 @@ export class MiniappController {
           }
         : undefined;
 
-    const [error, data] = await this.miniappService.getSummary(
-      session.vaultId,
-      date,
-    );
+    const [error, data] = await this.vaultAuthService.getSummary(vaultId, date);
 
     if (error !== null) {
       this.handleError(error.type, error.message);
@@ -50,10 +48,10 @@ export class MiniappController {
     return data;
   }
 
-  @UseGuards(MiniappSessionTokenGuard)
+  @UseGuards(VaultAccessTokenGuard)
   @Get('transactions')
   async getTransactions(
-    @MiniappSession() session: MiniappSessionTokenPayload,
+    @VaultSession() vaultId: string,
     @Query('categoryId') categoryId?: string,
     @Query('description') description?: string,
     @Query('year') year?: string,
@@ -69,8 +67,8 @@ export class MiniappController {
           }
         : undefined;
 
-    const [error, transactions] = await this.miniappService.getTransactions(
-      session.vaultId,
+    const [error, transactions] = await this.vaultAuthService.getTransactions(
+      vaultId,
       {
         categoryId,
         description,
@@ -86,10 +84,10 @@ export class MiniappController {
     return transactions;
   }
 
-  @UseGuards(MiniappSessionTokenGuard)
+  @UseGuards(VaultAccessTokenGuard)
   @Post('create-transaction')
   async createTransaction(
-    @MiniappSession() session: MiniappSessionTokenPayload,
+    @VaultSession() vaultId: string,
     @Body()
     data: {
       amount: number;
@@ -117,8 +115,8 @@ export class MiniappController {
       date: data.date ? new Date(data.date) : new Date(),
     };
 
-    const [error, result] = await this.miniappService.createTransaction(
-      session.vaultId,
+    const [error, result] = await this.vaultAuthService.createTransaction(
+      vaultId,
       parsedData,
     );
 
@@ -129,10 +127,10 @@ export class MiniappController {
     return result;
   }
 
-  @UseGuards(MiniappSessionTokenGuard)
+  @UseGuards(VaultAccessTokenGuard)
   @Post('edit-transaction')
   async editTransaction(
-    @MiniappSession() session: MiniappSessionTokenPayload,
+    @VaultSession() vaultId: string,
     @Body()
     data: {
       transactionCode: string;
@@ -159,8 +157,8 @@ export class MiniappController {
       newDate: data.newDate ? new Date(data.newDate) : undefined,
     };
 
-    const [error, result] = await this.miniappService.editTransaction(
-      session.vaultId,
+    const [error, result] = await this.vaultAuthService.editTransaction(
+      vaultId,
       parsedData,
     );
 
@@ -171,10 +169,10 @@ export class MiniappController {
     return result;
   }
 
-  @UseGuards(MiniappSessionTokenGuard)
+  @UseGuards(VaultAccessTokenGuard)
   @Post('set-budgets')
   async setBudgets(
-    @MiniappSession() session: MiniappSessionTokenPayload,
+    @VaultSession() vaultId: string,
     @Body()
     data: {
       budgets: { categoryCode: string; amount: number }[];
@@ -196,8 +194,8 @@ export class MiniappController {
       }
     }
 
-    const [error, result] = await this.miniappService.setBudgets(
-      session.vaultId,
+    const [error, result] = await this.vaultAuthService.setBudgets(
+      vaultId,
       data.budgets,
     );
 
@@ -217,43 +215,49 @@ export class MiniappController {
     return categories;
   }
 
-  @Get('exchange')
-  async exchangeInitDataForAuthToken(@Query('initData') initData: string) {
-    if (!initData) {
-      throw new UnauthorizedException('O parâmetro initData é obrigatório');
+  @Post('authenticate')
+  async authenticate(
+    @Body() data: { accessToken: string },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    if (!data.accessToken) {
+      throw new BadRequestException('Access token é obrigatório');
     }
 
-    const [err, token] =
-      await this.miniappService.exchangeInitDataForAuthToken(initData);
-    if (err !== null) {
-      this.handleError(err.type, err.message);
+    const [error, vaultId] = await this.vaultAuthService.authenticate(
+      data.accessToken,
+    );
+
+    if (error !== null) {
+      this.handleError(error.type, error.message);
     }
 
-    return { token };
+    // Set HTTP-only cookie
+    response.cookie('vault_access_token', data.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
+    return { vaultId };
   }
 
-  @UseGuards(MiniappSessionTokenGuard)
+  @UseGuards(VaultAccessTokenGuard)
   @Get('me')
-  getMe(@MiniappSession() session: MiniappSessionTokenPayload) {
-    const payload: MiniappSessionTokenPayload = {
-      chatId: session.chatId,
-      vaultId: session.vaultId,
-    };
-
+  getMe(@VaultSession() vaultId: string) {
     return {
-      chatId: payload.chatId,
-      vaultId: payload.vaultId,
+      vaultId,
     };
   }
 
-  private handleError(error: MiniappErrorType, message: string): never {
+  private handleError(error: VaultErrorType, message: string): never {
     switch (error) {
-      case MiniappErrorType.UNAUTHORIZED:
+      case VaultErrorType.UNAUTHORIZED:
         throw new UnauthorizedException(message);
-      case MiniappErrorType.CHAT_NOT_FOUND:
-      case MiniappErrorType.VAULT_NOT_FOUND:
+      case VaultErrorType.VAULT_NOT_FOUND:
         throw new NotFoundException(message);
-      case MiniappErrorType.INTERNAL_ERROR:
+      case VaultErrorType.INTERNAL_ERROR:
       default:
         throw new InternalServerErrorException(message);
     }
