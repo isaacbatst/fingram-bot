@@ -6,6 +6,7 @@ import { TransactionDTO } from './dto/transaction.dto,';
 import { VaultService } from './vault.service';
 import { ChatService } from '../bot/modules/chat/chat.service';
 import * as crypto from 'crypto';
+import { AccessTokenStore } from '../shared/cache/access-token-store';
 
 export enum VaultErrorType {
   UNAUTHORIZED = 'UNAUTHORIZED',
@@ -21,15 +22,6 @@ export interface VaultError {
 @Injectable()
 export class VaultAuthService {
   private readonly logger = new Logger(VaultAuthService.name);
-  private readonly accessTokenStore: Map<
-    string,
-    {
-      expiresAt: number;
-      chatId: string;
-      vaultId: string;
-    }
-  > = new Map();
-
   constructor(
     private readonly vaultService: VaultService,
     private readonly chatService: ChatService,
@@ -73,7 +65,7 @@ export class VaultAuthService {
         });
       }
 
-      this.accessTokenStore.set(token, { expiresAt, chatId, vaultId });
+      AccessTokenStore.store.set(token, { expiresAt, chatId, vaultId });
       return right(token);
     } catch (error) {
       this.logger.error(`Error creating link token: ${error}`);
@@ -85,7 +77,7 @@ export class VaultAuthService {
   }
 
   getAccessTokenData(token: string) {
-    const entry = this.accessTokenStore.get(token);
+    const entry = AccessTokenStore.store.get(token);
     if (entry && entry.expiresAt > Date.now()) {
       return entry;
     }
@@ -93,7 +85,7 @@ export class VaultAuthService {
   }
 
   deleteAccessToken(token: string) {
-    this.accessTokenStore.delete(token);
+    AccessTokenStore.store.delete(token);
   }
 
   async authenticateTempToken(

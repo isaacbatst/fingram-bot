@@ -8,6 +8,7 @@ import { VaultService } from '../vault/vault.service';
 import { ChatService } from './modules/chat/chat.service';
 import { JwtService } from '@nestjs/jwt';
 import { MiniappSessionTokenPayload } from './miniapp-session-token';
+import { AccessTokenStore } from '../shared/cache/access-token-store';
 
 export interface WebAppInitData {
   query_id?: string;
@@ -48,15 +49,6 @@ export interface MiniappError {
 @Injectable()
 export class MiniappService {
   private readonly BOT_TOKEN: string;
-  private readonly accessTokenStore: Map<
-    string,
-    {
-      expiresAt: number;
-      chatId: string;
-      vaultId: string;
-    }
-  > = new Map();
-
   constructor(
     private readonly configService: ConfigService,
     private readonly vaultService: VaultService,
@@ -93,12 +85,12 @@ export class MiniappService {
         type: MiniappErrorType.VAULT_NOT_FOUND,
       });
     }
-    this.accessTokenStore.set(token, { expiresAt, chatId, vaultId });
+    AccessTokenStore.store.set(token, { expiresAt, chatId, vaultId });
     return right(token);
   }
 
   getAccessTokenData(token: string) {
-    const entry = this.accessTokenStore.get(token);
+    const entry = AccessTokenStore.store.get(token);
     if (entry && entry.expiresAt > Date.now()) {
       return entry;
     }
@@ -106,7 +98,7 @@ export class MiniappService {
   }
 
   deleteAccessToken(token: string) {
-    this.accessTokenStore.delete(token);
+    AccessTokenStore.store.delete(token);
   }
 
   async exchangeInitDataForAuthToken(initData: string) {
