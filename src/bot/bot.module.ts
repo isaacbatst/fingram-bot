@@ -4,7 +4,6 @@ import { BotService } from './bot.service';
 import { ChatModule } from './modules/chat/chat.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
 import { TelegramHandler } from './telegram.handler';
-import { MiniappController } from './miniapp.controller';
 
 @Module({})
 export class BotModule {
@@ -16,7 +15,6 @@ export class BotModule {
         ChatModule.register(config),
         TelegramModule,
       ],
-      controllers: [MiniappController],
       providers: [TelegramHandler, BotService],
     };
   }

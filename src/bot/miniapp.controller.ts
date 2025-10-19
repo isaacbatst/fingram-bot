@@ -232,7 +232,6 @@ export class MiniappController {
     return { token };
   }
 
-
   @UseGuards(MiniappSessionTokenGuard)
   @Get('me')
   getMe(@MiniappSession() session: MiniappSessionTokenPayload) {
