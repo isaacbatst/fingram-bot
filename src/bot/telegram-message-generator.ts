@@ -49,9 +49,7 @@ export class TelegramMessageGenerator {
       `*Categoria:* ${this.escapeMarkdownV2(
         transaction.category?.name ?? 'Nenhuma categoria especificada',
       )}\n\n` +
-      `*Saldo atual:* ${saldo}` +
-      `\n\n` +
-      this.formatBudgetSummary(vault, vault.budgetsSummary)
+      `*Saldo atual:* ${saldo}`
     );
   }
 
