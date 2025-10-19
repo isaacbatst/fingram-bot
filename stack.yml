@@ -6,7 +6,7 @@ services:
     user: "1000:1000"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.bot.rule=Host(`bot.congressosimulator.com.br`)"
+      - "traefik.http.routers.bot.rule=Host(`api-carteira.isaacbatst.com.br`)"
       - "traefik.http.services.bot.loadbalancer.server.port=3002"
       - "traefik.http.routers.bot.entrypoints=websecure"
       - "traefik.http.routers.bot.tls.certresolver=myresolver"
