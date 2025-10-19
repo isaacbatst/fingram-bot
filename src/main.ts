@@ -11,8 +11,8 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule.register('sqlite'),
   );
+  const logger = app.get(Logger);
   const configService = app.get(ConfigService);
-
   app.enableCors({
     origin: (requestOrigin, cb) => {
       const allowedOriginsStr =
@@ -22,13 +22,13 @@ async function bootstrap() {
       if (isAllowed) {
         cb(null, isAllowed);
       } else {
+        logger.warn('Request origin not allowed:', requestOrigin);
         cb(new Error('CORS not allowed'));
       }
     },
     credentials: true,
   });
   const expressApp = app.getHttpAdapter().getInstance();
-  const logger = new Logger('Bootstrap');
   expressApp.use((req, res, next) => {
     logger.log(`Request: ${req.method} ${req.url}`);
     next();
