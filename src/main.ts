@@ -11,7 +11,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(
     AppModule.register('sqlite'),
   );
-  const logger = app.get(Logger);
+  const logger = new Logger('Bootstrap');
   const configService = app.get(ConfigService);
   app.enableCors({
     origin: (requestOrigin, cb) => {
