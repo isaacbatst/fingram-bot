@@ -42,7 +42,7 @@ export class VaultAuthService {
       }
 
       this.logger.log(`Vault authenticated successfully: ${vault.id}`);
-      return right(vault.id);
+      return right(vault.token);
     } catch (error) {
       this.logger.error(`Error authenticating vault: ${error}`);
       return left({
@@ -123,7 +123,7 @@ export class VaultAuthService {
       this.logger.log(
         `Vault authenticated successfully with temp token: ${vault.id}`,
       );
-      return right(vault.id);
+      return right(vault.token);
     } catch (error) {
       this.logger.error(`Error authenticating with temporary token: ${error}`);
       return left({

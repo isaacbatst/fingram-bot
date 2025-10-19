@@ -224,7 +224,7 @@ export class VaultController {
       throw new BadRequestException('Access token é obrigatório');
     }
 
-    const [error, vaultId] = await this.vaultAuthService.authenticate(
+    const [error, vaultToken] = await this.vaultAuthService.authenticate(
       data.accessToken,
     );
 
@@ -233,14 +233,12 @@ export class VaultController {
     }
 
     // Set HTTP-only cookie
-    response.cookie('vault_access_token', data.accessToken, {
+    response.cookie('vault_access_token', vaultToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
-
-    return { vaultId };
   }
 
   @Post('authenticate-temp-token')
@@ -252,23 +250,20 @@ export class VaultController {
       throw new BadRequestException('Token é obrigatório');
     }
 
-    const [error, vaultId] = await this.vaultAuthService.authenticateTempToken(
-      data.token,
-    );
+    const [error, vaultToken] =
+      await this.vaultAuthService.authenticateTempToken(data.token);
 
     if (error !== null) {
       this.handleError(error.type, error.message);
     }
 
     // Set HTTP-only cookie with the vault access token
-    response.cookie('vault_access_token', data.token, {
+    response.cookie('vault_access_token', vaultToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
     });
-
-    return { vaultId };
   }
 
   @UseGuards(VaultAccessTokenGuard)
