@@ -66,6 +66,7 @@ jobs:
           echo "TELEGRAM_MINIAPP_URL=${{ secrets.TELEGRAM_MINIAPP_URL }}" >> envfile
           echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> envfile
           echo "GIT_COMMIT_HASH=${{ github.sha }}" >> envfile
+          echo "ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }}" >> envfile
       - name: Docker Stack Deploy
         uses: cssnr/stack-deploy-action@v1
         with:
