@@ -243,6 +243,34 @@ export class VaultController {
     return { vaultId };
   }
 
+  @Post('authenticate-temp-token')
+  async authenticateTempToken(
+    @Body() data: { token: string },
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    if (!data.token) {
+      throw new BadRequestException('Token é obrigatório');
+    }
+
+    const [error, vaultId] = await this.vaultAuthService.authenticateTempToken(
+      data.token,
+    );
+
+    if (error !== null) {
+      this.handleError(error.type, error.message);
+    }
+
+    // Set HTTP-only cookie with the vault access token
+    response.cookie('vault_access_token', data.token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
+    return { vaultId };
+  }
+
   @UseGuards(VaultAccessTokenGuard)
   @Get('me')
   getMe(@VaultSession() vaultId: string) {

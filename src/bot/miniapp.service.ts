@@ -105,6 +105,10 @@ export class MiniappService {
     return null;
   }
 
+  deleteAccessToken(token: string) {
+    this.accessTokenStore.delete(token);
+  }
+
   async exchangeInitDataForAuthToken(initData: string) {
     const validationResult = this.validateTelegramInitData({
       initData,

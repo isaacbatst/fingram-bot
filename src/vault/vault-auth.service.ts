@@ -4,6 +4,8 @@ import { Paginated } from './domain/paginated';
 import { BudgetSummary, SerializedVault, Vault } from './domain/vault';
 import { TransactionDTO } from './dto/transaction.dto,';
 import { VaultService } from './vault.service';
+import { ChatService } from '../bot/modules/chat/chat.service';
+import * as crypto from 'crypto';
 
 export enum VaultErrorType {
   UNAUTHORIZED = 'UNAUTHORIZED',
@@ -19,8 +21,19 @@ export interface VaultError {
 @Injectable()
 export class VaultAuthService {
   private readonly logger = new Logger(VaultAuthService.name);
+  private readonly accessTokenStore: Map<
+    string,
+    {
+      expiresAt: number;
+      chatId: string;
+      vaultId: string;
+    }
+  > = new Map();
 
-  constructor(private readonly vaultService: VaultService) {}
+  constructor(
+    private readonly vaultService: VaultService,
+    private readonly chatService: ChatService,
+  ) {}
 
   async authenticate(accessToken: string): Promise<Either<VaultError, string>> {
     try {
@@ -45,6 +58,107 @@ export class VaultAuthService {
         message: 'Erro interno ao autenticar vault',
       });
     }
+  }
+
+  async createLinkToken(chatId: string): Promise<Either<VaultError, string>> {
+    try {
+      const token = crypto.randomUUID();
+      const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
+
+      const [err, vaultId] = await this.getVaultIdFromChatId(chatId);
+      if (err !== null) {
+        return left({
+          type: VaultErrorType.VAULT_NOT_FOUND,
+          message: 'Erro ao obter o vaultId do chatId',
+        });
+      }
+
+      this.accessTokenStore.set(token, { expiresAt, chatId, vaultId });
+      return right(token);
+    } catch (error) {
+      this.logger.error(`Error creating link token: ${error}`);
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao criar token de link',
+      });
+    }
+  }
+
+  getAccessTokenData(token: string) {
+    const entry = this.accessTokenStore.get(token);
+    if (entry && entry.expiresAt > Date.now()) {
+      return entry;
+    }
+    return null;
+  }
+
+  deleteAccessToken(token: string) {
+    this.accessTokenStore.delete(token);
+  }
+
+  async authenticateTempToken(
+    tempToken: string,
+  ): Promise<Either<VaultError, string>> {
+    try {
+      this.logger.log(`Authenticating with temporary token`);
+
+      // Get access token data from local store
+      const accessTokenData = this.getAccessTokenData(tempToken);
+      if (!accessTokenData) {
+        this.logger.warn(`Temporary token not found or expired`);
+        return left({
+          type: VaultErrorType.UNAUTHORIZED,
+          message: 'Token temporário inválido ou expirado',
+        });
+      }
+
+      // Get the vault using the vaultId from the temporary token
+      const [vaultError, vault] = await this.vaultService.getVault({
+        vaultId: accessTokenData.vaultId,
+      });
+
+      if (vaultError !== null) {
+        this.logger.warn(`Vault not found for temporary token: ${vaultError}`);
+        return left({
+          type: VaultErrorType.VAULT_NOT_FOUND,
+          message: 'Vault não encontrado para o token temporário',
+        });
+      }
+
+      // Remove the temporary token after successful authentication
+      this.deleteAccessToken(tempToken);
+
+      this.logger.log(
+        `Vault authenticated successfully with temp token: ${vault.id}`,
+      );
+      return right(vault.id);
+    } catch (error) {
+      this.logger.error(`Error authenticating with temporary token: ${error}`);
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao autenticar com token temporário',
+      });
+    }
+  }
+
+  private async getVaultIdFromChatId(
+    chatId: string,
+  ): Promise<Either<VaultError, string>> {
+    const chat = await this.chatService.findChatByTelegramChatId(chatId);
+    if (!chat) {
+      return left({
+        type: VaultErrorType.VAULT_NOT_FOUND,
+        message: 'Chat não encontrado',
+      });
+    }
+    if (!chat.vaultId) {
+      return left({
+        type: VaultErrorType.VAULT_NOT_FOUND,
+        message:
+          'Cofre não inicializado. É necessário criar um novo cofre ou entrar em um cofre existente.',
+      });
+    }
+    return right(chat.vaultId);
   }
 
   async getSummary(

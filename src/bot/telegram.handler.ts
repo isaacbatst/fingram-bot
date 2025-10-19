@@ -5,8 +5,7 @@ import { Either, left, right } from '../vault/domain/either';
 import { BotService } from './bot.service';
 import { TelegramMessageGenerator } from './telegram-message-generator';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'crypto';
-import { MiniappService } from './miniapp.service';
+import { VaultAuthService } from '../vault/vault-auth.service';
 
 @Injectable()
 export class TelegramHandler {
@@ -14,11 +13,12 @@ export class TelegramHandler {
   private readonly logger = new Logger(TelegramHandler.name);
   private readonly WEB_APP_URL: string;
   private readonly BOT_USERNAME: string;
+  private readonly FRONTEND_URL: string;
 
   constructor(
     private telegraf: Telegraf,
     private botService: BotService,
-    private miniappService: MiniappService,
+    private vaultAuthService: VaultAuthService,
     private configService: ConfigService,
   ) {
     this.WEB_APP_URL = this.configService.getOrThrow<string>(
@@ -27,6 +27,8 @@ export class TelegramHandler {
     this.BOT_USERNAME = this.configService.getOrThrow<string>(
       'TELEGRAM_BOT_USERNAME',
     );
+    this.FRONTEND_URL =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
   }
 
   /**
@@ -619,7 +621,7 @@ export class TelegramHandler {
     });
 
     this.telegraf.command('miniapp', async (ctx) => {
-      const [err, token] = await this.miniappService.createLinkToken(
+      const [err, token] = await this.vaultAuthService.createLinkToken(
         ctx.chat.id.toString(),
       );
       if (err !== null) {
@@ -630,8 +632,8 @@ export class TelegramHandler {
         return;
       }
       this.logger.log(`Generated token: ${token} for chatId: ${ctx.chat.id}`);
-      const directLink = `https://t.me/${this.BOT_USERNAME}?startapp=${token}`;
-      await ctx.reply(`[Abrir Mini App](${directLink})`, {
+      const frontendLink = `${this.FRONTEND_URL}?token=${token}`;
+      await ctx.reply(`[Abrir Aplicativo](${frontendLink})`, {
         parse_mode: 'Markdown',
       });
     });
