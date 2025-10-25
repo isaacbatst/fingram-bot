@@ -5,7 +5,9 @@ import { Either, left, right } from '../vault/domain/either';
 import { BotService } from './bot.service';
 import { TelegramMessageGenerator } from './telegram-message-generator';
 import { ConfigService } from '@nestjs/config';
-import { VaultAuthService } from '../vault/vault-auth.service';
+import { VaultWebService } from '../vault/vault-web.service';
+import { OnEvent } from '@nestjs/event-emitter';
+import { TransactionCreatedEvent } from '../vault/events/transaction-created.event';
 
 @Injectable()
 export class TelegramHandler {
@@ -18,7 +20,7 @@ export class TelegramHandler {
   constructor(
     private telegraf: Telegraf,
     private botService: BotService,
-    private vaultAuthService: VaultAuthService,
+    private vaultAuthService: VaultWebService,
     private configService: ConfigService,
   ) {
     this.WEB_APP_URL = this.configService.getOrThrow<string>(
@@ -29,6 +31,15 @@ export class TelegramHandler {
     );
     this.FRONTEND_URL =
       this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+  }
+
+  @OnEvent(TransactionCreatedEvent.eventName)
+  handleTransactionCreatedEvent(event: TransactionCreatedEvent) {
+    return this.botService.handleCreatedTransaction(event, async (input) => {
+      await this.telegraf.telegram.sendMessage(input.chatId, input.message, {
+        parse_mode: 'MarkdownV2',
+      });
+    });
   }
 
   /**

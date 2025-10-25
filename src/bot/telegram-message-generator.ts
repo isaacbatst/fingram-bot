@@ -384,4 +384,22 @@ export class TelegramMessageGenerator {
     const bar = filledBar + emptyBar;
     return `${bar} ${this.escapeMarkdownV2(percentage.toFixed(0))}%`;
   }
+
+  static generateTransactionCreatedOnWebNotification(
+    transaction: TransactionDTO,
+  ): string {
+    return (
+      `Nova *${transaction.type === 'income' ? 'Receita' : 'Despesa'}* foi registrada:*\n\n` +
+      `*Valor:* ${this.escapeMarkdownV2(
+        transaction.amount.toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+          minimumFractionDigits: 2,
+        }),
+      )}\n` +
+      `*Categoria:* ${this.escapeMarkdownV2(transaction.category?.name ?? 'Nenhuma categoria especificada')}\n` +
+      `*Data:* ${this.escapeMarkdownV2(transaction.createdAt.toLocaleDateString('pt-BR'))}\n` +
+      `*Descrição:* ${this.escapeMarkdownV2(transaction.description ?? 'Sem descrição')}\n`
+    );
+  }
 }

@@ -1,12 +1,16 @@
 import { VaultService } from '@/vault/vault.service';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Either, left, right } from '../vault/domain/either';
 import { ChatService } from './modules/chat/chat.service';
+import { TransactionCreatedEvent } from '../vault/events/transaction-created.event';
+import { TelegramMessageGenerator } from './telegram-message-generator';
 
 @Injectable()
 export class BotService {
   private static readonly NOT_STARTED_MESSAGE =
     'Cofre não inicializado. Use /create para criar um novo cofre ou /join para entrar em um cofre existente.';
+
+  private readonly logger = new Logger(BotService.name);
 
   constructor(
     private readonly chatService: ChatService,
@@ -311,5 +315,33 @@ export class BotService {
       vaultId: chat.vaultId,
       appendText,
     });
+  }
+
+  async handleCreatedTransaction(
+    event: TransactionCreatedEvent,
+    sendMessage: (input: { chatId: string; message: string }) => Promise<void>,
+  ) {
+    if (event.platform === 'telegram-bot') {
+      this.logger.log(`Created transaction on telegram bot, no action needed`);
+      return;
+    }
+    const chats = await this.chatService.findChatsByVaultId(event.vaultId);
+
+    this.logger.log(
+      `Sending transaction created message to ${chats.length} chats`,
+    );
+
+    for (const chat of chats) {
+      this.logger.debug(`Sending message to chat ${chat.telegramChatId}`);
+      const message =
+        TelegramMessageGenerator.generateTransactionCreatedOnWebNotification(
+          event.transaction,
+        );
+      await sendMessage({
+        chatId: chat.telegramChatId,
+        message,
+      });
+      this.logger.log(`Message sent to chat ${chat.telegramChatId}`);
+    }
   }
 }

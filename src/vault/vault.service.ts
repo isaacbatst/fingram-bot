@@ -12,6 +12,8 @@ import { ReadableStream } from 'node:stream/web';
 import { Category } from './domain/category';
 import { Vault } from './domain/vault';
 import { TransactionDTO } from './dto/transaction.dto,';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { TransactionCreatedEvent } from './events/transaction-created.event';
 
 @Injectable()
 export class VaultService {
@@ -22,6 +24,7 @@ export class VaultService {
     private actionRepository: ActionRepository,
     private categoryRepository: CategoryRepository,
     private aiService: AiService,
+    private eventEmitter: EventEmitter2,
   ) {}
 
   async createVault() {
@@ -232,6 +235,7 @@ export class VaultService {
       shouldCommit?: boolean;
       type: 'expense' | 'income';
     };
+    platform?: 'web' | 'telegram-bot';
   }): Promise<Either<string, { transaction: TransactionDTO; vault: Vault }>> {
     this.logger.log(`Adding transaction to vault: ${input.vaultId}`);
     const vault = await this.vaultRepository.findById(input.vaultId);
@@ -259,6 +263,14 @@ export class VaultService {
     }
     await this.vaultRepository.update(vault);
     this.logger.log(`Transaction added to vault: ${transaction.id}`);
+    this.eventEmitter.emit(
+      TransactionCreatedEvent.eventName,
+      new TransactionCreatedEvent({
+        vaultId: input.vaultId,
+        transaction: transaction.toDTO(category),
+        platform: input.platform ?? 'telegram-bot',
+      }),
+    );
     return right({
       transaction: {
         ...transaction,

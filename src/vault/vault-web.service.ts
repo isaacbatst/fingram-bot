@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
+import * as crypto from 'crypto';
+import { ChatService } from '../bot/modules/chat/chat.service';
+import { AccessTokenStore } from '../shared/cache/access-token-store';
 import { Either, left, right } from './domain/either';
 import { Paginated } from './domain/paginated';
 import { BudgetSummary, SerializedVault, Vault } from './domain/vault';
 import { TransactionDTO } from './dto/transaction.dto,';
 import { VaultService } from './vault.service';
-import { ChatService } from '../bot/modules/chat/chat.service';
-import * as crypto from 'crypto';
-import { AccessTokenStore } from '../shared/cache/access-token-store';
 
 export enum VaultErrorType {
   UNAUTHORIZED = 'UNAUTHORIZED',
@@ -20,8 +20,8 @@ export interface VaultError {
 }
 
 @Injectable()
-export class VaultAuthService {
-  private readonly logger = new Logger(VaultAuthService.name);
+export class VaultWebService {
+  private readonly logger = new Logger(VaultWebService.name);
   constructor(
     private readonly vaultService: VaultService,
     private readonly chatService: ChatService,
@@ -274,6 +274,7 @@ export class VaultAuthService {
           type: data.type,
           shouldCommit: true, // Auto-commit new transactions
         },
+        platform: 'web',
       });
 
       if (error !== null) {

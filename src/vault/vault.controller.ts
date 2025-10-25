@@ -14,13 +14,13 @@ import {
 import { VaultService } from './vault.service';
 import { VaultAccessTokenGuard } from './vault-access-token.guard';
 import { VaultSession } from './vault-session.decorator';
-import { VaultErrorType, VaultAuthService } from './vault-auth.service';
+import { VaultErrorType, VaultWebService } from './vault-web.service';
 import { Response } from 'express';
 
 @Controller('vault')
 export class VaultController {
   constructor(
-    private readonly vaultAuthService: VaultAuthService,
+    private readonly vaultAuthService: VaultWebService,
     private readonly vaultService: VaultService,
   ) {}
 

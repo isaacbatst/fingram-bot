@@ -23,6 +23,10 @@ export class ChatService {
     return this.chatRepository.findByTelegramChatId(telegramChatId);
   }
 
+  async findChatsByVaultId(vaultId: string) {
+    return this.chatRepository.findByVaultId(vaultId);
+  }
+
   async joinVault(input: { chatId: string; vaultId: string }) {
     let chat = await this.chatRepository.findByTelegramChatId(input.chatId);
     if (!chat) {
