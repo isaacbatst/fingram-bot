@@ -74,6 +74,7 @@ export class VaultController {
         description,
         date,
         page: pageNumber,
+        pageSize: 5,
       },
     );
 
@@ -266,11 +267,44 @@ export class VaultController {
     });
   }
 
+  @Post('create')
+  async createVault(@Res({ passthrough: true }) response: Response) {
+    const vault = await this.vaultService.createVault();
+
+    // Set HTTP-only cookie with the vault access token for automatic login
+    response.cookie('vault_access_token', vault.token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+    });
+
+    return {
+      vaultId: vault.id,
+      message: 'Carteira criada com sucesso! Você foi automaticamente logado.',
+    };
+  }
+
   @UseGuards(VaultAccessTokenGuard)
   @Get('me')
   getMe(@VaultSession() vaultId: string) {
     return {
       vaultId,
+    };
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Post('share-link')
+  createShareLink(@VaultSession() vaultId: string) {
+    const [error, token] = this.vaultAuthService.createWebShareLink(vaultId);
+
+    if (error !== null) {
+      this.handleError(error.type, error.message);
+    }
+
+    return {
+      token,
+      message: 'Link de compartilhamento gerado com sucesso!',
     };
   }
 

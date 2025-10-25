@@ -76,6 +76,28 @@ export class VaultWebService {
     }
   }
 
+  createWebShareLink(vaultId: string): Either<VaultError, string> {
+    try {
+      const token = crypto.randomUUID();
+      const expiresAt = Date.now() + 60 * 60 * 1000; // 1 hour
+
+      // Store token with vaultId for web sharing (using vaultId as chatId for web users)
+      AccessTokenStore.store.set(token, {
+        expiresAt,
+        chatId: vaultId,
+        vaultId,
+      });
+
+      return right(token);
+    } catch (error) {
+      this.logger.error(`Error creating web share link: ${error}`);
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao criar link de compartilhamento',
+      });
+    }
+  }
+
   getAccessTokenData(token: string) {
     const entry = AccessTokenStore.store.get(token);
     if (entry && entry.expiresAt > Date.now()) {
@@ -207,10 +229,13 @@ export class VaultWebService {
       description?: string;
       date?: { year: number; month: number };
       page: number;
+      pageSize?: number;
     },
   ): Promise<Either<VaultError, Paginated<TransactionDTO>>> {
     try {
-      this.logger.log(`Getting transactions for vault: ${vaultId}`);
+      this.logger.log(
+        `Getting transactions for vault: ${vaultId} with page size: ${params.pageSize ?? 5}`,
+      );
 
       // Use VaultService directly
       const [error, transactions] = await this.vaultService.getTransactions({
@@ -222,6 +247,7 @@ export class VaultWebService {
         page: params.page || 1,
         categoryId: params.categoryId,
         description: params.description,
+        pageSize: params.pageSize ?? 5,
       });
 
       if (error !== null) {

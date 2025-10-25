@@ -200,7 +200,9 @@ export class VaultService {
     page?: number;
     pageSize?: number;
   }) {
-    this.logger.log(`Getting transactions for vault: ${input.vaultId}`);
+    this.logger.log(
+      `Getting transactions for vault: ${input.vaultId} with page size: ${input.pageSize ?? 10}`,
+    );
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
