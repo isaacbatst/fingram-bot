@@ -27,4 +27,13 @@ export class ChatSqliteRepository extends ChatRepository {
     if (!row) return null;
     return new Chat(row.id, row.telegram_chat_id, row.vault_id);
   }
+
+  findByVaultId(id: string): Promise<Chat[]> {
+    const rows = this.db
+      .prepare('SELECT * FROM chat WHERE vault_id = ?')
+      .all(id) as ChatRow[];
+    return Promise.resolve(
+      rows.map((row) => new Chat(row.id, row.telegram_chat_id, row.vault_id)),
+    );
+  }
 }

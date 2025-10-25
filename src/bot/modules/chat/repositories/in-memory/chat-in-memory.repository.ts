@@ -19,4 +19,12 @@ export class ChatInMemoryRepository extends ChatRepository {
     );
     return Promise.resolve(chat ?? null);
   }
+
+  findByVaultId(id: string): Promise<Chat[]> {
+    return Promise.resolve(
+      Array.from(this.store.chats.values()).filter(
+        (chat) => chat.vaultId === id,
+      ),
+    );
+  }
 }

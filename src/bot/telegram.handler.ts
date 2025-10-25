@@ -35,11 +35,19 @@ export class TelegramHandler {
 
   @OnEvent(TransactionCreatedEvent.eventName)
   handleTransactionCreatedEvent(event: TransactionCreatedEvent) {
-    return this.botService.handleCreatedTransaction(event, async (input) => {
-      await this.telegraf.telegram.sendMessage(input.chatId, input.message, {
-        parse_mode: 'MarkdownV2',
+    try {
+      return this.botService.handleCreatedTransaction(event, async (input) => {
+        await this.telegraf.telegram.sendMessage(input.chatId, input.message, {
+          parse_mode: 'MarkdownV2',
+        });
       });
-    });
+    } catch (error) {
+      this.logger.error(
+        `Error handling transaction created event: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        error instanceof Error ? error.stack : undefined,
+      );
+      return;
+    }
   }
 
   /**

@@ -10,8 +10,12 @@ export class TelegramMessageGenerator {
    * @param text Texto a ser escapado
    * @returns Texto escapado
    */
-  escapeMarkdownV2(text: string): string {
+  static escapeMarkdownV2(text: string): string {
     return text.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+  }
+
+  private escapeMarkdownV2(text: string): string {
+    return TelegramMessageGenerator.escapeMarkdownV2(text);
   }
 
   /**
@@ -388,18 +392,19 @@ export class TelegramMessageGenerator {
   static generateTransactionCreatedOnWebNotification(
     transaction: TransactionDTO,
   ): string {
+    const bullet = transaction.type === 'income' ? '🟢' : '🔴';
     return (
-      `Nova *${transaction.type === 'income' ? 'Receita' : 'Despesa'}* foi registrada:*\n\n` +
-      `*Valor:* ${this.escapeMarkdownV2(
+      `${bullet} *${transaction.type === 'income' ? 'Receita' : 'Despesa'}* foi registrada\n\n` +
+      `*Valor:* ${TelegramMessageGenerator.escapeMarkdownV2(
         transaction.amount.toLocaleString('pt-BR', {
           style: 'currency',
           currency: 'BRL',
           minimumFractionDigits: 2,
         }),
       )}\n` +
-      `*Categoria:* ${this.escapeMarkdownV2(transaction.category?.name ?? 'Nenhuma categoria especificada')}\n` +
-      `*Data:* ${this.escapeMarkdownV2(transaction.createdAt.toLocaleDateString('pt-BR'))}\n` +
-      `*Descrição:* ${this.escapeMarkdownV2(transaction.description ?? 'Sem descrição')}\n`
+      `*Categoria:* ${TelegramMessageGenerator.escapeMarkdownV2(transaction.category?.name ?? 'Nenhuma categoria especificada')}\n` +
+      `*Data:* ${TelegramMessageGenerator.escapeMarkdownV2(transaction.createdAt.toLocaleDateString('pt-BR'))}\n` +
+      `*Descrição:* ${TelegramMessageGenerator.escapeMarkdownV2(transaction.description ?? 'Sem descrição')}\n`
     );
   }
 }
