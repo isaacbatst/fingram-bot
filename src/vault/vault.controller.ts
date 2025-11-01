@@ -216,6 +216,14 @@ export class VaultController {
     return categories;
   }
 
+  @Post('logout')
+  logout(@Res({ passthrough: true }) response: Response) {
+    response.clearCookie('vault_access_token');
+    return {
+      message: 'Logout realizado com sucesso',
+    };
+  }
+
   @Post('authenticate')
   async authenticate(
     @Body() data: { accessToken: string },
