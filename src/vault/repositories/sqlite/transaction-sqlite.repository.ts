@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { TransactionRepository } from '../transaction.repository';
 import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
 import { Database } from 'better-sqlite3';
@@ -25,6 +25,7 @@ type JoinedTransactionRow = TransactionRow &
 
 @Injectable()
 export class TransactionSqliteRepository extends TransactionRepository {
+  private readonly logger = new Logger(TransactionSqliteRepository.name);
   constructor(@Inject(SQLITE_DATABASE) private readonly db: Database) {
     super();
   }
@@ -48,12 +49,11 @@ export class TransactionSqliteRepository extends TransactionRepository {
                  WHERE t.vault_id = ?`;
     const params: unknown[] = [vaultId];
     if (filter?.date) {
-      query +=
-        " AND strftime('%m', t.created_at) = ? AND strftime('%Y', t.created_at) = ?";
+      query += " AND strftime('%m', t.date) = ? AND strftime('%Y', t.date) = ?";
       params.push(String(filter.date.month).padStart(2, '0'));
       params.push(String(filter.date.year));
       if (filter.date.day !== undefined) {
-        query += " AND strftime('%d', t.created_at) = ?";
+        query += " AND strftime('%d', t.date) = ?";
         params.push(String(filter.date.day).padStart(2, '0'));
       }
     }
@@ -65,7 +65,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
       query += ' AND LOWER(t.description) LIKE LOWER(?)';
       params.push(`%${filter.description}%`);
     }
-    query += ' ORDER BY t.created_at DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY t.date DESC LIMIT ? OFFSET ?';
     params.push(pageSize, offset);
     const rows = this.db
       .prepare(query)
@@ -74,6 +74,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
       id: row.id,
       vaultId: row.vault_id,
       code: row.code,
+      date: new Date(row.date),
       description: row.description,
       amount: row.amount,
       isCommitted: !!row.committed,
@@ -88,7 +89,6 @@ export class TransactionSqliteRepository extends TransactionRepository {
           }
         : null,
     }));
-    // Add categoryId filter to the count query as well
     let countQuery =
       'SELECT COUNT(*) as count FROM "transaction" t WHERE t.vault_id = ?';
     const countParams: unknown[] = [vaultId];
@@ -102,11 +102,11 @@ export class TransactionSqliteRepository extends TransactionRepository {
     }
     if (filter?.date) {
       countQuery +=
-        " AND strftime('%m', t.created_at) = ? AND strftime('%Y', t.created_at) = ?";
+        " AND strftime('%m', t.date) = ? AND strftime('%Y', t.date) = ?";
       countParams.push(String(filter.date.month).padStart(2, '0'));
       countParams.push(String(filter.date.year));
       if (filter.date.day !== undefined) {
-        countQuery += " AND strftime('%d', t.created_at) = ?";
+        countQuery += " AND strftime('%d', t.date) = ?";
         countParams.push(String(filter.date.day).padStart(2, '0'));
       }
     }

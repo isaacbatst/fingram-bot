@@ -17,6 +17,7 @@ describe('Vault', () => {
         createdAt: new Date(),
         categoryId: 'any',
         type: 'income',
+        date: new Date(),
       }),
     );
     expect(vault.getBalance()).toBe(0);
@@ -33,6 +34,7 @@ describe('Vault', () => {
         createdAt: new Date(),
         categoryId: 'any',
         type: 'expense',
+        date: new Date(),
       }),
     );
     expect(vault.getBalance()).toBe(100);
@@ -53,6 +55,7 @@ describe('Vault', () => {
         createdAt: new Date(),
         categoryId: 'any',
         type: 'income',
+        date: new Date(),
       }),
     );
     vault.commitTransaction('1');
@@ -75,6 +78,7 @@ describe('Vault', () => {
         createdAt: new Date(),
         categoryId: 'any',
         type: 'income',
+        date: new Date(),
       }),
     );
     vault.commitTransaction('1');
@@ -97,8 +101,9 @@ describe('Vault', () => {
         amount: 100,
         isCommitted: false,
         categoryId: category1.id,
-        createdAt: new Date('2023-05-15'),
+        createdAt: new Date('2022-05-15'),
         type: 'expense',
+        date: new Date('2023-05-15'),
       }),
     );
     vault.addTransaction(
@@ -109,7 +114,8 @@ describe('Vault', () => {
         vaultId: vault.id,
         isCommitted: false,
         categoryId: category1.id,
-        createdAt: new Date('2023-05-20'),
+        createdAt: new Date('2022-05-20'),
+        date: new Date('2023-05-20'),
         type: 'expense',
       }),
     );
@@ -121,8 +127,9 @@ describe('Vault', () => {
         amount: 50,
         isCommitted: false,
         categoryId: category2.id,
-        createdAt: new Date('2023-05-02'),
+        createdAt: new Date('2022-05-02'),
         type: 'expense',
+        date: new Date('2023-05-20'),
       }),
     );
     vault.addTransaction(
@@ -133,7 +140,8 @@ describe('Vault', () => {
         amount: 200,
         isCommitted: false,
         categoryId: category2.id,
-        createdAt: new Date('2023-06-05'),
+        createdAt: new Date('2022-06-05'),
+        date: new Date('2023-06-05'),
         type: 'expense',
       }),
     );

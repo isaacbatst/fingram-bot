@@ -17,7 +17,8 @@ async function bootstrap() {
     origin: (requestOrigin, cb) => {
       if (!requestOrigin) return cb(null, true);
       const allowedOriginsStr =
-        configService.get<string>('ALLOWED_ORIGINS') ?? 'http://localhost:5173';
+        configService.get<string>('ALLOWED_ORIGINS') ??
+        'http://localhost:5173,http://localhost:5174';
       const allowedOrigins = allowedOriginsStr.split(',');
       const isAllowed = allowedOrigins.includes(requestOrigin);
       if (isAllowed) {

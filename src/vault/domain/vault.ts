@@ -19,6 +19,7 @@ export interface SerializedTransaction {
   isCommitted: boolean;
   description?: string;
   createdAt: string; // Date como string JSON
+  date: string; // Date como string JSON
   categoryId: string | null;
   type: 'expense' | 'income';
   vaultId: string;
@@ -121,7 +122,7 @@ export class Vault {
       transaction.categoryId = options.categoryId;
     }
     if (options.date !== undefined) {
-      transaction.createdAt = options.date;
+      transaction.date = options.date;
     }
 
     if (options.type !== undefined) {
@@ -191,11 +192,9 @@ export class Vault {
             transaction.categoryId === categoryId &&
             transaction.type === 'expense' &&
             (month
-              ? new Date(transaction.createdAt).getMonth() + 1 === month
+              ? new Date(transaction.date).getMonth() + 1 === month
               : true) &&
-            (year
-              ? new Date(transaction.createdAt).getFullYear() === year
-              : true),
+            (year ? new Date(transaction.date).getFullYear() === year : true),
         )
         .reduce(
           (total, transaction) => total + Math.abs(transaction.amount),
@@ -235,7 +234,7 @@ export class Vault {
           date = { month: now.getMonth() + 1, year: now.getFullYear() };
         }
 
-        const transactionDate = new Date(transaction.createdAt);
+        const transactionDate = new Date(transaction.date);
         const transactionMonth = transactionDate.getMonth() + 1;
         const transactionYear = transactionDate.getFullYear();
 
@@ -255,7 +254,7 @@ export class Vault {
           const now = new Date();
           date = { month: now.getMonth() + 1, year: now.getFullYear() };
         }
-        const transactionDate = new Date(transaction.createdAt);
+        const transactionDate = new Date(transaction.date);
         const transactionMonth = transactionDate.getMonth() + 1;
         const transactionYear = transactionDate.getFullYear();
         if (transactionMonth === date.month && transactionYear === date.year) {
@@ -296,6 +295,7 @@ export class Vault {
           isCommitted: transaction.isCommitted,
           description: transaction.description,
           createdAt: transaction.createdAt.toISOString(),
+          date: transaction.date.toISOString(),
           categoryId: transaction.categoryId,
           type: transaction.type,
           vaultId: transaction.vaultId,

@@ -5,7 +5,7 @@ import {
   VaultRow,
 } from '@/shared/persistence/sqlite/rows';
 import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Database } from 'better-sqlite3';
 import { Category } from '../../domain/category';
 import { Transaction } from '../../domain/transaction';
@@ -14,6 +14,7 @@ import { VaultRepository } from '../vault.repository';
 
 @Injectable()
 export class VaultSqliteRepository extends VaultRepository {
+  private readonly logger = new Logger(VaultSqliteRepository.name);
   constructor(@Inject(SQLITE_DATABASE) private readonly db: Database) {
     super();
   }
@@ -34,15 +35,10 @@ export class VaultSqliteRepository extends VaultRepository {
 
       const transactionsChanges = vault.transactionsTracker.getChanges();
       for (const transaction of transactionsChanges.new) {
-        console.log(
-          'Inserting new transaction:',
-          transaction.vaultId,
-          transaction.description,
-        );
         this.db
           .prepare(
             `--sql
-            INSERT INTO "transaction" (id, code, amount, type, category_id, vault_id, description, created_at, committed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            INSERT INTO "transaction" (id, code, amount, type, category_id, vault_id, description, created_at, committed, date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
             transaction.id,
@@ -54,6 +50,7 @@ export class VaultSqliteRepository extends VaultRepository {
             transaction.description ?? '',
             transaction.createdAt.toISOString(),
             transaction.isCommitted ? 1 : 0,
+            transaction.date.toISOString(),
           );
       }
       for (const transaction of transactionsChanges.deleted) {
@@ -65,7 +62,7 @@ export class VaultSqliteRepository extends VaultRepository {
       for (const transaction of transactionsChanges.dirty) {
         this.db
           .prepare(
-            'UPDATE "transaction" SET amount = ?, category_id = ?, created_at = ?, description = ?, type = ? WHERE vault_id = ? AND id = ?',
+            'UPDATE "transaction" SET amount = ?, category_id = ?, created_at = ?, description = ?, type = ?, date = ? WHERE vault_id = ? AND id = ?',
           )
           .run(
             transaction.amount,
@@ -73,6 +70,7 @@ export class VaultSqliteRepository extends VaultRepository {
             transaction.createdAt.toISOString(),
             transaction.description,
             transaction.type,
+            transaction.date.toISOString(),
             vault.id,
             transaction.id,
           );
@@ -108,7 +106,6 @@ export class VaultSqliteRepository extends VaultRepository {
       | VaultRow
       | undefined;
     if (!row) return null;
-
     // Load transactions
     const transactionRows = this.db
       .prepare('SELECT * FROM "transaction" WHERE vault_id = ?')
@@ -127,11 +124,10 @@ export class VaultSqliteRepository extends VaultRepository {
           createdAt: new Date(t.created_at),
           categoryId: t.category_id,
           type: t.type,
+          date: new Date(t.date),
         }),
       );
     }
-
-    // Load budgets
     const budgetRows = this.db
       .prepare('SELECT * FROM budget WHERE vault_id = ?')
       .all(id) as { category_id: string; amount: number }[];
@@ -152,7 +148,6 @@ export class VaultSqliteRepository extends VaultRepository {
         budgets.set(category.id, { category, amount: b.amount });
       }
     }
-
     const vault = new Vault(
       row.id,
       row.token,
@@ -190,6 +185,7 @@ export class VaultSqliteRepository extends VaultRepository {
           createdAt: new Date(t.created_at),
           categoryId: t.category_id,
           type: t.type,
+          date: new Date(t.date),
         }),
       );
     }

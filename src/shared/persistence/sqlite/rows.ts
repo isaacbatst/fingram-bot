@@ -35,6 +35,7 @@ export interface TransactionRow {
   created_at: string;
   committed: number;
   description?: string;
+  date: string;
 }
 
 // Chat table row
