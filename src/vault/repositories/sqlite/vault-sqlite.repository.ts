@@ -124,6 +124,7 @@ export class VaultSqliteRepository extends VaultRepository {
           createdAt: new Date(t.created_at),
           categoryId: t.category_id,
           type: t.type,
+          date: new Date(t.date),
         }),
       );
     }
@@ -187,6 +188,7 @@ export class VaultSqliteRepository extends VaultRepository {
           createdAt: new Date(t.created_at),
           categoryId: t.category_id,
           type: t.type,
+          date: new Date(t.date),
         }),
       );
     }

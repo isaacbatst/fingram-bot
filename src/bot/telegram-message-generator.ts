@@ -157,7 +157,7 @@ export class TelegramMessageGenerator {
       minimumFractionDigits: 2,
     });
 
-    const date = transaction.createdAt.toLocaleDateString('pt-BR');
+    const date = transaction.date.toLocaleDateString('pt-BR');
     const balance = vault.getBalance().toLocaleString('pt-BR', {
       style: 'currency',
       currency: 'BRL',
@@ -280,7 +280,7 @@ export class TelegramMessageGenerator {
         currency: 'BRL',
         minimumFractionDigits: 2,
       });
-      const dateStr = transaction.createdAt.toLocaleDateString('pt-BR');
+      const dateStr = transaction.date.toLocaleDateString('pt-BR');
       text += `• ${transaction.type === 'income' ? '🟢' : '🔴'} \`#${this.escapeMarkdownV2(transaction.code)}\` \\| ${this.escapeMarkdownV2(value)} \\|${transaction.category ? ` ${this.escapeMarkdownV2(transaction.category.name)} \\|` : ''} ${this.escapeMarkdownV2(dateStr)}${transaction.description ? `\n${this.escapeMarkdownV2(transaction.description)}` : ''}\n\n`;
     }
 
@@ -403,7 +403,7 @@ export class TelegramMessageGenerator {
         }),
       )}\n` +
       `*Categoria:* ${TelegramMessageGenerator.escapeMarkdownV2(transaction.category?.name ?? 'Nenhuma categoria especificada')}\n` +
-      `*Data:* ${TelegramMessageGenerator.escapeMarkdownV2(transaction.createdAt.toLocaleDateString('pt-BR'))}\n` +
+      `*Data:* ${TelegramMessageGenerator.escapeMarkdownV2(transaction.date.toLocaleDateString('pt-BR'))}\n` +
       `*Descrição:* ${TelegramMessageGenerator.escapeMarkdownV2(transaction.description ?? 'Sem descrição')}\n`
     );
   }

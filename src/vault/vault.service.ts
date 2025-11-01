@@ -135,6 +135,7 @@ export class VaultService {
         description: action.payload.description,
         categoryId: action.payload.categoryId,
         shouldCommit: true,
+        date: new Date(),
         type: 'income',
       },
     });
@@ -162,6 +163,7 @@ export class VaultService {
         amount: action.payload.amount,
         description: action.payload.description,
         categoryId: action.payload.categoryId,
+        date: new Date(),
         shouldCommit: true,
         type: 'expense',
       },
@@ -234,7 +236,7 @@ export class VaultService {
       amount: number;
       description?: string;
       categoryId?: string;
-      date?: Date;
+      date: Date;
       shouldCommit?: boolean;
       type: 'expense' | 'income';
     };
