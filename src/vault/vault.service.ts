@@ -234,6 +234,7 @@ export class VaultService {
       amount: number;
       description?: string;
       categoryId?: string;
+      date?: Date;
       shouldCommit?: boolean;
       type: 'expense' | 'income';
     };
@@ -250,6 +251,7 @@ export class VaultService {
       : null;
     const transaction = Transaction.create({
       amount: input.transaction.amount,
+      date: input.transaction.date,
       description: input.transaction.description,
       categoryId: input.transaction.categoryId,
       type: input.transaction.type,

@@ -57,6 +57,21 @@ export class MigrationService {
         status TEXT NOT NULL CHECK (status IN ('pending', 'executed', 'failed', 'cancelled'))
       );
     `);
+
+    const hasDateColumn = db
+      .prepare(
+        `
+      SELECT 1 FROM pragma_table_info('transaction') WHERE name='date'
+    `,
+      )
+      .get();
+
+    if (!hasDateColumn) {
+      db.exec(`
+        ALTER TABLE "transaction" ADD COLUMN date TEXT;
+        UPDATE "transaction" SET date = created_at WHERE date IS NULL OR date = '';
+      `);
+    }
   }
 
   static seed(db: Database): void {

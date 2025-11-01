@@ -7,6 +7,7 @@ export interface TransactionDTO {
   createdAt: Date;
   type: 'expense' | 'income';
   vaultId: string;
+  date: Date;
   category: {
     id: string;
     name: string;
