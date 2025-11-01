@@ -57,6 +57,7 @@ export class BotService {
         description: params.description,
         shouldCommit: true,
         type: 'income',
+        date: new Date(),
       },
     });
   }
@@ -80,6 +81,7 @@ export class BotService {
         description,
         shouldCommit: true,
         type: 'expense',
+        date: new Date(),
       },
     });
   }
@@ -336,6 +338,7 @@ export class BotService {
       const message =
         TelegramMessageGenerator.generateTransactionCreatedOnWebNotification(
           event.transaction,
+          event.balance,
         );
       await sendMessage({
         chatId: chat.telegramChatId,

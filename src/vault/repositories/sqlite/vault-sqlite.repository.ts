@@ -5,7 +5,7 @@ import {
   VaultRow,
 } from '@/shared/persistence/sqlite/rows';
 import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Database } from 'better-sqlite3';
 import { Category } from '../../domain/category';
 import { Transaction } from '../../domain/transaction';
@@ -14,6 +14,7 @@ import { VaultRepository } from '../vault.repository';
 
 @Injectable()
 export class VaultSqliteRepository extends VaultRepository {
+  private readonly logger = new Logger(VaultSqliteRepository.name);
   constructor(@Inject(SQLITE_DATABASE) private readonly db: Database) {
     super();
   }
@@ -105,7 +106,6 @@ export class VaultSqliteRepository extends VaultRepository {
       | VaultRow
       | undefined;
     if (!row) return null;
-
     // Load transactions
     const transactionRows = this.db
       .prepare('SELECT * FROM "transaction" WHERE vault_id = ?')
@@ -128,8 +128,6 @@ export class VaultSqliteRepository extends VaultRepository {
         }),
       );
     }
-
-    // Load budgets
     const budgetRows = this.db
       .prepare('SELECT * FROM budget WHERE vault_id = ?')
       .all(id) as { category_id: string; amount: number }[];
@@ -150,7 +148,6 @@ export class VaultSqliteRepository extends VaultRepository {
         budgets.set(category.id, { category, amount: b.amount });
       }
     }
-
     const vault = new Vault(
       row.id,
       row.token,

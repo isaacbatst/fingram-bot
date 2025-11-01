@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
   Post,
   Query,
@@ -19,6 +20,7 @@ import { Response } from 'express';
 
 @Controller('vault')
 export class VaultController {
+  private readonly logger = new Logger(VaultController.name);
   constructor(
     private readonly vaultAuthService: VaultWebService,
     private readonly vaultService: VaultService,
@@ -66,7 +68,6 @@ export class VaultController {
             month: parseInt(month, 10),
           }
         : undefined;
-
     const [error, transactions] = await this.vaultAuthService.getTransactions(
       vaultId,
       {
@@ -77,7 +78,6 @@ export class VaultController {
         pageSize: 5,
       },
     );
-
     if (error !== null) {
       this.handleError(error.type, error.message);
     }

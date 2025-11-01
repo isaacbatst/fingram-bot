@@ -275,6 +275,7 @@ export class VaultService {
         vaultId: input.vaultId,
         transaction: transaction.toDTO(category),
         platform: input.platform ?? 'telegram-bot',
+        balance: vault.getBalance(),
       }),
     );
     return right({

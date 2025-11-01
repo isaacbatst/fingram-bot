@@ -391,6 +391,7 @@ export class TelegramMessageGenerator {
 
   static generateTransactionCreatedOnWebNotification(
     transaction: TransactionDTO,
+    currentBalance: number,
   ): string {
     const bullet = transaction.type === 'income' ? '🟢' : '🔴';
     return (
@@ -404,7 +405,14 @@ export class TelegramMessageGenerator {
       )}\n` +
       `*Categoria:* ${TelegramMessageGenerator.escapeMarkdownV2(transaction.category?.name ?? 'Nenhuma categoria especificada')}\n` +
       `*Data:* ${TelegramMessageGenerator.escapeMarkdownV2(transaction.date.toLocaleDateString('pt-BR'))}\n` +
-      `*Descrição:* ${TelegramMessageGenerator.escapeMarkdownV2(transaction.description ?? 'Sem descrição')}\n`
+      `*Descrição:* ${TelegramMessageGenerator.escapeMarkdownV2(transaction.description ?? 'Sem descrição')}\n` +
+      `*Saldo atual:* ${TelegramMessageGenerator.escapeMarkdownV2(
+        currentBalance.toLocaleString('pt-BR', {
+          style: 'currency',
+          currency: 'BRL',
+          minimumFractionDigits: 2,
+        }),
+      )}\n`
     );
   }
 }

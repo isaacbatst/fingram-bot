@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { Injectable, Inject } from '@nestjs/common';
+import { Injectable, Inject, Logger } from '@nestjs/common';
 import { TransactionRepository } from '../transaction.repository';
 import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
 import { Database } from 'better-sqlite3';
@@ -25,6 +25,7 @@ type JoinedTransactionRow = TransactionRow &
 
 @Injectable()
 export class TransactionSqliteRepository extends TransactionRepository {
+  private readonly logger = new Logger(TransactionSqliteRepository.name);
   constructor(@Inject(SQLITE_DATABASE) private readonly db: Database) {
     super();
   }
@@ -88,7 +89,6 @@ export class TransactionSqliteRepository extends TransactionRepository {
           }
         : null,
     }));
-    // Add categoryId filter to the count query as well
     let countQuery =
       'SELECT COUNT(*) as count FROM "transaction" t WHERE t.vault_id = ?';
     const countParams: unknown[] = [vaultId];

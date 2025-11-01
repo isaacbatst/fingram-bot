@@ -275,7 +275,7 @@ export class VaultWebService {
       amount: number;
       description?: string;
       categoryId?: string;
-      date?: Date;
+      date: Date;
       type: 'income' | 'expense';
     },
   ): Promise<
