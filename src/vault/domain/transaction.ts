@@ -6,6 +6,7 @@ import { Category } from './category';
 export class Transaction {
   static create({
     amount,
+    createdAt = new Date(),
     description,
     vaultId,
     type = 'expense',
@@ -18,6 +19,7 @@ export class Transaction {
     type?: 'expense' | 'income';
     date?: Date;
     categoryId?: string | null;
+    createdAt?: Date;
   }): Transaction {
     const id = crypto.randomUUID();
     const code = crypto.randomBytes(2).toString('hex');
@@ -28,9 +30,10 @@ export class Transaction {
       amount,
       false,
       description,
-      date,
+      createdAt,
       categoryId,
       type,
+      date,
     );
   }
 
@@ -44,6 +47,7 @@ export class Transaction {
     categoryId = null,
     type = 'expense',
     vaultId,
+    date = new Date(),
   }: {
     id: string;
     code: string;
@@ -54,6 +58,7 @@ export class Transaction {
     createdAt?: Date;
     categoryId?: string | null;
     type?: 'expense' | 'income';
+    date?: Date;
   }): Transaction {
     return new Transaction(
       id,
@@ -65,6 +70,7 @@ export class Transaction {
       createdAt,
       categoryId,
       type,
+      date,
     );
   }
 
@@ -78,6 +84,7 @@ export class Transaction {
     public createdAt: Date = new Date(),
     public categoryId: string | null = null,
     public type: 'expense' | 'income' = 'expense',
+    public date: Date = new Date(),
   ) {}
 
   commit(): Either<string, boolean> {
@@ -99,6 +106,7 @@ export class Transaction {
       createdAt: this.createdAt,
       vaultId: this.vaultId,
       category,
+      date: this.date,
     };
   }
 }

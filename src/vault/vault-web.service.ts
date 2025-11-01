@@ -297,6 +297,7 @@ export class VaultWebService {
           amount: data.amount,
           description: data.description,
           categoryId: data.categoryId,
+          date: data.date,
           type: data.type,
           shouldCommit: true, // Auto-commit new transactions
         },
