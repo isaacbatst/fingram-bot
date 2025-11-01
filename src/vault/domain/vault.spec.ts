@@ -99,6 +99,7 @@ describe('Vault', () => {
         categoryId: category1.id,
         createdAt: new Date('2023-05-15'),
         type: 'expense',
+        date: new Date('2023-05-15'),
       }),
     );
     vault.addTransaction(
@@ -110,6 +111,7 @@ describe('Vault', () => {
         isCommitted: false,
         categoryId: category1.id,
         createdAt: new Date('2023-05-20'),
+        date: new Date('2023-05-20'),
         type: 'expense',
       }),
     );
@@ -123,6 +125,7 @@ describe('Vault', () => {
         categoryId: category2.id,
         createdAt: new Date('2023-05-02'),
         type: 'expense',
+        date: new Date('2023-05-20'),
       }),
     );
     vault.addTransaction(
@@ -134,6 +137,7 @@ describe('Vault', () => {
         isCommitted: false,
         categoryId: category2.id,
         createdAt: new Date('2023-06-05'),
+        date: new Date('2023-06-05'),
         type: 'expense',
       }),
     );
