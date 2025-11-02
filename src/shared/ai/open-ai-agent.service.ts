@@ -45,8 +45,6 @@ export class OpenAiAgentService {
         Infira o tipo de transação (income ou expense) de acordo com a descrição da transação. 
         A categoria deve ser uma das categorias disponíveis para o usuário. Use a ferramenta getCategories para obter as categorias disponíveis.
 
-        Caso fique em dúvida sobre o tipo de transação ou sobre a categoria, pergunte ao usuário para confirmar e apenas depois de confirmar use a ferramenta addTransaction para adicionar a transação.
-
         Exemplo de entrada:
         - "Salário de 1000 reais" (income)
         - "Aluguel 1000 reais" (expense)
