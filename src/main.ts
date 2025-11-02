@@ -9,7 +9,7 @@ import { ConfigService } from '@nestjs/config';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(
-    AppModule.register('sqlite'),
+    AppModule.register({ persistence: 'sqlite' }),
   );
   const logger = new Logger('Bootstrap');
   const configService = app.get(ConfigService);

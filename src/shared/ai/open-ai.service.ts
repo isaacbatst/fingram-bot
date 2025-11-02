@@ -9,6 +9,7 @@ import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { AiService } from './ai.service';
+import { OpenAiClient } from './open-ai.client';
 
 const parseVaultActionSchema = z.object({
   match: z.boolean(),
@@ -43,15 +44,10 @@ const parseTransactionsFileSchema = z.object({
 
 @Injectable()
 export class OpenAiService extends AiService {
-  openAi: OpenAI;
-
-  constructor(private configService: ConfigService) {
+  private readonly openAi: OpenAI;
+  constructor(private readonly openAiClient: OpenAiClient) {
     super();
-    this.openAi = new OpenAI({
-      apiKey: this.configService.getOrThrow<string>('OPEN_AI_API_KEY'),
-      //  5 min timeout for requests
-      timeout: 5 * 60 * 1000,
-    });
+    this.openAi = openAiClient.openAi;
   }
 
   async parseVaultAction(

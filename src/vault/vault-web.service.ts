@@ -404,4 +404,32 @@ export class VaultWebService {
       });
     }
   }
+
+  async deleteTransaction(
+    vaultId: string,
+    transactionCode: string,
+  ): Promise<Either<VaultError, boolean>> {
+    try {
+      this.logger.log(`Deleting transaction for vault: ${vaultId}`);
+      const [error, result] = await this.vaultService.deleteTransaction({
+        vaultId,
+        transactionCode,
+      });
+      if (error !== null) {
+        return left({
+          type: VaultErrorType.INTERNAL_ERROR,
+          message: error,
+        });
+      }
+      return right(result);
+    } catch (error) {
+      this.logger.error(
+        `Error deleting transaction for vault ${vaultId}: ${error}`,
+      );
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao deletar transação',
+      });
+    }
+  }
 }

@@ -36,4 +36,4 @@ import { PersistenceModule } from '@/shared/persistence/persistence.module';
     ActionRepository,
   ],
 })
-export class SqliteRepositoriesModule {}
+export class VaultSqliteRepositoriesModule {}

@@ -12,17 +12,17 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import { VaultService } from './vault.service';
+import { Response } from 'express';
 import { VaultAccessTokenGuard } from './vault-access-token.guard';
 import { VaultSession } from './vault-session.decorator';
 import { VaultErrorType, VaultWebService } from './vault-web.service';
-import { Response } from 'express';
+import { VaultService } from './vault.service';
 
 @Controller('vault')
-export class VaultController {
-  private readonly logger = new Logger(VaultController.name);
+export class VaultWebController {
+  private readonly logger = new Logger(VaultWebController.name);
   constructor(
-    private readonly vaultAuthService: VaultWebService,
+    private readonly vaultWebService: VaultWebService,
     private readonly vaultService: VaultService,
   ) {}
 
@@ -41,7 +41,7 @@ export class VaultController {
           }
         : undefined;
 
-    const [error, data] = await this.vaultAuthService.getSummary(vaultId, date);
+    const [error, data] = await this.vaultWebService.getSummary(vaultId, date);
 
     if (error !== null) {
       this.handleError(error.type, error.message);
@@ -68,14 +68,14 @@ export class VaultController {
             month: parseInt(month, 10),
           }
         : undefined;
-    const [error, transactions] = await this.vaultAuthService.getTransactions(
+    const [error, transactions] = await this.vaultWebService.getTransactions(
       vaultId,
       {
         categoryId,
         description,
         date,
         page: pageNumber,
-        pageSize: 5,
+        pageSize: 6,
       },
     );
     if (error !== null) {
@@ -116,7 +116,7 @@ export class VaultController {
       date: data.date ? new Date(data.date) : new Date(),
     };
 
-    const [error, result] = await this.vaultAuthService.createTransaction(
+    const [error, result] = await this.vaultWebService.createTransaction(
       vaultId,
       parsedData,
     );
@@ -158,7 +158,7 @@ export class VaultController {
       newDate: data.newDate ? new Date(data.newDate) : undefined,
     };
 
-    const [error, result] = await this.vaultAuthService.editTransaction(
+    const [error, result] = await this.vaultWebService.editTransaction(
       vaultId,
       parsedData,
     );
@@ -195,7 +195,7 @@ export class VaultController {
       }
     }
 
-    const [error, result] = await this.vaultAuthService.setBudgets(
+    const [error, result] = await this.vaultWebService.setBudgets(
       vaultId,
       data.budgets,
     );
@@ -233,7 +233,7 @@ export class VaultController {
       throw new BadRequestException('Access token é obrigatório');
     }
 
-    const [error, vaultToken] = await this.vaultAuthService.authenticate(
+    const [error, vaultToken] = await this.vaultWebService.authenticate(
       data.accessToken,
     );
 
@@ -260,7 +260,7 @@ export class VaultController {
     }
 
     const [error, vaultToken] =
-      await this.vaultAuthService.authenticateTempToken(data.token);
+      await this.vaultWebService.authenticateTempToken(data.token);
 
     if (error !== null) {
       this.handleError(error.type, error.message);
@@ -304,7 +304,7 @@ export class VaultController {
   @UseGuards(VaultAccessTokenGuard)
   @Post('share-link')
   createShareLink(@VaultSession() vaultId: string) {
-    const [error, token] = this.vaultAuthService.createWebShareLink(vaultId);
+    const [error, token] = this.vaultWebService.createWebShareLink(vaultId);
 
     if (error !== null) {
       this.handleError(error.type, error.message);
@@ -325,6 +325,21 @@ export class VaultController {
       case VaultErrorType.INTERNAL_ERROR:
       default:
         throw new InternalServerErrorException(message);
+    }
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Post('delete-transaction')
+  async deleteTransaction(
+    @VaultSession() vaultId: string,
+    @Body() data: { transactionCode: string },
+  ) {
+    const [error, result] = await this.vaultWebService.deleteTransaction(
+      vaultId,
+      data.transactionCode,
+    );
+    if (error !== null) {
+      this.handleError(error.type, error.message);
     }
   }
 }

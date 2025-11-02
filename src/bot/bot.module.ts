@@ -7,14 +7,10 @@ import { TelegramHandler } from './telegram.handler';
 
 @Module({})
 export class BotModule {
-  static register(config: 'in-memory' | 'sqlite') {
+  static register() {
     return {
       module: BotModule,
-      imports: [
-        VaultModule.register(config),
-        ChatModule.register(config),
-        TelegramModule,
-      ],
+      imports: [VaultModule.register(), ChatModule.register(), TelegramModule],
       providers: [TelegramHandler, BotService],
     };
   }

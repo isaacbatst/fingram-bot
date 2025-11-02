@@ -36,4 +36,4 @@ import { VaultInMemoryRepository } from './vault-in-memory.repository';
     TransactionRepository,
   ],
 })
-export class InMemoryRepositoriesModule {}
+export class VaultInMemoryRepositoriesModule {}
