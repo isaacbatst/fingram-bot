@@ -7,6 +7,7 @@ import {
   RunState,
   RunToolApprovalItem,
   setDefaultOpenAIClient,
+  setDefaultOpenAIKey,
   tool,
 } from '@openai/agents';
 import { randomUUID } from 'node:crypto';
@@ -32,9 +33,10 @@ export class OpenAiAgentService {
     private readonly categoryRepository: CategoryRepository,
     private readonly vaultService: VaultService,
   ) {
-    setDefaultOpenAIClient(this.openAiClient.openAi);
+    setDefaultOpenAIKey(this.openAiClient.apiKey);
     this.agent = new Agent<AgentContext>({
       name: 'Basic Agent',
+      model: 'gpt-4.1-nano',
       instructions: `Você é um agente que ajuda o usuário a gerenciar seu cofre financeiro.
         Caso o usuário pergunte sobre as categorias disponíveis, use a ferramenta getCategories para obter as categorias disponíveis.
         Caso o usuário queira adicionar uma transação, use a ferramenta addTransaction para adicionar a transação.
