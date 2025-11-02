@@ -35,6 +35,10 @@ export class TelegramHandler {
 
   @OnEvent(TransactionCreatedEvent.eventName)
   handleTransactionCreatedEvent(event: TransactionCreatedEvent) {
+    this.logger.log(
+      `Handling transaction created event: ${event.transaction.id}`,
+    );
+    this.logger.log(`Transaction: ${JSON.stringify(event.transaction)}`);
     try {
       return this.botService.handleCreatedTransaction(event, async (input) => {
         await this.telegraf.telegram.sendMessage(input.chatId, input.message, {

@@ -36,14 +36,24 @@ export class OpenAiAgentService {
     setDefaultOpenAIKey(this.openAiClient.apiKey);
     this.agent = new Agent<AgentContext>({
       name: 'Basic Agent',
-      model: 'gpt-4.1-nano',
+      model: 'gpt-5-nano',
+      modelSettings: {
+        reasoning: {
+          effort: 'minimal',
+        },
+      },
       instructions: `Você é um agente que ajuda o usuário a gerenciar seu cofre financeiro.
         Caso o usuário pergunte sobre as categorias disponíveis, use a ferramenta getCategories para obter as categorias disponíveis.
         Caso o usuário queira adicionar uma transação, use a ferramenta addTransaction para adicionar a transação.
 
-        Considere a data atual ${new Date().toISOString()} caso o usuário não forneça uma data.
-        Infira o tipo de transação (income ou expense) de acordo com a descrição da transação. 
-        A categoria deve ser uma das categorias disponíveis para o usuário. Use a ferramenta getCategories para obter as categorias disponíveis.
+        - Considere a data atual ${new Date().toISOString()} caso o usuário não forneça uma data.
+        - Infira o tipo de transação (income ou expense) de acordo com a descrição da transação. 
+        - A categoria deve ser uma das categorias disponíveis para o usuário. Use a ferramenta getCategories para obter as categorias disponíveis.
+        - Você deve ser ágil, não fique confirmando, justifique as suas ações e use as ferramentas para adicionar a transação. A exceção é caso o usuário não forneça o valor da transação, nesse caso, pergunte ao usuário para fornecer o valor da transação.
+        - Nunca sugira uma categoria que não está na lista de categorias disponíveis.
+        - Sempre mencione datas formatadas para o usuário final, como "10 de novembro de 2025" e nunca no formato ISO 8601.
+        - Sempre que uma transação for adicionada, informe o saldo atual do cofre financeiro, ele será retornado pela ferramenta addTransaction.
+
 
         Exemplo de entrada:
         - "Salário de 1000 reais" (income)
@@ -107,10 +117,6 @@ export class OpenAiAgentService {
         Agent<AgentContext>
       > = await RunState.fromString(this.agent, stateString);
 
-      this.logger.debug(
-        `Deserialized state: ${JSON.stringify(state._context)}`,
-      );
-
       const interruptions = state.getInterruptions() as RunToolApprovalItem[];
       this.logger.log(`Interruptions ${JSON.stringify(interruptions)}`);
       interruptions.forEach((item: RunToolApprovalItem) => {
@@ -130,22 +136,11 @@ export class OpenAiAgentService {
       input = messages;
     }
 
-    this.logger.debug(
-      `runContext: ${JSON.stringify({
-        context: {
-          vaultId: params.vaultId,
-        },
-      })}`,
-    );
     const result = await run(this.agent, input, {
       context: {
         vaultId: params.vaultId,
       },
     });
-
-    this.logger.debug(
-      `result.state._context: ${JSON.stringify(result.state._context)}`,
-    );
 
     if (result.interruptions.length > 0) {
       // If the run resulted in one or more interruptions, we will store the current state in the database
@@ -205,14 +200,17 @@ export class OpenAiAgentService {
           categoryName: z.string(),
         }),
       }),
-      execute: ({ transaction }, runContext: RunContext<AgentContext>) => {
+      execute: async (
+        { transaction },
+        runContext: RunContext<AgentContext>,
+      ) => {
         this.logger.debug(
           `Executing addTransaction with transaction ${JSON.stringify(transaction)} and context ${JSON.stringify(runContext.context)}`,
         );
         if (!runContext || !runContext.context.vaultId) {
           throw new Error('Vault ID is required');
         }
-        return this.vaultService.addTransactionToVault({
+        const [err, vault] = await this.vaultService.addTransactionToVault({
           vaultId: runContext.context.vaultId,
           transaction: {
             amount: transaction.amount,
@@ -222,7 +220,12 @@ export class OpenAiAgentService {
             categoryId: transaction.categoryId,
             shouldCommit: true,
           },
+          platform: 'web',
         });
+        if (err) {
+          throw new Error(err);
+        }
+        return `A transação de ${transaction.amount} reais foi registrada com sucesso na categoria ${transaction.categoryName}. Saldo atual: ${vault?.vault.getBalance()}`;
       },
     });
     return [getCategories, addTransaction];
