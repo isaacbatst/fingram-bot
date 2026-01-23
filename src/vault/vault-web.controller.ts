@@ -207,9 +207,10 @@ export class VaultWebController {
     return result as unknown;
   }
 
+  @UseGuards(VaultAccessTokenGuard)
   @Get('categories')
-  async getCategories() {
-    const categories = await this.vaultService.getCategories();
+  async getCategories(@VaultSession() vaultId: string) {
+    const categories = await this.vaultService.getCategories(vaultId);
     if (!categories) {
       throw new NotFoundException('Categorias não encontradas');
     }

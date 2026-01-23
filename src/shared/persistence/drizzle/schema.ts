@@ -8,6 +8,7 @@ import {
   jsonb,
 } from 'drizzle-orm/pg-core';
 
+// Base categories - used as templates for vault categories
 export const category = pgTable('category', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -23,6 +24,19 @@ export const vault = pgTable('vault', {
   createdAt: timestamp('created_at').notNull(),
 });
 
+// Vault-specific categories - copies of base categories that can be edited per vault
+export const vaultCategory = pgTable('vault_category', {
+  id: text('id').primaryKey(),
+  vaultId: text('vault_id')
+    .notNull()
+    .references(() => vault.id),
+  baseCategoryId: text('base_category_id').references(() => category.id), // Reference to original, null if custom
+  name: text('name').notNull(),
+  code: text('code').notNull(),
+  description: text('description').default(''),
+  transactionType: text('transaction_type').notNull(), // 'income' | 'expense' | 'both'
+});
+
 export const chat = pgTable('chat', {
   id: text('id').primaryKey(),
   telegramChatId: text('telegram_chat_id').notNull(),
@@ -34,7 +48,7 @@ export const transaction = pgTable('transaction', {
   code: text('code').notNull(),
   amount: doublePrecision('amount').notNull(),
   type: text('type').notNull(), // 'income' | 'expense'
-  categoryId: text('category_id').references(() => category.id),
+  categoryId: text('category_id').references(() => vaultCategory.id), // Now references vaultCategory
   vaultId: text('vault_id')
     .notNull()
     .references(() => vault.id),
@@ -51,7 +65,7 @@ export const budget = pgTable('budget', {
     .references(() => vault.id),
   categoryId: text('category_id')
     .notNull()
-    .references(() => category.id),
+    .references(() => vaultCategory.id), // Now references vaultCategory
   amount: doublePrecision('amount').notNull(),
 });
 

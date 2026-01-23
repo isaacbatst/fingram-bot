@@ -208,9 +208,10 @@ export class MiniappController {
     return result as unknown;
   }
 
+  @UseGuards(MiniappSessionTokenGuard)
   @Get('categories')
-  async getCategories() {
-    const categories = await this.vaultService.getCategories();
+  async getCategories(@MiniappSession() session: MiniappSessionTokenPayload) {
+    const categories = await this.vaultService.getCategories(session.vaultId);
     if (!categories) {
       throw new NotFoundException('Categorias não encontradas');
     }

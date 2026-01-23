@@ -8,10 +8,13 @@ export class InMemoryStore {
   actions: Map<string, Action> = new Map();
   vaults: Map<string, Vault> = new Map();
   chats: Map<string, Chat> = new Map();
+  // Base categories (templates)
   categories: Map<string, Category> = new Map(
     CATEGORIES_SEED.map(
       (c) =>
         new Category(c.id, c.name, c.code, c.description, c.transaction_type),
     ).map((category) => [category.id, category]),
   );
+  // Vault-specific categories: vaultId -> Map<categoryId, Category>
+  vaultCategories: Map<string, Map<string, Category>> = new Map();
 }

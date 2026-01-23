@@ -202,8 +202,12 @@ export class BotService {
     });
   }
 
-  async handleCategories() {
-    const categories = await this.vaultService.getCategories();
+  async handleCategories(chatId: string) {
+    const chat = await this.chatService.findChatByTelegramChatId(chatId);
+    if (!chat || !chat.vaultId) {
+      return [];
+    }
+    const categories = await this.vaultService.getCategories(chat.vaultId);
     return categories;
   }
 

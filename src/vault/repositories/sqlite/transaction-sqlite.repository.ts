@@ -45,7 +45,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
     const offset = (page - 1) * pageSize;
     let query = `SELECT t.*, c.id as category_id, c.name as category_name, c.code as category_code, c.description as category_description
                  FROM "transaction" t
-                 LEFT JOIN category c ON t.category_id = c.id
+                 LEFT JOIN vault_category c ON t.category_id = c.id
                  WHERE t.vault_id = ?`;
     const params: unknown[] = [vaultId];
     if (filter?.date) {

@@ -12,7 +12,6 @@ import {
 } from '@openai/agents';
 import { randomUUID } from 'node:crypto';
 import z from 'zod';
-import { Category } from '../../vault/domain/category';
 import { left, right } from '../../vault/domain/either';
 import { CategoryRepository } from '../../vault/repositories/category.repository';
 import { VaultService } from '../../vault/vault.service';
@@ -27,7 +26,6 @@ type AgentContext = {
 export class OpenAiAgentService {
   private readonly logger = new Logger(OpenAiAgentService.name);
   private readonly agent: Agent<AgentContext>;
-  private categories: Category[] = [];
   constructor(
     private readonly openAiClient: OpenAiClient,
     private readonly categoryRepository: CategoryRepository,
@@ -85,14 +83,6 @@ export class OpenAiAgentService {
         `,
       tools: this.getTools(),
     });
-    this.categoryRepository
-      .findAll()
-      .then((categories) => {
-        this.categories = categories;
-      })
-      .catch((error) => {
-        this.logger.error('Error loading categories', error);
-      });
   }
 
   async execute(params: {
@@ -197,8 +187,11 @@ export class OpenAiAgentService {
       name: 'getCategories',
       description: 'Obtém as categorias de transações para um usuário',
       parameters: z.object({}),
-      execute: (_, runContext: RunContext<AgentContext>) => {
-        return `The categories for this user are ${JSON.stringify(this.categories)}.`;
+      execute: async (_, runContext: RunContext<AgentContext>) => {
+        const categories = await this.categoryRepository.findAllByVaultId(
+          runContext.context.vaultId,
+        );
+        return `The categories for this user are ${JSON.stringify(categories)}.`;
       },
     });
     const addTransaction = tool({

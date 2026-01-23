@@ -9,7 +9,7 @@ import {
   vault,
   transaction,
   budget,
-  category,
+  vaultCategory,
 } from '@/shared/persistence/drizzle/schema';
 import { Category } from '../../domain/category';
 import { Transaction } from '../../domain/transaction';
@@ -123,6 +123,7 @@ export class VaultDrizzleRepository extends VaultRepository {
     }
 
     // Execute all queries in a batch
+    console.log('queries', queries);
     if (queries.length > 0) {
       const [first, ...rest] = queries;
       await this.db.batch([first, ...rest]);
@@ -181,7 +182,7 @@ export class VaultDrizzleRepository extends VaultRepository {
       );
     }
 
-    // Load budgets with categories
+    // Load budgets with vault categories
     const budgetRows = await this.db
       .select()
       .from(budget)
@@ -191,8 +192,8 @@ export class VaultDrizzleRepository extends VaultRepository {
     for (const b of budgetRows) {
       const catRows = await this.db
         .select()
-        .from(category)
-        .where(eq(category.id, b.categoryId));
+        .from(vaultCategory)
+        .where(eq(vaultCategory.id, b.categoryId));
 
       if (catRows.length > 0) {
         const catRow = catRows[0];

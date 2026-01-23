@@ -449,6 +449,7 @@ export class TelegramHandler {
     });
 
     this.telegraf.command('categories', async (ctx) => {
+      const chatId = ctx.chat.id.toString();
       const { args } = this.parseCommandAndArgs(ctx.message.text);
       // Aceita /categories ou /categories@BOT_USERNAME, sem argumentos
       if (args.length > 0) {
@@ -458,7 +459,7 @@ export class TelegramHandler {
         );
         return;
       }
-      const categories = await this.botService.handleCategories();
+      const categories = await this.botService.handleCategories(chatId);
       if (categories.length === 0) {
         await ctx.reply('Nenhuma categoria disponível no momento.');
         return;

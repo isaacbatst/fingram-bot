@@ -32,6 +32,8 @@ export class VaultService {
     const vault = Vault.create();
     console.log('created id', vault.id);
     await this.vaultRepository.create(vault);
+    // Seed vault-specific categories from base categories
+    await this.categoryRepository.seedForVault(vault.id);
     this.logger.log(`Vault created with id: ${vault.id}`);
     return vault;
   }
@@ -68,7 +70,9 @@ export class VaultService {
     }
 
     const customPrompt = vault.getCustomPrompt();
-    const categories = await this.categoryRepository.findAll();
+    const categories = await this.categoryRepository.findAllByVaultId(
+      input.vaultId,
+    );
     const [err, action] = await this.aiService.parseVaultAction(
       input.message,
       categories,
@@ -248,9 +252,11 @@ export class VaultService {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
       return left(`Cofre não encontrado`);
     }
+    console.log('categoryId', input.transaction.categoryId);
     const category = input.transaction.categoryId
       ? await this.categoryRepository.findById(input.transaction.categoryId)
       : null;
+    console.log('category', category);
     const transaction = Transaction.create({
       amount: input.transaction.amount,
       date: input.transaction.date,
@@ -306,7 +312,10 @@ export class VaultService {
     let categoryId: string | undefined;
     let category: Category | null = null;
     if (input.categoryCode) {
-      category = await this.categoryRepository.findByCode(input.categoryCode);
+      category = await this.categoryRepository.findByCode(
+        input.categoryCode,
+        input.vaultId,
+      );
       if (!category) {
         this.logger.warn(`Category not found: ${input.categoryCode}`);
         return left(`Categoria não encontrada`);
@@ -369,9 +378,9 @@ export class VaultService {
     return right(vault.getCustomPrompt());
   }
 
-  async getCategories() {
-    this.logger.log('Getting all categories');
-    const categories = await this.categoryRepository.findAll();
+  async getCategories(vaultId: string) {
+    this.logger.log(`Getting categories for vault: ${vaultId}`);
+    const categories = await this.categoryRepository.findAllByVaultId(vaultId);
     this.logger.log(`Found ${categories.length} categories`);
     return categories;
   }
@@ -386,7 +395,9 @@ export class VaultService {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
       return left(`Cofre não encontrado`);
     }
-    const categories = await this.categoryRepository.findAll();
+    const categories = await this.categoryRepository.findAllByVaultId(
+      input.vaultId,
+    );
     for (const budget of input.budgets) {
       const category = categories.find(
         (cat) => cat.code === budget.categoryCode,
@@ -424,7 +435,9 @@ export class VaultService {
       this.logger.error(`Error fetching file: ${input.fileUrl}`);
       return left(`Erro ao buscar arquivo: ${input.fileUrl}`);
     }
-    const categories = await this.categoryRepository.findAll();
+    const categories = await this.categoryRepository.findAllByVaultId(
+      input.vaultId,
+    );
     const transactions = (
       await CsvParser.parse(response.body as ReadableStream)
     ).map((row) => {

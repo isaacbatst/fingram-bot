@@ -6,9 +6,20 @@ export interface VaultRow {
   custom_prompt?: string;
 }
 
-// Category table row
+// Category table row (base categories)
 export interface CategoryRow {
   id: string;
+  name: string;
+  code: string;
+  description: string;
+  transaction_type: 'income' | 'expense' | 'both';
+}
+
+// Vault Category table row (vault-specific categories)
+export interface VaultCategoryRow {
+  id: string;
+  vault_id: string;
+  base_category_id: string | null;
   name: string;
   code: string;
   description: string;

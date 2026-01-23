@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import {
-  CategoryRow,
   TransactionRow,
+  VaultCategoryRow,
   VaultRow,
 } from '@/shared/persistence/sqlite/rows';
 import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
@@ -133,10 +133,10 @@ export class VaultSqliteRepository extends VaultRepository {
       .all(id) as { category_id: string; amount: number }[];
     const budgets = new Map<string, { category: Category; amount: number }>();
     for (const b of budgetRows) {
-      // Load category for each budget
+      // Load vault category for each budget
       const catRow = this.db
-        .prepare('SELECT * FROM category WHERE id = ?')
-        .get(b.category_id) as CategoryRow | undefined;
+        .prepare('SELECT * FROM vault_category WHERE id = ?')
+        .get(b.category_id) as VaultCategoryRow | undefined;
       if (catRow) {
         const category = new Category(
           catRow.id,
@@ -190,16 +190,16 @@ export class VaultSqliteRepository extends VaultRepository {
       );
     }
 
-    // Load budgets
+    // Load budgets with vault categories
     const budgetRows = this.db
       .prepare('SELECT * FROM budget WHERE vault_id = ?')
       .all(row.id) as { category_id: string; amount: number }[];
     const budgets = new Map<string, { category: Category; amount: number }>();
     for (const b of budgetRows) {
-      // Load category for each budget
+      // Load vault category for each budget
       const catRow = this.db
-        .prepare('SELECT * FROM category WHERE id = ?')
-        .get(b.category_id) as CategoryRow | undefined;
+        .prepare('SELECT * FROM vault_category WHERE id = ?')
+        .get(b.category_id) as VaultCategoryRow | undefined;
       if (catRow) {
         const category = new Category(
           catRow.id,

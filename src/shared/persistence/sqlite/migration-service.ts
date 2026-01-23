@@ -56,6 +56,18 @@ export class MigrationService {
         created_at TEXT NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('pending', 'executed', 'failed', 'cancelled'))
       );
+
+      CREATE TABLE IF NOT EXISTS vault_category (
+        id TEXT PRIMARY KEY,
+        vault_id TEXT NOT NULL,
+        base_category_id TEXT,
+        name TEXT NOT NULL,
+        code TEXT NOT NULL,
+        description TEXT DEFAULT '',
+        transaction_type TEXT NOT NULL CHECK (transaction_type IN ('income', 'expense', 'both')),
+        FOREIGN KEY (vault_id) REFERENCES vault(id),
+        FOREIGN KEY (base_category_id) REFERENCES category(id)
+      );
     `);
 
     const hasDateColumn = db

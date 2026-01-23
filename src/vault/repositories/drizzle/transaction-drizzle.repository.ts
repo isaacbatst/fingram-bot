@@ -5,7 +5,7 @@ import {
   DRIZZLE_DATABASE,
   DrizzleDatabase,
 } from '@/shared/persistence/drizzle/drizzle.module';
-import { transaction, category } from '@/shared/persistence/drizzle/schema';
+import { transaction, vaultCategory } from '@/shared/persistence/drizzle/schema';
 import { Paginated } from '../../domain/paginated';
 import { TransactionDTO } from '../../dto/transaction.dto,';
 
@@ -56,7 +56,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
       conditions.push(ilike(transaction.description, `%${filter.description}%`));
     }
 
-    // Query with join
+    // Query with join to vault categories
     const rows = await this.db
       .select({
         id: transaction.id,
@@ -69,12 +69,12 @@ export class TransactionDrizzleRepository extends TransactionRepository {
         createdAt: transaction.createdAt,
         committed: transaction.committed,
         date: transaction.date,
-        categoryName: category.name,
-        categoryCode: category.code,
-        categoryDescription: category.description,
+        categoryName: vaultCategory.name,
+        categoryCode: vaultCategory.code,
+        categoryDescription: vaultCategory.description,
       })
       .from(transaction)
-      .leftJoin(category, eq(transaction.categoryId, category.id))
+      .leftJoin(vaultCategory, eq(transaction.categoryId, vaultCategory.id))
       .where(and(...conditions))
       .orderBy(desc(transaction.date))
       .limit(pageSize)
