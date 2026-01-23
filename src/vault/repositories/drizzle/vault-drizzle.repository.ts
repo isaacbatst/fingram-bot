@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { BatchItem } from 'drizzle-orm/batch';
 import {
   DRIZZLE_DATABASE,
@@ -108,7 +108,14 @@ export class VaultDrizzleRepository extends VaultRepository {
     // Delete removed budgets
     for (const b of budgetChanges.deleted) {
       queries.push(
-        this.db.delete(budget).where(eq(budget.categoryId, b.category.id)),
+        this.db
+          .delete(budget)
+          .where(
+            and(
+              eq(budget.vaultId, vaultEntity.id),
+              eq(budget.categoryId, b.category.id),
+            ),
+          ),
       );
     }
 
@@ -118,12 +125,16 @@ export class VaultDrizzleRepository extends VaultRepository {
         this.db
           .update(budget)
           .set({ amount: b.amount })
-          .where(eq(budget.categoryId, b.category.id)),
+          .where(
+            and(
+              eq(budget.vaultId, vaultEntity.id),
+              eq(budget.categoryId, b.category.id),
+            ),
+          ),
       );
     }
 
     // Execute all queries in a batch
-    console.log('queries', queries);
     if (queries.length > 0) {
       const [first, ...rest] = queries;
       await this.db.batch([first, ...rest]);

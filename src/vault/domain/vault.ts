@@ -174,11 +174,22 @@ export class Vault {
     if (amount < 0) {
       return left('O valor do orçamento não pode ser negativo');
     }
+    const existingBudget = this.budgets.get(category.id);
     this.budgets.set(category.id, { category, amount });
-    this.budgetsTracker.registerNew({
-      category,
-      amount,
-    });
+    
+    if (existingBudget) {
+      // Budget already exists, register as dirty (update)
+      this.budgetsTracker.registerDirty({
+        category,
+        amount,
+      });
+    } else {
+      // New budget, register as new (insert)
+      this.budgetsTracker.registerNew({
+        category,
+        amount,
+      });
+    }
     return right(true);
   }
 

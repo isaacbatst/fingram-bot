@@ -399,8 +399,11 @@ export class VaultService {
       input.vaultId,
     );
     for (const budget of input.budgets) {
+      // Support lookup by both ID and code for backwards compatibility
+      // (web UI sends ID, telegram bot sends code)
       const category = categories.find(
-        (cat) => cat.code === budget.categoryCode,
+        (cat) =>
+          cat.id === budget.categoryCode || cat.code === budget.categoryCode,
       );
       if (!category) {
         this.logger.warn(
