@@ -68,6 +68,7 @@ jobs:
           echo "GIT_COMMIT_HASH=${{ github.sha }}" >> envfile
           echo "ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }}" >> envfile
           echo "FRONTEND_URL=${{ secrets.FRONTEND_URL }}" >> envfile
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> envfile
       - name: Docker Stack Deploy
         uses: cssnr/stack-deploy-action@v1
         with:
