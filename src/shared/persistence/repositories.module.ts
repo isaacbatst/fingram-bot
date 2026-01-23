@@ -1,6 +1,6 @@
 import { Module, Type } from '@nestjs/common';
 
-type RepositoryConfig = 'in-memory' | 'sqlite';
+type RepositoryConfig = 'in-memory' | 'sqlite' | 'drizzle';
 
 @Module({})
 export class RepositoriesModule {

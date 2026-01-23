@@ -8,7 +8,7 @@ import { VaultAgentModule } from './vault/vault-agent.module';
 
 @Module({})
 export class AppModule {
-  static register(config: { persistence: 'in-memory' | 'sqlite' }) {
+  static register(config: { persistence: 'in-memory' | 'sqlite' | 'drizzle' }) {
     return {
       module: AppModule,
       imports: [
