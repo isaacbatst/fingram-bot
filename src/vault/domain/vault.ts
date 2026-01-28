@@ -38,6 +38,7 @@ export interface SerializedVault {
   totalSpentAmount: number;
   totalIncomeAmount: number;
   budgetsSummary: BudgetSummary[];
+  budgetStartDay: number;
 }
 
 export type BudgetSummary = {
@@ -72,7 +73,47 @@ export class Vault {
       { category: Category; amount: number }
     > = new Map(),
     private customPrompt = '',
+    private _budgetStartDay = 1,
   ) {}
+
+  get budgetStartDay(): number {
+    return this._budgetStartDay;
+  }
+
+  setBudgetStartDay(day: number): Either<string, number> {
+    if (day < 1 || day > 28) {
+      return left('O dia de início do orçamento deve estar entre 1 e 28');
+    }
+    this._budgetStartDay = day;
+    this.isDirty = true;
+    return right(day);
+  }
+
+  /**
+   * Calculate the budget period based on the configured budgetStartDay
+   * For example, if budgetStartDay = 10 and month = 1 (January) 2026:
+   * - Start: January 10, 2026
+   * - End: February 9, 2026
+   */
+  getBudgetPeriod(
+    month: number,
+    year: number,
+  ): { startDate: Date; endDate: Date } {
+    const startDate = new Date(year, month - 1, this._budgetStartDay);
+    // End date is the day before the start day of the next month
+    const endDate = new Date(year, month, this._budgetStartDay - 1);
+    // Set end date to end of day
+    endDate.setHours(23, 59, 59, 999);
+    return { startDate, endDate };
+  }
+
+  /**
+   * Check if a date falls within the budget period for a given month/year
+   */
+  isDateInBudgetPeriod(date: Date, month: number, year: number): boolean {
+    const { startDate, endDate } = this.getBudgetPeriod(month, year);
+    return date >= startDate && date <= endDate;
+  }
 
   static create(): Vault {
     return new Vault(Vault.generateId(), Vault.generateToken(), new Date());
@@ -176,7 +217,7 @@ export class Vault {
     }
     const existingBudget = this.budgets.get(category.id);
     this.budgets.set(category.id, { category, amount });
-    
+
     if (existingBudget) {
       // Budget already exists, register as dirty (update)
       this.budgetsTracker.registerDirty({
@@ -198,15 +239,22 @@ export class Vault {
 
     for (const [categoryId, budget] of this.budgets.entries()) {
       const spent = Array.from(this.transactions.values())
-        .filter(
-          (transaction) =>
-            transaction.categoryId === categoryId &&
-            transaction.type === 'expense' &&
-            (month
-              ? new Date(transaction.date).getMonth() + 1 === month
-              : true) &&
-            (year ? new Date(transaction.date).getFullYear() === year : true),
-        )
+        .filter((transaction) => {
+          if (
+            transaction.categoryId !== categoryId ||
+            transaction.type !== 'expense'
+          ) {
+            return false;
+          }
+
+          // If month and year are provided, check against budget period
+          if (month && year) {
+            const transactionDate = new Date(transaction.date);
+            return this.isDateInBudgetPeriod(transactionDate, month, year);
+          }
+
+          return true;
+        })
         .reduce(
           (total, transaction) => total + Math.abs(transaction.amount),
           0,
@@ -238,18 +286,15 @@ export class Vault {
   }
   totalSpentAmount(date?: { month: number; year: number }): number {
     let total = 0;
+    if (!date) {
+      const now = new Date();
+      date = { month: now.getMonth() + 1, year: now.getFullYear() };
+    }
+
     for (const transaction of this.transactions.values()) {
       if (transaction.type === 'expense') {
-        if (!date) {
-          const now = new Date();
-          date = { month: now.getMonth() + 1, year: now.getFullYear() };
-        }
-
         const transactionDate = new Date(transaction.date);
-        const transactionMonth = transactionDate.getMonth() + 1;
-        const transactionYear = transactionDate.getFullYear();
-
-        if (transactionMonth === date.month && transactionYear === date.year) {
+        if (this.isDateInBudgetPeriod(transactionDate, date.month, date.year)) {
           total += Math.abs(transaction.amount);
         }
       }
@@ -259,16 +304,15 @@ export class Vault {
 
   totalIncomeAmount(date?: { month: number; year: number }): number {
     let total = 0;
+    if (!date) {
+      const now = new Date();
+      date = { month: now.getMonth() + 1, year: now.getFullYear() };
+    }
+
     for (const transaction of this.transactions.values()) {
       if (transaction.type === 'income') {
-        if (!date) {
-          const now = new Date();
-          date = { month: now.getMonth() + 1, year: now.getFullYear() };
-        }
         const transactionDate = new Date(transaction.date);
-        const transactionMonth = transactionDate.getMonth() + 1;
-        const transactionYear = transactionDate.getFullYear();
-        if (transactionMonth === date.month && transactionYear === date.year) {
+        if (this.isDateInBudgetPeriod(transactionDate, date.month, date.year)) {
           total += transaction.amount;
         }
       }
@@ -346,6 +390,7 @@ export class Vault {
         options.date?.month,
         options.date?.year,
       ),
+      budgetStartDay: this._budgetStartDay,
     };
   }
 }

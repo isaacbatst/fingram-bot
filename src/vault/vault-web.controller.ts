@@ -335,12 +335,49 @@ export class VaultWebController {
     @VaultSession() vaultId: string,
     @Body() data: { transactionCode: string },
   ) {
-    const [error, result] = await this.vaultWebService.deleteTransaction(
+    const [error] = await this.vaultWebService.deleteTransaction(
       vaultId,
       data.transactionCode,
     );
     if (error !== null) {
       this.handleError(error.type, error.message);
     }
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Post('budget-start-day')
+  async setBudgetStartDay(
+    @VaultSession() vaultId: string,
+    @Body() data: { day: number },
+  ) {
+    if (typeof data.day !== 'number' || data.day < 1 || data.day > 28) {
+      throw new BadRequestException(
+        'O dia de início do orçamento deve ser um número entre 1 e 28',
+      );
+    }
+
+    const [error, result] = await this.vaultWebService.setBudgetStartDay(
+      vaultId,
+      data.day,
+    );
+
+    if (error !== null) {
+      this.handleError(error.type, error.message);
+    }
+
+    return { budgetStartDay: result };
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Get('budget-start-day')
+  async getBudgetStartDay(@VaultSession() vaultId: string) {
+    const [error, result] =
+      await this.vaultWebService.getBudgetStartDay(vaultId);
+
+    if (error !== null) {
+      this.handleError(error.type, error.message);
+    }
+
+    return { budgetStartDay: result };
   }
 }

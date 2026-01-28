@@ -21,16 +21,25 @@ export class VaultSqliteRepository extends VaultRepository {
 
   async create(vault: Vault): Promise<void> {
     this.db
-      .prepare('INSERT INTO vault (id, token, created_at) VALUES (?, ?, ?)')
-      .run(vault.id, vault.token, vault.createdAt.toISOString());
+      .prepare(
+        'INSERT INTO vault (id, token, created_at, budget_start_day) VALUES (?, ?, ?, ?)',
+      )
+      .run(
+        vault.id,
+        vault.token,
+        vault.createdAt.toISOString(),
+        vault.budgetStartDay,
+      );
   }
 
   async update(vault: Vault): Promise<void> {
     const commit = this.db.transaction(() => {
       if (vault.isDirty) {
         this.db
-          .prepare('UPDATE vault SET custom_prompt = ? WHERE id = ?')
-          .run(vault.getCustomPrompt(), vault.id);
+          .prepare(
+            'UPDATE vault SET custom_prompt = ?, budget_start_day = ? WHERE id = ?',
+          )
+          .run(vault.getCustomPrompt(), vault.budgetStartDay, vault.id);
       }
 
       const transactionsChanges = vault.transactionsTracker.getChanges();
@@ -155,6 +164,7 @@ export class VaultSqliteRepository extends VaultRepository {
       transactions,
       budgets,
       row.custom_prompt,
+      row.budget_start_day,
     );
     vault.transactionsTracker.clearChanges();
     vault.budgetsTracker.clearChanges();
@@ -218,6 +228,8 @@ export class VaultSqliteRepository extends VaultRepository {
       new Date(row.created_at),
       transactions,
       budgets,
+      row.custom_prompt,
+      row.budget_start_day,
     );
     vault.transactionsTracker.clearChanges();
     vault.budgetsTracker.clearChanges();

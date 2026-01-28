@@ -29,6 +29,7 @@ export class VaultDrizzleRepository extends VaultRepository {
       id: vaultEntity.id,
       token: vaultEntity.token,
       createdAt: vaultEntity.createdAt,
+      budgetStartDay: vaultEntity.budgetStartDay,
     });
   }
 
@@ -39,7 +40,10 @@ export class VaultDrizzleRepository extends VaultRepository {
       queries.push(
         this.db
           .update(vault)
-          .set({ customPrompt: vaultEntity.getCustomPrompt() })
+          .set({
+            customPrompt: vaultEntity.getCustomPrompt(),
+            budgetStartDay: vaultEntity.budgetStartDay,
+          })
           .where(eq(vault.id, vaultEntity.id)),
       );
     }
@@ -167,6 +171,7 @@ export class VaultDrizzleRepository extends VaultRepository {
     token: string;
     customPrompt: string | null;
     createdAt: Date;
+    budgetStartDay: number;
   }): Promise<Vault> {
     // Load transactions
     const transactionRows = await this.db
@@ -226,6 +231,7 @@ export class VaultDrizzleRepository extends VaultRepository {
       transactions,
       budgets,
       row.customPrompt ?? '',
+      row.budgetStartDay,
     );
     vaultEntity.transactionsTracker.clearChanges();
     vaultEntity.budgetsTracker.clearChanges();

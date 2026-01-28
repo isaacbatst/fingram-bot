@@ -6,6 +6,7 @@ import {
   boolean,
   timestamp,
   jsonb,
+  integer,
 } from 'drizzle-orm/pg-core';
 
 // Base categories - used as templates for vault categories
@@ -22,6 +23,7 @@ export const vault = pgTable('vault', {
   token: text('token').notNull(),
   customPrompt: text('custom_prompt').default(''),
   createdAt: timestamp('created_at').notNull(),
+  budgetStartDay: integer('budget_start_day').default(1).notNull(),
 });
 
 // Vault-specific categories - copies of base categories that can be edited per vault

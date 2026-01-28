@@ -432,4 +432,60 @@ export class VaultWebService {
       });
     }
   }
+
+  async setBudgetStartDay(
+    vaultId: string,
+    day: number,
+  ): Promise<Either<VaultError, number>> {
+    try {
+      this.logger.log(
+        `Setting budget start day for vault: ${vaultId} to day: ${day}`,
+      );
+      const [error, result] = await this.vaultService.setBudgetStartDay({
+        vaultId,
+        day,
+      });
+      if (error !== null) {
+        return left({
+          type: VaultErrorType.INTERNAL_ERROR,
+          message: error,
+        });
+      }
+      return right(result);
+    } catch (error) {
+      this.logger.error(
+        `Error setting budget start day for vault ${vaultId}: ${error}`,
+      );
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao definir dia de início do orçamento',
+      });
+    }
+  }
+
+  async getBudgetStartDay(
+    vaultId: string,
+  ): Promise<Either<VaultError, number>> {
+    try {
+      this.logger.log(`Getting budget start day for vault: ${vaultId}`);
+      const [error, result] = await this.vaultService.getBudgetStartDay({
+        vaultId,
+      });
+      if (error !== null) {
+        return left({
+          type: VaultErrorType.VAULT_NOT_FOUND,
+          message: error,
+        });
+      }
+      return right(result);
+    } catch (error) {
+      this.logger.error(
+        `Error getting budget start day for vault ${vaultId}: ${error}`,
+      );
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao obter dia de início do orçamento',
+      });
+    }
+  }
 }

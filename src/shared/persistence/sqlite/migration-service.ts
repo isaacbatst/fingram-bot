@@ -16,7 +16,8 @@ export class MigrationService {
         id TEXT PRIMARY KEY,
         token TEXT NOT NULL,
         custom_prompt TEXT DEFAULT '',
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        budget_start_day INTEGER NOT NULL DEFAULT 1
       );
 
       CREATE TABLE IF NOT EXISTS chat (
@@ -82,6 +83,21 @@ export class MigrationService {
       db.exec(`
         ALTER TABLE "transaction" ADD COLUMN date TEXT;
         UPDATE "transaction" SET date = created_at WHERE date IS NULL OR date = '';
+      `);
+    }
+
+    // Migration: Add budget_start_day column to vault table
+    const hasBudgetStartDayColumn = db
+      .prepare(
+        `
+      SELECT 1 FROM pragma_table_info('vault') WHERE name='budget_start_day'
+    `,
+      )
+      .get();
+
+    if (!hasBudgetStartDayColumn) {
+      db.exec(`
+        ALTER TABLE vault ADD COLUMN budget_start_day INTEGER NOT NULL DEFAULT 1;
       `);
     }
   }

@@ -524,4 +524,38 @@ export class VaultService {
     await this.vaultRepository.update(vault);
     return right(vault.getCustomPrompt());
   }
+
+  async setBudgetStartDay(input: {
+    vaultId: string;
+    day: number;
+  }): Promise<Either<string, number>> {
+    this.logger.log(
+      `Setting budget start day for vault: ${input.vaultId} to day: ${input.day}`,
+    );
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) {
+      this.logger.warn(`Vault not found: ${input.vaultId}`);
+      return left(`Cofre não encontrado`);
+    }
+    const [err, day] = vault.setBudgetStartDay(input.day);
+    if (err !== null) {
+      this.logger.error(`Failed to set budget start day: ${err}`);
+      return left(err);
+    }
+    await this.vaultRepository.update(vault);
+    this.logger.log(`Budget start day set successfully to: ${day}`);
+    return right(day);
+  }
+
+  async getBudgetStartDay(input: {
+    vaultId: string;
+  }): Promise<Either<string, number>> {
+    this.logger.log(`Getting budget start day for vault: ${input.vaultId}`);
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) {
+      this.logger.warn(`Vault not found: ${input.vaultId}`);
+      return left(`Cofre não encontrado`);
+    }
+    return right(vault.budgetStartDay);
+  }
 }

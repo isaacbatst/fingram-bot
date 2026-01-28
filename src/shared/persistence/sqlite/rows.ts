@@ -4,6 +4,7 @@ export interface VaultRow {
   token: string;
   created_at: string;
   custom_prompt?: string;
+  budget_start_day: number;
 }
 
 // Category table row (base categories)
