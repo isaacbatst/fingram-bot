@@ -558,4 +558,33 @@ export class VaultService {
     }
     return right(vault.budgetStartDay);
   }
+
+  async suggestCategory(input: {
+    vaultId: string;
+    description: string;
+    transactionType: 'income' | 'expense';
+  }): Promise<Either<string, string>> {
+    this.logger.log(
+      `Suggesting category for vault: ${input.vaultId}, description: ${input.description}`,
+    );
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) {
+      this.logger.warn(`Vault not found: ${input.vaultId}`);
+      return left(`Cofre não encontrado`);
+    }
+    const categories = await this.categoryRepository.findAllByVaultId(
+      input.vaultId,
+    );
+    const [err, categoryId] = await this.aiService.suggestCategory(
+      input.description,
+      input.transactionType,
+      categories,
+    );
+    if (err !== null) {
+      this.logger.error(`Error suggesting category: ${err}`);
+      return left(err);
+    }
+    this.logger.log(`Category suggested: ${categoryId}`);
+    return right(categoryId);
+  }
 }

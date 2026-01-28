@@ -270,4 +270,33 @@ O usuário poderá fornecer uma customização do prompt para dar mais contexto,
 Se não encontrar uma categoria adequada, marque como "Outros", mas SEMPRE marque como alguma categoria, mesmo que seja "Outros".
 `;
   }
+
+  async suggestCategory(
+    description: string,
+    transactionType: 'income' | 'expense',
+    categories: Category[],
+  ): Promise<Either<string, string>> {
+    const suggestCategorySchema = z.object({
+      categoryId: z.string(),
+    });
+
+    const filteredCategories = categories.filter(
+      (c) =>
+        c.transactionType === transactionType || c.transactionType === 'both',
+    );
+
+    const response = await this.openAi.responses.parse({
+      model: 'gpt-5-nano',
+      instructions: `Escolha a categoria mais adequada. Retorne apenas o categoryId.
+Categorias: ${JSON.stringify(filteredCategories.map((c) => ({ id: c.id, name: c.name })))}`,
+      input: `${transactionType}: ${description}`,
+      text: { format: zodTextFormat(suggestCategorySchema, 'category') },
+    });
+
+    if (!response.output_parsed?.categoryId) {
+      return left('Não foi possível sugerir uma categoria');
+    }
+
+    return right(response.output_parsed.categoryId);
+  }
 }

@@ -15,4 +15,9 @@ export abstract class AiService {
     categories: Category[],
     customPrompt: string,
   ): Promise<Either<string, Map<string, string>>>;
+  abstract suggestCategory(
+    description: string,
+    transactionType: 'income' | 'expense',
+    categories: Category[],
+  ): Promise<Either<string, string>>;
 }

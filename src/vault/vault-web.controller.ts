@@ -380,4 +380,37 @@ export class VaultWebController {
 
     return { budgetStartDay: result };
   }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Post('suggest-category')
+  async suggestCategory(
+    @VaultSession() vaultId: string,
+    @Body()
+    data: { description: string; transactionType: 'income' | 'expense' },
+  ) {
+    if (!data.description || !data.description.trim()) {
+      throw new BadRequestException('A descrição é obrigatória');
+    }
+
+    if (
+      !data.transactionType ||
+      !['income', 'expense'].includes(data.transactionType)
+    ) {
+      throw new BadRequestException(
+        'Tipo de transação é obrigatório. Use "income" ou "expense"',
+      );
+    }
+
+    const [error, categoryId] = await this.vaultService.suggestCategory({
+      vaultId,
+      description: data.description.trim(),
+      transactionType: data.transactionType,
+    });
+
+    if (error !== null) {
+      this.handleError(VaultErrorType.INTERNAL_ERROR, error);
+    }
+
+    return { categoryId };
+  }
 }
