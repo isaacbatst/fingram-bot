@@ -288,7 +288,7 @@ Se não encontrar uma categoria adequada, marque como "Outros", mas SEMPRE marqu
     const response = await this.openAi.responses.parse({
       model: 'gpt-5-nano',
       instructions: `Escolha a categoria mais adequada. Retorne apenas o categoryId.
-Categorias: ${JSON.stringify(filteredCategories.map((c) => ({ id: c.id, name: c.name })))}`,
+Categorias: ${JSON.stringify(filteredCategories.map((c) => ({ id: c.id, name: c.name, description: c.description })))}`,
       input: `${transactionType}: ${description}`,
       text: { format: zodTextFormat(suggestCategorySchema, 'category') },
     });
