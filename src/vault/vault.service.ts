@@ -579,6 +579,7 @@ export class VaultService {
       input.description,
       input.transactionType,
       categories,
+      vault.getCustomPrompt(),
     );
     if (err !== null) {
       this.logger.error(`Error suggesting category: ${err}`);

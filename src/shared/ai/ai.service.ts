@@ -19,5 +19,6 @@ export abstract class AiService {
     description: string,
     transactionType: 'income' | 'expense',
     categories: Category[],
+    customPrompt?: string,
   ): Promise<Either<string, string>>;
 }

@@ -4,7 +4,6 @@ import { ConcurrencyQueue } from '@/vault/domain/concurrency-queue';
 import { Either, left, right } from '@/vault/domain/either';
 import { Transaction } from '@/vault/domain/transaction';
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import OpenAI from 'openai';
 import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
@@ -275,6 +274,7 @@ Se não encontrar uma categoria adequada, marque como "Outros", mas SEMPRE marqu
     description: string,
     transactionType: 'income' | 'expense',
     categories: Category[],
+    customPrompt?: string,
   ): Promise<Either<string, string>> {
     const suggestCategorySchema = z.object({
       categoryId: z.string(),
@@ -288,7 +288,8 @@ Se não encontrar uma categoria adequada, marque como "Outros", mas SEMPRE marqu
     const response = await this.openAi.responses.parse({
       model: 'gpt-5-nano',
       instructions: `Escolha a categoria mais adequada. Retorne apenas o categoryId.
-Categorias: ${JSON.stringify(filteredCategories.map((c) => ({ id: c.id, name: c.name, description: c.description })))}`,
+Categorias: ${JSON.stringify(filteredCategories.map((c) => ({ id: c.id, name: c.name, description: c.description })))}
+${customPrompt ? `Contexto adicional do usuário: ${customPrompt}` : ''}`,
       input: `${transactionType}: ${description}`,
       text: { format: zodTextFormat(suggestCategorySchema, 'category') },
     });
