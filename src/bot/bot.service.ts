@@ -218,7 +218,6 @@ export class BotService {
       date?: {
         year: number;
         month: number;
-        day?: number;
       };
       page: number;
     },

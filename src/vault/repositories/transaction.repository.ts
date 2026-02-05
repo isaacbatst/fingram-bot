@@ -5,10 +5,9 @@ export abstract class TransactionRepository {
   abstract findTransactionsByVaultId(
     vaultId: string,
     filter?: {
-      date?: {
-        day?: number;
-        month: number;
-        year: number;
+      dateRange?: {
+        startDate: Date;
+        endDate: Date;
       };
       categoryId?: string;
       description?: string;

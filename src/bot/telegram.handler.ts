@@ -694,7 +694,6 @@ export class TelegramHandler {
     string,
     {
       date?: {
-        day?: number;
         month: number;
         year: number;
       };
@@ -703,7 +702,7 @@ export class TelegramHandler {
   > {
     const args = text.split(' ').slice(1);
     let page = 1;
-    let date: { day?: number; month: number; year: number } | undefined;
+    let date: { month: number; year: number } | undefined;
 
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '-p' && args[i + 1]) {
@@ -752,7 +751,7 @@ export class TelegramHandler {
           ) {
             return left('Formato de data inválido. Use mm/yyyy ou dd/mm/yyyy.');
           }
-          date = { day, month, year };
+          date = { month, year };
           i++;
           continue;
         }

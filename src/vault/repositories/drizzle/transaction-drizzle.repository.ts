@@ -20,7 +20,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
   async findTransactionsByVaultId(
     vaultId: string,
     filter?: {
-      date?: { day?: number; month: number; year: number };
+      dateRange?: { startDate: Date; endDate: Date };
       categoryId?: string;
       description?: string;
       page?: number;
@@ -34,18 +34,13 @@ export class TransactionDrizzleRepository extends TransactionRepository {
     // Build where conditions
     const conditions = [eq(transaction.vaultId, vaultId)];
 
-    if (filter?.date) {
+    if (filter?.dateRange) {
       conditions.push(
-        sql`EXTRACT(MONTH FROM ${transaction.date}) = ${filter.date.month}`,
+        sql`${transaction.date} >= ${filter.dateRange.startDate}`,
       );
       conditions.push(
-        sql`EXTRACT(YEAR FROM ${transaction.date}) = ${filter.date.year}`,
+        sql`${transaction.date} <= ${filter.dateRange.endDate}`,
       );
-      if (filter.date.day !== undefined) {
-        conditions.push(
-          sql`EXTRACT(DAY FROM ${transaction.date}) = ${filter.date.day}`,
-        );
-      }
     }
 
     if (filter?.categoryId) {

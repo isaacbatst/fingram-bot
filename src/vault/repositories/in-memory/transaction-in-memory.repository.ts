@@ -14,10 +14,10 @@ export class TransactionInMemoryRepository extends TransactionRepository {
   async findTransactionsByVaultId(
     vaultId: string,
     filter?: {
-      date: { day?: number; month: number; year: number };
+      dateRange?: { startDate: Date; endDate: Date };
       categoryId?: string;
       description?: string;
-      page: number;
+      page?: number;
       pageSize?: number;
     },
   ): Promise<Paginated<TransactionDTO>> {
@@ -34,15 +34,11 @@ export class TransactionInMemoryRepository extends TransactionRepository {
 
     let transactions = Array.from(vault.transactions.values());
 
-    if (filter?.date) {
-      const { day, month, year } = filter.date;
+    if (filter?.dateRange) {
+      const { startDate, endDate } = filter.dateRange;
       transactions = transactions.filter((transaction) => {
-        const date = transaction.createdAt;
-        return (
-          date.getMonth() + 1 === month &&
-          date.getFullYear() === year &&
-          (day === undefined || date.getDate() === day)
-        );
+        const date = transaction.date ?? transaction.createdAt;
+        return date >= startDate && date <= endDate;
       });
     }
 

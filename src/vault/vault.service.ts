@@ -197,7 +197,6 @@ export class VaultService {
   async getTransactions(input: {
     vaultId: string;
     date?: {
-      day?: number;
       month: number;
       year: number;
     };
@@ -214,14 +213,19 @@ export class VaultService {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
       return left(`Cofre não encontrado`);
     }
+
+    const now = new Date();
+    const date = input.date ?? {
+      month: now.getMonth() + 1,
+      year: now.getFullYear(),
+    };
+    const { startDate, endDate } = vault.getBudgetPeriod(date.month, date.year);
+
     const transactions =
       await this.transactionRepository.findTransactionsByVaultId(
         input.vaultId,
         {
-          date: input.date ?? {
-            month: new Date().getMonth() + 1,
-            year: new Date().getFullYear(),
-          },
+          dateRange: { startDate, endDate },
           categoryId: input.categoryId,
           description: input.description,
           page: input.page ?? 1,

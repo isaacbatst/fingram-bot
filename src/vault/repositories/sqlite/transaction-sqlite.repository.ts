@@ -33,7 +33,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
   async findTransactionsByVaultId(
     vaultId: string,
     filter?: {
-      date?: { day?: number; month: number; year: number };
+      dateRange?: { startDate: Date; endDate: Date };
       categoryId?: string;
       description?: string;
       page?: number;
@@ -48,14 +48,10 @@ export class TransactionSqliteRepository extends TransactionRepository {
                  LEFT JOIN vault_category c ON t.category_id = c.id
                  WHERE t.vault_id = ?`;
     const params: unknown[] = [vaultId];
-    if (filter?.date) {
-      query += " AND strftime('%m', t.date) = ? AND strftime('%Y', t.date) = ?";
-      params.push(String(filter.date.month).padStart(2, '0'));
-      params.push(String(filter.date.year));
-      if (filter.date.day !== undefined) {
-        query += " AND strftime('%d', t.date) = ?";
-        params.push(String(filter.date.day).padStart(2, '0'));
-      }
+    if (filter?.dateRange) {
+      query += ' AND t.date >= ? AND t.date <= ?';
+      params.push(filter.dateRange.startDate.toISOString());
+      params.push(filter.dateRange.endDate.toISOString());
     }
     if (filter?.categoryId) {
       query += ' AND t.category_id = ?';
@@ -100,15 +96,10 @@ export class TransactionSqliteRepository extends TransactionRepository {
       countQuery += ' AND LOWER(t.description) LIKE LOWER(?)';
       countParams.push(`%${filter.description}%`);
     }
-    if (filter?.date) {
-      countQuery +=
-        " AND strftime('%m', t.date) = ? AND strftime('%Y', t.date) = ?";
-      countParams.push(String(filter.date.month).padStart(2, '0'));
-      countParams.push(String(filter.date.year));
-      if (filter.date.day !== undefined) {
-        countQuery += " AND strftime('%d', t.date) = ?";
-        countParams.push(String(filter.date.day).padStart(2, '0'));
-      }
+    if (filter?.dateRange) {
+      countQuery += ' AND t.date >= ? AND t.date <= ?';
+      countParams.push(filter.dateRange.startDate.toISOString());
+      countParams.push(filter.dateRange.endDate.toISOString());
     }
     const total = (
       this.db.prepare(countQuery).get(...countParams) as { count: number }
