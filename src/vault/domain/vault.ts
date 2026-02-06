@@ -115,6 +115,17 @@ export class Vault {
     return date >= startDate && date <= endDate;
   }
 
+  getCurrentBudgetPeriod(): { month: number; year: number } {
+    const now = new Date();
+    let month = now.getMonth() + 1;
+    let year = now.getFullYear();
+    if (now.getDate() < this._budgetStartDay) {
+      month -= 1;
+      if (month < 1) { month = 12; year -= 1; }
+    }
+    return { month, year };
+  }
+
   static create(): Vault {
     return new Vault(Vault.generateId(), Vault.generateToken(), new Date());
   }
@@ -287,8 +298,7 @@ export class Vault {
   totalSpentAmount(date?: { month: number; year: number }): number {
     let total = 0;
     if (!date) {
-      const now = new Date();
-      date = { month: now.getMonth() + 1, year: now.getFullYear() };
+      date = this.getCurrentBudgetPeriod();
     }
 
     for (const transaction of this.transactions.values()) {
@@ -305,8 +315,7 @@ export class Vault {
   totalIncomeAmount(date?: { month: number; year: number }): number {
     let total = 0;
     if (!date) {
-      const now = new Date();
-      date = { month: now.getMonth() + 1, year: now.getFullYear() };
+      date = this.getCurrentBudgetPeriod();
     }
 
     for (const transaction of this.transactions.values()) {

@@ -214,11 +214,7 @@ export class VaultService {
       return left(`Cofre não encontrado`);
     }
 
-    const now = new Date();
-    const date = input.date ?? {
-      month: now.getMonth() + 1,
-      year: now.getFullYear(),
-    };
+    const date = input.date ?? vault.getCurrentBudgetPeriod();
     const { startDate, endDate } = vault.getBudgetPeriod(date.month, date.year);
 
     const transactions =

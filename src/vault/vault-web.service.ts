@@ -200,12 +200,8 @@ export class VaultWebService {
         });
       }
 
-      // Use custom date or current month
-      const now = new Date();
-      const targetDate = date || {
-        month: now.getMonth() + 1,
-        year: now.getFullYear(),
-      };
+      // Use custom date or current budget period
+      const targetDate = date || vault.getCurrentBudgetPeriod();
       const budget = vault.getBudgetsSummary(targetDate.month, targetDate.year);
 
       return right({
@@ -240,10 +236,7 @@ export class VaultWebService {
       // Use VaultService directly
       const [error, transactions] = await this.vaultService.getTransactions({
         vaultId,
-        date: params.date || {
-          year: new Date().getFullYear(),
-          month: new Date().getMonth() + 1,
-        },
+        date: params.date,
         page: params.page || 1,
         categoryId: params.categoryId,
         description: params.description,

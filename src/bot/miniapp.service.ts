@@ -239,12 +239,8 @@ export class MiniappService {
         });
       }
 
-      // Usar data customizada ou o mês atual
-      const now = new Date();
-      const date = customDate || {
-        month: now.getMonth() + 1,
-        year: now.getFullYear(),
-      };
+      // Usar data customizada ou o período de orçamento atual
+      const date = customDate || vault.getCurrentBudgetPeriod();
       const budget = vault.getBudgetsSummary(date.month, date.year);
 
       return right({
@@ -285,10 +281,7 @@ export class MiniappService {
     try {
       const transactionsResult = await this.vaultService.getTransactions({
         vaultId,
-        date: options.date || {
-          year: new Date().getFullYear(),
-          month: new Date().getMonth() + 1,
-        },
+        date: options.date,
         page: options.page || 1,
         categoryId: options.categoryId,
         description: options.description,
