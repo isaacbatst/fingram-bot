@@ -4,17 +4,17 @@ services:
   bot:
     image: ghcr.io/isaacbatst/fingram-bot:${GIT_COMMIT_HASH:-latest}
     user: "1000:1000"
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.bot.rule=Host(`api-carteira.isaacbatst.com.br`)"
-      - "traefik.http.services.bot.loadbalancer.server.port=3002"
-      - "traefik.http.routers.bot.entrypoints=websecure"
-      - "traefik.http.routers.bot.tls.certresolver=myresolver"
     deploy:
       update_config:
         order: start-first
       restart_policy:
         condition: on-failure
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.bot.rule=Host(`api-carteira.isaacbatst.com.br`)"
+        - "traefik.http.services.bot.loadbalancer.server.port=3002"
+        - "traefik.http.routers.bot.entrypoints=websecure"
+        - "traefik.http.routers.bot.tls.certresolver=myresolver"
     networks:
       - traefik-public
     volumes:
