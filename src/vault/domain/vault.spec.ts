@@ -1,7 +1,8 @@
-import { describe, it } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { Vault } from './vault';
 import { Transaction } from './transaction';
 import { Category } from './category';
+import { Box } from './box';
 
 describe('Vault', () => {
   it('should add transactions', () => {
@@ -181,5 +182,235 @@ describe('Vault', () => {
     expect(summaryJune2023[0].spent).toBe(0); // Nenhuma transação em Junho para Alimentação
     expect(summaryJune2023[1].category.name).toBe('Category2');
     expect(summaryJune2023[1].spent).toBe(200); // Total gasto em Junho (50)
+  });
+});
+
+describe('Vault - Boxes', () => {
+  it('should add a box', () => {
+    const vault = new Vault();
+    const box = Box.create({ vaultId: vault.id, name: 'Emergência', goalAmount: 1000 });
+    vault.addBox(box);
+
+    expect(vault.boxes.size).toBe(1);
+    expect(vault.boxes.get(box.id)).toBe(box);
+    expect(vault.boxesTracker.getChanges().new).toHaveLength(1);
+    expect(vault.boxesTracker.getChanges().new[0]).toBe(box);
+  });
+
+  it('should edit a box name and goalAmount', () => {
+    const vault = new Vault();
+    const box = Box.create({ vaultId: vault.id, name: 'Emergência', goalAmount: 1000 });
+    vault.addBox(box);
+
+    const [err, editedBox] = vault.editBox(box.id, { name: 'Reserva', goalAmount: 2000 });
+    expect(err).toBeNull();
+    expect(editedBox!.name).toBe('Reserva');
+    expect(editedBox!.goalAmount).toBe(2000);
+    expect(vault.boxesTracker.getChanges().dirty).toHaveLength(1);
+  });
+
+  it('should not delete a default box', () => {
+    const vault = new Vault();
+    const box = Box.create({ vaultId: vault.id, name: 'Padrão', isDefault: true });
+    vault.addBox(box);
+
+    const [err] = vault.deleteBox(box.id);
+    expect(err).toBe('Não é possível deletar a caixinha padrão');
+    expect(vault.boxes.size).toBe(1);
+  });
+
+  it('should not delete a box with transactions', () => {
+    const vault = new Vault();
+    const box = Box.create({ vaultId: vault.id, name: 'Viagem' });
+    vault.addBox(box);
+
+    vault.addTransaction(
+      Transaction.restore({
+        id: '1',
+        code: '1',
+        vaultId: vault.id,
+        boxId: box.id,
+        transferId: null,
+        amount: 100,
+        isCommitted: true,
+        createdAt: new Date(),
+        categoryId: null,
+        type: 'income',
+        date: new Date(),
+      }),
+    );
+
+    const [err] = vault.deleteBox(box.id);
+    expect(err).toBe('Não é possível deletar uma caixinha com transações');
+    expect(vault.boxes.size).toBe(1);
+  });
+
+  it('should delete an empty non-default box', () => {
+    const vault = new Vault();
+    const box = Box.create({ vaultId: vault.id, name: 'Viagem' });
+    vault.addBox(box);
+
+    const [err, result] = vault.deleteBox(box.id);
+    expect(err).toBeNull();
+    expect(result).toBe(true);
+    expect(vault.boxes.size).toBe(0);
+    expect(vault.boxesTracker.getChanges().deleted).toHaveLength(1);
+  });
+
+  it('should calculate box balance', () => {
+    const vault = new Vault();
+    const box = Box.create({ vaultId: vault.id, name: 'Emergência' });
+    vault.addBox(box);
+
+    vault.addTransaction(
+      Transaction.restore({
+        id: '1',
+        code: '1',
+        vaultId: vault.id,
+        boxId: box.id,
+        transferId: null,
+        amount: 500,
+        isCommitted: true,
+        createdAt: new Date(),
+        categoryId: null,
+        type: 'income',
+        date: new Date(),
+      }),
+    );
+
+    vault.addTransaction(
+      Transaction.restore({
+        id: '2',
+        code: '2',
+        vaultId: vault.id,
+        boxId: box.id,
+        transferId: null,
+        amount: 200,
+        isCommitted: true,
+        createdAt: new Date(),
+        categoryId: null,
+        type: 'expense',
+        date: new Date(),
+      }),
+    );
+
+    // Uncommitted transaction should not count
+    vault.addTransaction(
+      Transaction.restore({
+        id: '3',
+        code: '3',
+        vaultId: vault.id,
+        boxId: box.id,
+        transferId: null,
+        amount: 1000,
+        isCommitted: false,
+        createdAt: new Date(),
+        categoryId: null,
+        type: 'income',
+        date: new Date(),
+      }),
+    );
+
+    expect(vault.getBoxBalance(box.id)).toBe(300); // 500 - 200 = 300
+  });
+
+  it('should create transfer between boxes (balances correct, vault balance unchanged)', () => {
+    const vault = new Vault();
+    const boxA = Box.create({ vaultId: vault.id, name: 'Geral' });
+    const boxB = Box.create({ vaultId: vault.id, name: 'Emergência' });
+    vault.addBox(boxA);
+    vault.addBox(boxB);
+
+    // Seed boxA with 1000
+    vault.addTransaction(
+      Transaction.restore({
+        id: 'seed',
+        code: 'seed',
+        vaultId: vault.id,
+        boxId: boxA.id,
+        transferId: null,
+        amount: 1000,
+        isCommitted: true,
+        createdAt: new Date(),
+        categoryId: null,
+        type: 'income',
+        date: new Date(),
+      }),
+    );
+
+    const balanceBefore = vault.getBalance();
+
+    const [err, transferId] = vault.createTransfer({
+      fromBoxId: boxA.id,
+      toBoxId: boxB.id,
+      amount: 300,
+      date: new Date(),
+    });
+
+    expect(err).toBeNull();
+    expect(transferId).toBeDefined();
+
+    // BoxA lost 300, boxB gained 300
+    expect(vault.getBoxBalance(boxA.id)).toBe(700); // 1000 - 300
+    expect(vault.getBoxBalance(boxB.id)).toBe(300); // 0 + 300
+
+    // Overall vault balance should not change (transfer is internal)
+    expect(vault.getBalance()).toBe(balanceBefore);
+  });
+
+  it('should delete a transfer (both transactions removed, balances restored)', () => {
+    const vault = new Vault();
+    const boxA = Box.create({ vaultId: vault.id, name: 'Geral' });
+    const boxB = Box.create({ vaultId: vault.id, name: 'Emergência' });
+    vault.addBox(boxA);
+    vault.addBox(boxB);
+
+    // Seed boxA with 1000
+    vault.addTransaction(
+      Transaction.restore({
+        id: 'seed',
+        code: 'seed',
+        vaultId: vault.id,
+        boxId: boxA.id,
+        transferId: null,
+        amount: 1000,
+        isCommitted: true,
+        createdAt: new Date(),
+        categoryId: null,
+        type: 'income',
+        date: new Date(),
+      }),
+    );
+
+    const [, transferId] = vault.createTransfer({
+      fromBoxId: boxA.id,
+      toBoxId: boxB.id,
+      amount: 300,
+      date: new Date(),
+    });
+
+    // Delete the transfer
+    const [err, result] = vault.deleteTransfer(transferId!);
+    expect(err).toBeNull();
+    expect(result).toBe(true);
+
+    // Balances should be restored
+    expect(vault.getBoxBalance(boxA.id)).toBe(1000);
+    expect(vault.getBoxBalance(boxB.id)).toBe(0);
+  });
+
+  it('should not transfer to the same box', () => {
+    const vault = new Vault();
+    const box = Box.create({ vaultId: vault.id, name: 'Geral' });
+    vault.addBox(box);
+
+    const [err] = vault.createTransfer({
+      fromBoxId: box.id,
+      toBoxId: box.id,
+      amount: 100,
+      date: new Date(),
+    });
+
+    expect(err).toBe('Não é possível transferir para a mesma caixinha');
   });
 });

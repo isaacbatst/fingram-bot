@@ -1,4 +1,5 @@
 import * as crypto from 'crypto';
+import { Box } from './box';
 import { Category } from './category';
 import { Either, left, right } from './either';
 import { Transaction } from './transaction';
@@ -25,6 +26,15 @@ export interface SerializedTransaction {
   vaultId: string;
 }
 
+export interface SerializedBox {
+  id: string;
+  name: string;
+  goalAmount: number | null;
+  isDefault: boolean;
+  balance: number;
+  goalProgress: number;
+}
+
 export interface SerializedVault {
   id: string;
   token: string;
@@ -33,6 +43,7 @@ export interface SerializedVault {
   createdAt: string;
   transactions: [string, SerializedTransaction][];
   budgets: [string, { category: SerializedCategory; amount: number }][];
+  boxes: SerializedBox[];
   totalBudgetedAmount: number;
   percentageTotalBudgetedAmount: number;
   totalSpentAmount: number;
@@ -62,6 +73,7 @@ export class Vault {
     category: Category;
     amount: number;
   }>();
+  readonly boxesTracker = new ChangesTracker<Box>();
 
   constructor(
     public readonly id = Vault.generateId(),
@@ -72,6 +84,7 @@ export class Vault {
       string,
       { category: Category; amount: number }
     > = new Map(),
+    public readonly boxes: Map<string, Box> = new Map(),
     private customPrompt = '',
     private _budgetStartDay = 1,
   ) {}
@@ -213,6 +226,89 @@ export class Vault {
     return total;
   }
 
+  addBox(box: Box): void {
+    this.boxes.set(box.id, box);
+    this.boxesTracker.registerNew(box);
+  }
+
+  editBox(boxId: string, options: { name?: string; goalAmount?: number | null }): Either<string, Box> {
+    const box = this.boxes.get(boxId);
+    if (!box) return left('Caixinha não encontrada');
+    if (options.name !== undefined) box.name = options.name;
+    if (options.goalAmount !== undefined) box.goalAmount = options.goalAmount;
+    this.boxesTracker.registerDirty(box);
+    return right(box);
+  }
+
+  deleteBox(boxId: string): Either<string, boolean> {
+    const box = this.boxes.get(boxId);
+    if (!box) return left('Caixinha não encontrada');
+    if (box.isDefault) return left('Não é possível deletar a caixinha padrão');
+    for (const tx of this.transactions.values()) {
+      if (tx.boxId === boxId) return left('Não é possível deletar uma caixinha com transações');
+    }
+    this.boxes.delete(boxId);
+    this.boxesTracker.registerDeleted(box);
+    return right(true);
+  }
+
+  getBoxBalance(boxId: string): number {
+    let total = 0;
+    for (const tx of this.transactions.values()) {
+      if (tx.boxId !== boxId || !tx.isCommitted) continue;
+      total += tx.type === 'income' ? tx.amount : -tx.amount;
+    }
+    return total;
+  }
+
+  createTransfer(input: { fromBoxId: string; toBoxId: string; amount: number; date: Date }): Either<string, string> {
+    const fromBox = this.boxes.get(input.fromBoxId);
+    const toBox = this.boxes.get(input.toBoxId);
+    if (!fromBox) return left('Caixinha de origem não encontrada');
+    if (!toBox) return left('Caixinha de destino não encontrada');
+    if (input.fromBoxId === input.toBoxId) return left('Não é possível transferir para a mesma caixinha');
+
+    const transferId = crypto.randomUUID();
+
+    const expenseTx = Transaction.create({
+      amount: input.amount,
+      vaultId: this.id,
+      boxId: input.fromBoxId,
+      type: 'expense',
+      date: input.date,
+      transferId,
+    });
+
+    const incomeTx = Transaction.create({
+      amount: input.amount,
+      vaultId: this.id,
+      boxId: input.toBoxId,
+      type: 'income',
+      date: input.date,
+      transferId,
+    });
+
+    this.addTransaction(expenseTx);
+    this.commitTransaction(expenseTx.id);
+    this.addTransaction(incomeTx);
+    this.commitTransaction(incomeTx.id);
+
+    return right(transferId);
+  }
+
+  deleteTransfer(transferId: string): Either<string, boolean> {
+    const transferTxs: Transaction[] = [];
+    for (const tx of this.transactions.values()) {
+      if (tx.transferId === transferId) transferTxs.push(tx);
+    }
+    if (transferTxs.length === 0) return left('Transferência não encontrada');
+    for (const tx of transferTxs) {
+      this.transactions.delete(tx.id);
+      this.transactionsTracker.registerDeleted(tx);
+    }
+    return right(true);
+  }
+
   findTransactionByCode(code: string): Transaction | null {
     for (const transaction of this.transactions.values()) {
       if (transaction.code === code) {
@@ -336,6 +432,7 @@ export class Vault {
   clearChanges(): void {
     this.transactionsTracker.clearChanges();
     this.budgetsTracker.clearChanges();
+    this.boxesTracker.clearChanges();
     this.isDirty = false;
   }
 
@@ -383,6 +480,25 @@ export class Vault {
       },
     ]);
 
+    // Serializar caixinhas
+    const serializedBoxes: SerializedBox[] = Array.from(
+      this.boxes.values(),
+    ).map((box) => {
+      const balance = this.getBoxBalance(box.id);
+      const goalProgress =
+        box.goalAmount && box.goalAmount > 0
+          ? (balance / box.goalAmount) * 100
+          : 0;
+      return {
+        id: box.id,
+        name: box.name,
+        goalAmount: box.goalAmount,
+        isDefault: box.isDefault,
+        balance,
+        goalProgress,
+      };
+    });
+
     return {
       id: this.id,
       token: this.token,
@@ -390,6 +506,7 @@ export class Vault {
       createdAt: this.createdAt.toISOString(),
       transactions: serializedTransactions,
       budgets: serializedBudgets,
+      boxes: serializedBoxes,
       balance: this.getBalance(),
       totalBudgetedAmount: this.totalBudgetedAmount(),
       percentageTotalBudgetedAmount: this.percentageTotalBudgetedAmount(),
