@@ -7,6 +7,8 @@ type ConstructorParams = {
   id: string;
   code: string;
   vaultId: string;
+  boxId: string;
+  transferId: string | null;
   amount: number;
   isCommitted: boolean;
   description?: string;
@@ -19,6 +21,8 @@ type ConstructorParams = {
 type CreateParams = {
   amount: number;
   vaultId: string;
+  boxId?: string;
+  transferId?: string | null;
   description?: string;
   type?: 'expense' | 'income';
   date: Date;
@@ -34,6 +38,8 @@ export class Transaction {
       id,
       code,
       vaultId: params.vaultId,
+      boxId: params.boxId ?? '',
+      transferId: params.transferId ?? null,
       amount: params.amount,
       isCommitted: false,
       description: params.description,
@@ -52,6 +58,8 @@ export class Transaction {
   readonly id: string;
   readonly code: string;
   public readonly vaultId: string;
+  public boxId: string;
+  public transferId: string | null = null;
   public amount: number;
   public isCommitted: boolean = false;
   public description?: string;
@@ -64,6 +72,8 @@ export class Transaction {
     this.id = params.id;
     this.code = params.code;
     this.vaultId = params.vaultId;
+    this.boxId = params.boxId;
+    this.transferId = params.transferId;
     this.amount = params.amount;
     this.isCommitted = params.isCommitted;
     this.description = params.description;
@@ -90,6 +100,8 @@ export class Transaction {
       type: this.type,
       createdAt: this.createdAt,
       vaultId: this.vaultId,
+      boxId: this.boxId,
+      transferId: this.transferId,
       category,
       date: this.date,
     };

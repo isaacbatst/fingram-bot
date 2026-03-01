@@ -7,6 +7,8 @@ export interface TransactionDTO {
   createdAt: Date;
   type: 'expense' | 'income';
   vaultId: string;
+  boxId: string;
+  transferId: string | null;
   date: Date;
   category: {
     id: string;

@@ -188,6 +188,8 @@ export class VaultDrizzleRepository extends VaultRepository {
           code: t.code,
           amount: t.amount,
           vaultId: t.vaultId,
+          boxId: (t as any).boxId ?? '',
+          transferId: (t as any).transferId ?? null,
           isCommitted: t.committed,
           description: t.description ?? undefined,
           createdAt: t.createdAt,
