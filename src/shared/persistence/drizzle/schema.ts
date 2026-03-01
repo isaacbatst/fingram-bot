@@ -39,6 +39,17 @@ export const vaultCategory = pgTable('vault_category', {
   transactionType: text('transaction_type').notNull(), // 'income' | 'expense' | 'both'
 });
 
+export const box = pgTable('box', {
+  id: text('id').primaryKey(),
+  vaultId: text('vault_id')
+    .notNull()
+    .references(() => vault.id),
+  name: text('name').notNull(),
+  goalAmount: doublePrecision('goal_amount'),
+  isDefault: boolean('is_default').notNull().default(false),
+  createdAt: timestamp('created_at').notNull(),
+});
+
 export const chat = pgTable('chat', {
   id: text('id').primaryKey(),
   telegramChatId: text('telegram_chat_id').notNull(),
@@ -58,6 +69,8 @@ export const transaction = pgTable('transaction', {
   createdAt: timestamp('created_at').notNull(),
   committed: boolean('committed').notNull().default(false),
   date: timestamp('date'),
+  boxId: text('box_id').references(() => box.id),
+  transferId: text('transfer_id'),
 });
 
 export const budget = pgTable('budget', {
