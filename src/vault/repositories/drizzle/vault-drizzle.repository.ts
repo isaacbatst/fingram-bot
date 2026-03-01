@@ -10,7 +10,9 @@ import {
   transaction,
   budget,
   vaultCategory,
+  box,
 } from '@/shared/persistence/drizzle/schema';
+import { Box } from '../../domain/box';
 import { Category } from '../../domain/category';
 import { Transaction } from '../../domain/transaction';
 import { Vault } from '../../domain/vault';
@@ -64,6 +66,8 @@ export class VaultDrizzleRepository extends VaultRepository {
           createdAt: t.createdAt,
           committed: t.isCommitted,
           date: t.date,
+          boxId: t.boxId || null,
+          transferId: t.transferId ?? null,
         }),
       );
     }
@@ -91,6 +95,8 @@ export class VaultDrizzleRepository extends VaultRepository {
             type: t.type,
             date: t.date,
             committed: t.isCommitted,
+            boxId: t.boxId || null,
+            transferId: t.transferId ?? null,
           })
           .where(eq(transaction.id, t.id)),
       );
@@ -135,6 +141,43 @@ export class VaultDrizzleRepository extends VaultRepository {
               eq(budget.categoryId, b.category.id),
             ),
           ),
+      );
+    }
+
+    const boxChanges = vaultEntity.boxesTracker.getChanges();
+
+    // Insert new boxes
+    for (const b of boxChanges.new) {
+      queries.push(
+        this.db.insert(box).values({
+          id: b.id,
+          vaultId: b.vaultId,
+          name: b.name,
+          goalAmount: b.goalAmount,
+          isDefault: b.isDefault,
+          createdAt: b.createdAt,
+        }),
+      );
+    }
+
+    // Delete removed boxes
+    const deletedBoxIds = boxChanges.deleted.map((b) => b.id);
+    if (deletedBoxIds.length > 0) {
+      queries.push(
+        this.db.delete(box).where(inArray(box.id, deletedBoxIds)),
+      );
+    }
+
+    // Update dirty boxes
+    for (const b of boxChanges.dirty) {
+      queries.push(
+        this.db
+          .update(box)
+          .set({
+            name: b.name,
+            goalAmount: b.goalAmount,
+          })
+          .where(eq(box.id, b.id)),
       );
     }
 
@@ -188,8 +231,8 @@ export class VaultDrizzleRepository extends VaultRepository {
           code: t.code,
           amount: t.amount,
           vaultId: t.vaultId,
-          boxId: (t as any).boxId ?? '',
-          transferId: (t as any).transferId ?? null,
+          boxId: t.boxId ?? '',
+          transferId: t.transferId ?? null,
           isCommitted: t.committed,
           description: t.description ?? undefined,
           createdAt: t.createdAt,
@@ -226,17 +269,40 @@ export class VaultDrizzleRepository extends VaultRepository {
       }
     }
 
+    // Load boxes
+    const boxRows = await this.db
+      .select()
+      .from(box)
+      .where(eq(box.vaultId, row.id));
+
+    const boxes = new Map<string, Box>();
+    for (const b of boxRows) {
+      boxes.set(
+        b.id,
+        Box.restore({
+          id: b.id,
+          vaultId: b.vaultId,
+          name: b.name,
+          goalAmount: b.goalAmount,
+          isDefault: b.isDefault,
+          createdAt: b.createdAt,
+        }),
+      );
+    }
+
     const vaultEntity = new Vault(
       row.id,
       row.token,
       row.createdAt,
       transactions,
       budgets,
+      boxes,
       row.customPrompt ?? '',
       row.budgetStartDay,
     );
     vaultEntity.transactionsTracker.clearChanges();
     vaultEntity.budgetsTracker.clearChanges();
+    vaultEntity.boxesTracker.clearChanges();
 
     return vaultEntity;
   }
