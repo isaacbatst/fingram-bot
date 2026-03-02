@@ -333,6 +333,7 @@ export class MiniappService {
           description: createData.description,
           categoryId: createData.categoryId,
           type: createData.type,
+          date: new Date(),
           shouldCommit: true, // Auto-commit new transactions
         },
       });

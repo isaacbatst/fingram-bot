@@ -165,6 +165,7 @@ export class VaultSqliteRepository extends VaultRepository {
       new Date(row.created_at),
       transactions,
       budgets,
+      new Map(),
       row.custom_prompt,
       row.budget_start_day,
     );
@@ -232,6 +233,7 @@ export class VaultSqliteRepository extends VaultRepository {
       new Date(row.created_at),
       transactions,
       budgets,
+      new Map(),
       row.custom_prompt,
       row.budget_start_day,
     );
