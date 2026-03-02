@@ -23,6 +23,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
       dateRange?: { startDate: Date; endDate: Date };
       categoryId?: string;
       description?: string;
+      boxId?: string;
       page?: number;
       pageSize?: number;
     },
@@ -51,6 +52,10 @@ export class TransactionDrizzleRepository extends TransactionRepository {
       conditions.push(ilike(transaction.description, `%${filter.description}%`));
     }
 
+    if (filter?.boxId) {
+      conditions.push(eq(transaction.boxId, filter.boxId));
+    }
+
     // Query with join to vault categories
     const rows = await this.db
       .select({
@@ -60,6 +65,8 @@ export class TransactionDrizzleRepository extends TransactionRepository {
         type: transaction.type,
         categoryId: transaction.categoryId,
         vaultId: transaction.vaultId,
+        boxId: transaction.boxId,
+        transferId: transaction.transferId,
         description: transaction.description,
         createdAt: transaction.createdAt,
         committed: transaction.committed,
@@ -78,6 +85,8 @@ export class TransactionDrizzleRepository extends TransactionRepository {
     const items = rows.map<TransactionDTO>((row) => ({
       id: row.id,
       vaultId: row.vaultId,
+      boxId: row.boxId ?? '',
+      transferId: row.transferId ?? null,
       code: row.code,
       date: row.date ?? row.createdAt,
       description: row.description ?? undefined,

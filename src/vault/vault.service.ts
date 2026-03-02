@@ -7,8 +7,10 @@ import { ActionRepository } from '@/vault/repositories/action.repository';
 import { CategoryRepository } from '@/vault/repositories/category.repository';
 import { TransactionRepository } from '@/vault/repositories/transaction.repository';
 import { VaultRepository } from '@/vault/repositories/vault.repository';
+import { BoxRepository } from '@/vault/repositories/box.repository';
 import { Injectable, Logger } from '@nestjs/common';
 import { ReadableStream } from 'node:stream/web';
+import { Box } from './domain/box';
 import { Category } from './domain/category';
 import { Vault } from './domain/vault';
 import { TransactionDTO } from './dto/transaction.dto,';
@@ -23,6 +25,7 @@ export class VaultService {
     private transactionRepository: TransactionRepository,
     private actionRepository: ActionRepository,
     private categoryRepository: CategoryRepository,
+    private boxRepository: BoxRepository,
     private aiService: AiService,
     private eventEmitter: EventEmitter2,
   ) {}
@@ -34,6 +37,13 @@ export class VaultService {
     await this.vaultRepository.create(vault);
     // Seed vault-specific categories from base categories
     await this.categoryRepository.seedForVault(vault.id);
+    // Seed default box
+    const defaultBox = Box.create({
+      vaultId: vault.id,
+      name: 'Principal',
+      isDefault: true,
+    });
+    await this.boxRepository.create(defaultBox);
     this.logger.log(`Vault created with id: ${vault.id}`);
     return vault;
   }
@@ -202,6 +212,7 @@ export class VaultService {
     };
     categoryId?: string;
     description?: string;
+    boxId?: string;
     page?: number;
     pageSize?: number;
   }) {
@@ -224,6 +235,7 @@ export class VaultService {
           dateRange: { startDate, endDate },
           categoryId: input.categoryId,
           description: input.description,
+          boxId: input.boxId,
           page: input.page ?? 1,
           pageSize: input.pageSize ?? 10,
         },
@@ -240,6 +252,7 @@ export class VaultService {
       amount: number;
       description?: string;
       categoryId?: string;
+      boxId?: string;
       date: Date;
       shouldCommit?: boolean;
       type: 'expense' | 'income';
@@ -262,6 +275,7 @@ export class VaultService {
       date: input.transaction.date,
       description: input.transaction.description,
       categoryId: input.transaction.categoryId,
+      boxId: input.transaction.boxId,
       type: input.transaction.type,
       vaultId: vault.id,
     });
@@ -557,6 +571,108 @@ export class VaultService {
       return left(`Cofre não encontrado`);
     }
     return right(vault.budgetStartDay);
+  }
+
+  async getBoxes(vaultId: string) {
+    const vault = await this.vaultRepository.findById(vaultId);
+    if (!vault) return left('Cofre não encontrado');
+
+    const boxes = Array.from(vault.boxes.values()).map((box) => ({
+      id: box.id,
+      name: box.name,
+      goalAmount: box.goalAmount,
+      isDefault: box.isDefault,
+      balance: vault.getBoxBalance(box.id),
+      goalProgress: box.goalAmount
+        ? (vault.getBoxBalance(box.id) / box.goalAmount) * 100
+        : null,
+    }));
+
+    return right(boxes);
+  }
+
+  async createBox(input: {
+    vaultId: string;
+    name: string;
+    goalAmount?: number;
+  }) {
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) return left('Cofre não encontrado');
+
+    const box = Box.create({
+      vaultId: vault.id,
+      name: input.name,
+      goalAmount: input.goalAmount ?? null,
+    });
+    vault.addBox(box);
+    await this.vaultRepository.update(vault);
+
+    return right({
+      id: box.id,
+      name: box.name,
+      goalAmount: box.goalAmount,
+      isDefault: box.isDefault,
+      balance: 0,
+      goalProgress: box.goalAmount ? 0 : null,
+    });
+  }
+
+  async editBox(input: {
+    vaultId: string;
+    boxId: string;
+    name?: string;
+    goalAmount?: number | null;
+  }) {
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) return left('Cofre não encontrado');
+
+    const [err, box] = vault.editBox(input.boxId, {
+      name: input.name,
+      goalAmount: input.goalAmount,
+    });
+    if (err !== null) return left(err);
+
+    await this.vaultRepository.update(vault);
+    return right(box);
+  }
+
+  async deleteBox(input: { vaultId: string; boxId: string }) {
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) return left('Cofre não encontrado');
+
+    const [err] = vault.deleteBox(input.boxId);
+    if (err !== null) return left(err);
+
+    await this.vaultRepository.update(vault);
+    return right(true);
+  }
+
+  async createTransfer(input: {
+    vaultId: string;
+    fromBoxId: string;
+    toBoxId: string;
+    amount: number;
+    date: Date;
+  }) {
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) return left('Cofre não encontrado');
+
+    const [err, transferId] = vault.createTransfer(input);
+    if (err !== null) return left(err);
+
+    await this.vaultRepository.update(vault);
+    return right(transferId);
+  }
+
+  async deleteTransfer(input: { vaultId: string; transferId: string }) {
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) return left('Cofre não encontrado');
+
+    const [err] = vault.deleteTransfer(input.transferId);
+    if (err !== null) return left(err);
+
+    await this.vaultRepository.update(vault);
+    return right(true);
   }
 
   async suggestCategory(input: {

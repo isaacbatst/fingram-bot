@@ -56,6 +56,7 @@ export class VaultWebController {
     @VaultSession() vaultId: string,
     @Query('categoryId') categoryId?: string,
     @Query('description') description?: string,
+    @Query('boxId') boxId?: string,
     @Query('year') year?: string,
     @Query('month') month?: string,
     @Query('page') page?: string,
@@ -73,6 +74,7 @@ export class VaultWebController {
       {
         categoryId,
         description,
+        boxId,
         date,
         page: pageNumber,
         pageSize: 6,
@@ -94,6 +96,7 @@ export class VaultWebController {
       amount: number;
       description?: string;
       categoryId?: string;
+      boxId?: string;
       date?: string; // formato ISO (YYYY-MM-DD)
       type: 'income' | 'expense';
     },
@@ -412,5 +415,110 @@ export class VaultWebController {
     }
 
     return { categoryId };
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Get('boxes')
+  async getBoxes(@VaultSession() vaultId: string) {
+    const [error, boxes] = await this.vaultWebService.getBoxes(vaultId);
+    if (error !== null) this.handleError(error.type, error.message);
+    return boxes;
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Post('create-box')
+  async createBox(
+    @VaultSession() vaultId: string,
+    @Body() data: { name: string; goalAmount?: number },
+  ) {
+    if (!data.name?.trim()) {
+      throw new BadRequestException('Nome da caixinha é obrigatório');
+    }
+    const [error, box] = await this.vaultWebService.createBox(vaultId, {
+      name: data.name.trim(),
+      goalAmount: data.goalAmount,
+    });
+    if (error !== null) this.handleError(error.type, error.message);
+    return box;
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Post('edit-box')
+  async editBox(
+    @VaultSession() vaultId: string,
+    @Body()
+    data: { boxId: string; name?: string; goalAmount?: number | null },
+  ) {
+    if (!data.boxId) {
+      throw new BadRequestException('ID da caixinha é obrigatório');
+    }
+    const [error, box] = await this.vaultWebService.editBox(vaultId, data);
+    if (error !== null) this.handleError(error.type, error.message);
+    return box;
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Post('delete-box')
+  async deleteBox(
+    @VaultSession() vaultId: string,
+    @Body() data: { boxId: string },
+  ) {
+    if (!data.boxId) {
+      throw new BadRequestException('ID da caixinha é obrigatório');
+    }
+    const [error] = await this.vaultWebService.deleteBox(vaultId, data.boxId);
+    if (error !== null) this.handleError(error.type, error.message);
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Post('create-transfer')
+  async createTransfer(
+    @VaultSession() vaultId: string,
+    @Body()
+    data: {
+      fromBoxId: string;
+      toBoxId: string;
+      amount: number;
+      date?: string;
+    },
+  ) {
+    if (!data.fromBoxId || !data.toBoxId) {
+      throw new BadRequestException(
+        'Caixinhas de origem e destino são obrigatórias',
+      );
+    }
+    if (!data.amount || data.amount <= 0) {
+      throw new BadRequestException(
+        'Valor da transferência deve ser positivo',
+      );
+    }
+
+    const [error, transferId] = await this.vaultWebService.createTransfer(
+      vaultId,
+      {
+        fromBoxId: data.fromBoxId,
+        toBoxId: data.toBoxId,
+        amount: data.amount,
+        date: data.date ? new Date(data.date) : new Date(),
+      },
+    );
+    if (error !== null) this.handleError(error.type, error.message);
+    return { transferId };
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Post('delete-transfer')
+  async deleteTransfer(
+    @VaultSession() vaultId: string,
+    @Body() data: { transferId: string },
+  ) {
+    if (!data.transferId) {
+      throw new BadRequestException('ID da transferência é obrigatório');
+    }
+    const [error] = await this.vaultWebService.deleteTransfer(
+      vaultId,
+      data.transferId,
+    );
+    if (error !== null) this.handleError(error.type, error.message);
   }
 }

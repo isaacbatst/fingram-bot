@@ -223,6 +223,7 @@ export class VaultWebService {
     params: {
       categoryId?: string;
       description?: string;
+      boxId?: string;
       date?: { year: number; month: number };
       page: number;
       pageSize?: number;
@@ -240,6 +241,7 @@ export class VaultWebService {
         page: params.page || 1,
         categoryId: params.categoryId,
         description: params.description,
+        boxId: params.boxId,
         pageSize: params.pageSize ?? 5,
       });
 
@@ -268,6 +270,7 @@ export class VaultWebService {
       amount: number;
       description?: string;
       categoryId?: string;
+      boxId?: string;
       date: Date;
       type: 'income' | 'expense';
     },
@@ -290,6 +293,7 @@ export class VaultWebService {
           amount: data.amount,
           description: data.description,
           categoryId: data.categoryId,
+          boxId: data.boxId,
           date: data.date,
           type: data.type,
           shouldCommit: true, // Auto-commit new transactions
@@ -478,6 +482,170 @@ export class VaultWebService {
       return left({
         type: VaultErrorType.INTERNAL_ERROR,
         message: 'Erro interno ao obter dia de início do orçamento',
+      });
+    }
+  }
+
+  async getBoxes(
+    vaultId: string,
+  ): Promise<Either<VaultError, any[]>> {
+    try {
+      const [error, boxes] = await this.vaultService.getBoxes(vaultId);
+      if (error !== null) {
+        return left({
+          type: VaultErrorType.VAULT_NOT_FOUND,
+          message: error,
+        });
+      }
+      return right(boxes);
+    } catch (error) {
+      this.logger.error(
+        `Error getting boxes for vault ${vaultId}: ${error}`,
+      );
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao obter caixinhas',
+      });
+    }
+  }
+
+  async createBox(
+    vaultId: string,
+    data: { name: string; goalAmount?: number },
+  ): Promise<Either<VaultError, any>> {
+    try {
+      const [error, box] = await this.vaultService.createBox({
+        vaultId,
+        name: data.name,
+        goalAmount: data.goalAmount,
+      });
+      if (error !== null) {
+        return left({
+          type: VaultErrorType.VAULT_NOT_FOUND,
+          message: error,
+        });
+      }
+      return right(box);
+    } catch (error) {
+      this.logger.error(
+        `Error creating box for vault ${vaultId}: ${error}`,
+      );
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao criar caixinha',
+      });
+    }
+  }
+
+  async editBox(
+    vaultId: string,
+    data: { boxId: string; name?: string; goalAmount?: number | null },
+  ): Promise<Either<VaultError, any>> {
+    try {
+      const [error, box] = await this.vaultService.editBox({
+        vaultId,
+        boxId: data.boxId,
+        name: data.name,
+        goalAmount: data.goalAmount,
+      });
+      if (error !== null) {
+        return left({
+          type: VaultErrorType.VAULT_NOT_FOUND,
+          message: error,
+        });
+      }
+      return right(box);
+    } catch (error) {
+      this.logger.error(
+        `Error editing box for vault ${vaultId}: ${error}`,
+      );
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao editar caixinha',
+      });
+    }
+  }
+
+  async deleteBox(
+    vaultId: string,
+    boxId: string,
+  ): Promise<Either<VaultError, boolean>> {
+    try {
+      const [error, result] = await this.vaultService.deleteBox({
+        vaultId,
+        boxId,
+      });
+      if (error !== null) {
+        return left({
+          type: VaultErrorType.INTERNAL_ERROR,
+          message: error,
+        });
+      }
+      return right(result);
+    } catch (error) {
+      this.logger.error(
+        `Error deleting box for vault ${vaultId}: ${error}`,
+      );
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao deletar caixinha',
+      });
+    }
+  }
+
+  async createTransfer(
+    vaultId: string,
+    data: { fromBoxId: string; toBoxId: string; amount: number; date: Date },
+  ): Promise<Either<VaultError, string>> {
+    try {
+      const [error, transferId] = await this.vaultService.createTransfer({
+        vaultId,
+        fromBoxId: data.fromBoxId,
+        toBoxId: data.toBoxId,
+        amount: data.amount,
+        date: data.date,
+      });
+      if (error !== null) {
+        return left({
+          type: VaultErrorType.INTERNAL_ERROR,
+          message: error,
+        });
+      }
+      return right(transferId);
+    } catch (error) {
+      this.logger.error(
+        `Error creating transfer for vault ${vaultId}: ${error}`,
+      );
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao criar transferência',
+      });
+    }
+  }
+
+  async deleteTransfer(
+    vaultId: string,
+    transferId: string,
+  ): Promise<Either<VaultError, boolean>> {
+    try {
+      const [error, result] = await this.vaultService.deleteTransfer({
+        vaultId,
+        transferId,
+      });
+      if (error !== null) {
+        return left({
+          type: VaultErrorType.INTERNAL_ERROR,
+          message: error,
+        });
+      }
+      return right(result);
+    } catch (error) {
+      this.logger.error(
+        `Error deleting transfer for vault ${vaultId}: ${error}`,
+      );
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao deletar transferência',
       });
     }
   }

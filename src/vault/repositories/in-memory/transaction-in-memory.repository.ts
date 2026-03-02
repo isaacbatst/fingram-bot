@@ -17,6 +17,7 @@ export class TransactionInMemoryRepository extends TransactionRepository {
       dateRange?: { startDate: Date; endDate: Date };
       categoryId?: string;
       description?: string;
+      boxId?: string;
       page?: number;
       pageSize?: number;
     },
@@ -56,6 +57,12 @@ export class TransactionInMemoryRepository extends TransactionRepository {
       );
     }
 
+    if (filter?.boxId) {
+      transactions = transactions.filter(
+        (transaction) => transaction.boxId === filter.boxId,
+      );
+    }
+
     const total = transactions.length;
     const page = filter?.page ?? 1;
     const pageSize = filter?.pageSize ?? 10;
@@ -74,7 +81,10 @@ export class TransactionInMemoryRepository extends TransactionRepository {
       return {
         id: transaction.id,
         vaultId: vault.id,
+        boxId: transaction.boxId,
+        transferId: transaction.transferId,
         code: transaction.code,
+        date: transaction.date,
         description: transaction.description,
         amount: transaction.amount,
         isCommitted: transaction.isCommitted,

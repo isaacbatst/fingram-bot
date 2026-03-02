@@ -11,6 +11,7 @@ export abstract class TransactionRepository {
       };
       categoryId?: string;
       description?: string;
+      boxId?: string;
       page?: number;
       pageSize?: number;
     },

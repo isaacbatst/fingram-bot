@@ -36,6 +36,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
       dateRange?: { startDate: Date; endDate: Date };
       categoryId?: string;
       description?: string;
+      boxId?: string;
       page?: number;
       pageSize?: number;
     },
@@ -61,6 +62,10 @@ export class TransactionSqliteRepository extends TransactionRepository {
       query += ' AND LOWER(t.description) LIKE LOWER(?)';
       params.push(`%${filter.description}%`);
     }
+    if (filter?.boxId) {
+      query += ' AND t.box_id = ?';
+      params.push(filter.boxId);
+    }
     query += ' ORDER BY t.date DESC LIMIT ? OFFSET ?';
     params.push(pageSize, offset);
     const rows = this.db
@@ -69,6 +74,8 @@ export class TransactionSqliteRepository extends TransactionRepository {
     const items = rows.map<TransactionDTO>((row) => ({
       id: row.id,
       vaultId: row.vault_id,
+      boxId: (row as any).box_id ?? '',
+      transferId: (row as any).transfer_id ?? null,
       code: row.code,
       date: new Date(row.date),
       description: row.description,
@@ -100,6 +107,10 @@ export class TransactionSqliteRepository extends TransactionRepository {
       countQuery += ' AND t.date >= ? AND t.date <= ?';
       countParams.push(filter.dateRange.startDate.toISOString());
       countParams.push(filter.dateRange.endDate.toISOString());
+    }
+    if (filter?.boxId) {
+      countQuery += ' AND t.box_id = ?';
+      countParams.push(filter.boxId);
     }
     const total = (
       this.db.prepare(countQuery).get(...countParams) as { count: number }
