@@ -413,4 +413,72 @@ describe('Vault - Boxes', () => {
 
     expect(err).toBe('Não é possível transferir para a mesma caixinha');
   });
+
+  it('should exclude transfers from budget calculations', () => {
+    const vault = new Vault();
+    const category = new Category('c1', 'Food', 'FOOD');
+    vault.setBudget(category, 500);
+
+    const boxA = Box.create({ vaultId: vault.id, name: 'A' });
+    const boxB = Box.create({ vaultId: vault.id, name: 'B' });
+    vault.addBox(boxA);
+    vault.addBox(boxB);
+
+    // Regular expense (should count in budget)
+    vault.addTransaction(Transaction.restore({
+      id: '1', code: '1', vaultId: vault.id, boxId: boxA.id,
+      amount: 200, isCommitted: true, createdAt: new Date(),
+      categoryId: 'c1', type: 'expense', date: new Date('2026-03-15'), transferId: null,
+    }));
+
+    // Transfer expense (should NOT count in budget)
+    vault.addTransaction(Transaction.restore({
+      id: '2', code: '2', vaultId: vault.id, boxId: boxA.id,
+      amount: 100, isCommitted: true, createdAt: new Date(),
+      categoryId: null, type: 'expense', date: new Date('2026-03-15'), transferId: 'tf-1',
+    }));
+
+    const summary = vault.getBudgetsSummary(3, 2026);
+    expect(summary[0].spent).toBe(200); // Only regular expense, not transfer
+  });
+
+  it('should exclude transfers from totalSpentAmount', () => {
+    const vault = new Vault();
+    const boxA = Box.create({ vaultId: vault.id, name: 'A' });
+    vault.addBox(boxA);
+
+    vault.addTransaction(Transaction.restore({
+      id: '1', code: '1', vaultId: vault.id, boxId: boxA.id,
+      amount: 300, isCommitted: true, createdAt: new Date(),
+      categoryId: null, type: 'expense', date: new Date('2026-03-15'), transferId: null,
+    }));
+
+    vault.addTransaction(Transaction.restore({
+      id: '2', code: '2', vaultId: vault.id, boxId: boxA.id,
+      amount: 500, isCommitted: true, createdAt: new Date(),
+      categoryId: null, type: 'expense', date: new Date('2026-03-15'), transferId: 'tf-1',
+    }));
+
+    expect(vault.totalSpentAmount({ month: 3, year: 2026 })).toBe(300);
+  });
+
+  it('should exclude transfers from totalIncomeAmount', () => {
+    const vault = new Vault();
+    const boxA = Box.create({ vaultId: vault.id, name: 'A' });
+    vault.addBox(boxA);
+
+    vault.addTransaction(Transaction.restore({
+      id: '1', code: '1', vaultId: vault.id, boxId: boxA.id,
+      amount: 1000, isCommitted: true, createdAt: new Date(),
+      categoryId: null, type: 'income', date: new Date('2026-03-15'), transferId: null,
+    }));
+
+    vault.addTransaction(Transaction.restore({
+      id: '2', code: '2', vaultId: vault.id, boxId: boxA.id,
+      amount: 500, isCommitted: true, createdAt: new Date(),
+      categoryId: null, type: 'income', date: new Date('2026-03-15'), transferId: 'tf-1',
+    }));
+
+    expect(vault.totalIncomeAmount({ month: 3, year: 2026 })).toBe(1000);
+  });
 });

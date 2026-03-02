@@ -349,7 +349,8 @@ export class Vault {
         .filter((transaction) => {
           if (
             transaction.categoryId !== categoryId ||
-            transaction.type !== 'expense'
+            transaction.type !== 'expense' ||
+            transaction.transferId
           ) {
             return false;
           }
@@ -398,7 +399,7 @@ export class Vault {
     }
 
     for (const transaction of this.transactions.values()) {
-      if (transaction.type === 'expense') {
+      if (transaction.type === 'expense' && !transaction.transferId) {
         const transactionDate = new Date(transaction.date);
         if (this.isDateInBudgetPeriod(transactionDate, date.month, date.year)) {
           total += Math.abs(transaction.amount);
@@ -415,7 +416,7 @@ export class Vault {
     }
 
     for (const transaction of this.transactions.values()) {
-      if (transaction.type === 'income') {
+      if (transaction.type === 'income' && !transaction.transferId) {
         const transactionDate = new Date(transaction.date);
         if (this.isDateInBudgetPeriod(transactionDate, date.month, date.year)) {
           total += transaction.amount;
