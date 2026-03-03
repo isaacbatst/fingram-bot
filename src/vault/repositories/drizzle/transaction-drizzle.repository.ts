@@ -1,5 +1,5 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import { eq, and, sql, ilike, desc, count } from 'drizzle-orm';
+import { eq, and, or, sql, ilike, desc, count, isNull, alias } from 'drizzle-orm';
 import { TransactionRepository } from '../transaction.repository';
 import {
   DRIZZLE_DATABASE,
@@ -52,11 +52,24 @@ export class TransactionDrizzleRepository extends TransactionRepository {
       conditions.push(ilike(transaction.description, `%${filter.description}%`));
     }
 
+    // Exclude income-side of transfers (keep only expense side or non-transfers)
+    conditions.push(
+      or(isNull(transaction.transferId), eq(transaction.type, 'expense'))!,
+    );
+
+    // Self-join to get the income side of transfers (for transferToBoxId)
+    const incomeTransfer = alias(transaction, 'income_transfer');
+
     if (filter?.boxId) {
-      conditions.push(eq(transaction.boxId, filter.boxId));
+      conditions.push(
+        or(
+          eq(transaction.boxId, filter.boxId),
+          eq(incomeTransfer.boxId, filter.boxId),
+        )!,
+      );
     }
 
-    // Query with join to vault categories
+    // Query with join to vault categories and income transfer
     const rows = await this.db
       .select({
         id: transaction.id,
@@ -67,6 +80,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
         vaultId: transaction.vaultId,
         boxId: transaction.boxId,
         transferId: transaction.transferId,
+        transferToBoxId: incomeTransfer.boxId,
         description: transaction.description,
         createdAt: transaction.createdAt,
         committed: transaction.committed,
@@ -77,6 +91,14 @@ export class TransactionDrizzleRepository extends TransactionRepository {
       })
       .from(transaction)
       .leftJoin(vaultCategory, eq(transaction.categoryId, vaultCategory.id))
+      .leftJoin(
+        incomeTransfer,
+        and(
+          eq(incomeTransfer.transferId, transaction.transferId),
+          eq(incomeTransfer.type, 'income'),
+          sql`${transaction.transferId} IS NOT NULL`,
+        ),
+      )
       .where(and(...conditions))
       .orderBy(desc(transaction.date))
       .limit(pageSize)
@@ -87,6 +109,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
       vaultId: row.vaultId,
       boxId: row.boxId ?? '',
       transferId: row.transferId ?? null,
+      transferToBoxId: row.transferToBoxId ?? null,
       code: row.code,
       date: row.date ?? row.createdAt,
       description: row.description ?? undefined,
@@ -104,10 +127,18 @@ export class TransactionDrizzleRepository extends TransactionRepository {
         : null,
     }));
 
-    // Count total
+    // Count total (same joins and conditions as data query)
     const countResult = await this.db
       .select({ count: count() })
       .from(transaction)
+      .leftJoin(
+        incomeTransfer,
+        and(
+          eq(incomeTransfer.transferId, transaction.transferId),
+          eq(incomeTransfer.type, 'income'),
+          sql`${transaction.transferId} IS NOT NULL`,
+        ),
+      )
       .where(and(...conditions));
 
     const total = countResult[0]?.count ?? 0;

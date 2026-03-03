@@ -57,11 +57,28 @@ export class TransactionInMemoryRepository extends TransactionRepository {
       );
     }
 
+    // All transactions (before exclusion) for looking up income pairs
+    const allVaultTransactions = Array.from(vault.transactions.values());
+
     if (filter?.boxId) {
-      transactions = transactions.filter(
-        (transaction) => transaction.boxId === filter.boxId,
-      );
+      transactions = transactions.filter((transaction) => {
+        if (transaction.boxId === filter.boxId) return true;
+        // Also include expense-side transfers whose income pair targets the filtered box
+        if (transaction.transferId && transaction.type === 'expense') {
+          const incomePair = allVaultTransactions.find(
+            (t) =>
+              t.transferId === transaction.transferId && t.type === 'income',
+          );
+          return incomePair?.boxId === filter.boxId;
+        }
+        return false;
+      });
     }
+
+    // Exclude income-side of transfers (keep only expense side or non-transfers)
+    transactions = transactions.filter(
+      (t) => !t.transferId || t.type === 'expense',
+    );
 
     const total = transactions.length;
     const page = filter?.page ?? 1;
@@ -78,11 +95,23 @@ export class TransactionInMemoryRepository extends TransactionRepository {
       const category = this.store.categories.get(
         transaction.categoryId as string,
       );
+
+      // Find transferToBoxId from the paired income transaction
+      let transferToBoxId: string | null = null;
+      if (transaction.transferId) {
+        const incomePair = allVaultTransactions.find(
+          (t) =>
+            t.transferId === transaction.transferId && t.type === 'income',
+        );
+        transferToBoxId = incomePair?.boxId ?? null;
+      }
+
       return {
         id: transaction.id,
         vaultId: vault.id,
         boxId: transaction.boxId,
         transferId: transaction.transferId,
+        transferToBoxId,
         code: transaction.code,
         date: transaction.date,
         description: transaction.description,

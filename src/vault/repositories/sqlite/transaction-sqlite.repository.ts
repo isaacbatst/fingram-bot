@@ -21,7 +21,9 @@ type JoinedTransactionRow = TransactionRow &
         category_code: undefined;
         category_description: undefined;
       }
-  );
+  ) & {
+    transfer_to_box_id: string | null;
+  };
 
 @Injectable()
 export class TransactionSqliteRepository extends TransactionRepository {
@@ -44,10 +46,12 @@ export class TransactionSqliteRepository extends TransactionRepository {
     const page = filter?.page ?? 1;
     const pageSize = filter?.pageSize ?? 10;
     const offset = (page - 1) * pageSize;
-    let query = `SELECT t.*, c.id as category_id, c.name as category_name, c.code as category_code, c.description as category_description
+    let query = `SELECT t.*, c.id as category_id, c.name as category_name, c.code as category_code, c.description as category_description, it.box_id as transfer_to_box_id
                  FROM "transaction" t
                  LEFT JOIN vault_category c ON t.category_id = c.id
-                 WHERE t.vault_id = ?`;
+                 LEFT JOIN "transaction" it ON it.transfer_id = t.transfer_id AND it.type = 'income' AND t.transfer_id IS NOT NULL
+                 WHERE t.vault_id = ?
+                 AND (t.transfer_id IS NULL OR t.type = 'expense')`;
     const params: unknown[] = [vaultId];
     if (filter?.dateRange) {
       query += ' AND t.date >= ? AND t.date <= ?';
@@ -63,8 +67,8 @@ export class TransactionSqliteRepository extends TransactionRepository {
       params.push(`%${filter.description}%`);
     }
     if (filter?.boxId) {
-      query += ' AND t.box_id = ?';
-      params.push(filter.boxId);
+      query += ' AND (t.box_id = ? OR it.box_id = ?)';
+      params.push(filter.boxId, filter.boxId);
     }
     query += ' ORDER BY t.date DESC LIMIT ? OFFSET ?';
     params.push(pageSize, offset);
@@ -76,6 +80,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
       vaultId: row.vault_id,
       boxId: (row as any).box_id ?? '',
       transferId: (row as any).transfer_id ?? null,
+      transferToBoxId: row.transfer_to_box_id ?? null,
       code: row.code,
       date: new Date(row.date),
       description: row.description,
@@ -93,7 +98,10 @@ export class TransactionSqliteRepository extends TransactionRepository {
         : null,
     }));
     let countQuery =
-      'SELECT COUNT(*) as count FROM "transaction" t WHERE t.vault_id = ?';
+      `SELECT COUNT(*) as count FROM "transaction" t
+       LEFT JOIN "transaction" it ON it.transfer_id = t.transfer_id AND it.type = 'income' AND t.transfer_id IS NOT NULL
+       WHERE t.vault_id = ?
+       AND (t.transfer_id IS NULL OR t.type = 'expense')`;
     const countParams: unknown[] = [vaultId];
     if (filter?.categoryId) {
       countQuery += ' AND t.category_id = ?';
@@ -109,8 +117,8 @@ export class TransactionSqliteRepository extends TransactionRepository {
       countParams.push(filter.dateRange.endDate.toISOString());
     }
     if (filter?.boxId) {
-      countQuery += ' AND t.box_id = ?';
-      countParams.push(filter.boxId);
+      countQuery += ' AND (t.box_id = ? OR it.box_id = ?)';
+      countParams.push(filter.boxId, filter.boxId);
     }
     const total = (
       this.db.prepare(countQuery).get(...countParams) as { count: number }
