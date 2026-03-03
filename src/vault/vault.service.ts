@@ -288,6 +288,10 @@ export class VaultService {
       }
     }
     await this.vaultRepository.update(vault);
+    this.logger.log(
+      `Vault after update: balance=${vault.getBalance()}, ` +
+        `new_tx_committed=${vault.transactions.get(transaction.id)?.isCommitted}`,
+    );
     this.logger.log(`Transaction added to vault: ${transaction.id}`);
     this.eventEmitter.emit(
       TransactionCreatedEvent.eventName,

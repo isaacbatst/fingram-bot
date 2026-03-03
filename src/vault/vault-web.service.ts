@@ -204,6 +204,12 @@ export class VaultWebService {
       const targetDate = date || vault.getCurrentBudgetPeriod();
       const budget = vault.getBudgetsSummary(targetDate.month, targetDate.year);
 
+      this.logger.log(
+        `Summary for vault ${vaultId}: balance=${vault.getBalance()}, ` +
+          `spent=${vault.totalSpentAmount(targetDate)}, income=${vault.totalIncomeAmount(targetDate)}, ` +
+          `period=${JSON.stringify(targetDate)}, txCount=${vault.transactions.size}`,
+      );
+
       return right({
         vault: vault.toJSON({ date: targetDate }),
         budget,
@@ -307,6 +313,10 @@ export class VaultWebService {
           message: error,
         });
       }
+
+      this.logger.log(
+        `Transaction created: balance=${result.vault.getBalance()}, txCount=${result.vault.transactions.size}`,
+      );
 
       return right(result);
     } catch (error) {
