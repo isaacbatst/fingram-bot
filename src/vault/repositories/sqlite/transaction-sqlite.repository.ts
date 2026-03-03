@@ -97,8 +97,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
           }
         : null,
     }));
-    let countQuery =
-      `SELECT COUNT(*) as count FROM "transaction" t
+    let countQuery = `SELECT COUNT(*) as count FROM "transaction" t
        LEFT JOIN "transaction" it ON it.transfer_id = t.transfer_id AND it.type = 'income' AND t.transfer_id IS NOT NULL
        WHERE t.vault_id = ?
        AND (t.transfer_id IS NULL OR t.type = 'expense')`;

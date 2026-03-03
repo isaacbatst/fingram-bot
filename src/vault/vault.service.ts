@@ -299,10 +299,7 @@ export class VaultService {
       }),
     );
     return right({
-      transaction: {
-        ...transaction,
-        category,
-      },
+      transaction: transaction.toDTO(category),
       vault,
     });
   }

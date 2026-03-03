@@ -102,6 +102,7 @@ export class Transaction {
       vaultId: this.vaultId,
       boxId: this.boxId,
       transferId: this.transferId,
+      transferToBoxId: null,
       category,
       date: this.date,
     };

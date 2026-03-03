@@ -1,11 +1,15 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import { eq, and, or, sql, ilike, desc, count, isNull, alias } from 'drizzle-orm';
+import { eq, and, or, sql, ilike, desc, count, isNull } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { TransactionRepository } from '../transaction.repository';
 import {
   DRIZZLE_DATABASE,
   DrizzleDatabase,
 } from '@/shared/persistence/drizzle/drizzle.module';
-import { transaction, vaultCategory } from '@/shared/persistence/drizzle/schema';
+import {
+  transaction,
+  vaultCategory,
+} from '@/shared/persistence/drizzle/schema';
 import { Paginated } from '../../domain/paginated';
 import { TransactionDTO } from '../../dto/transaction.dto,';
 
@@ -39,9 +43,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
       conditions.push(
         sql`${transaction.date} >= ${filter.dateRange.startDate}`,
       );
-      conditions.push(
-        sql`${transaction.date} <= ${filter.dateRange.endDate}`,
-      );
+      conditions.push(sql`${transaction.date} <= ${filter.dateRange.endDate}`);
     }
 
     if (filter?.categoryId) {
@@ -49,7 +51,9 @@ export class TransactionDrizzleRepository extends TransactionRepository {
     }
 
     if (filter?.description) {
-      conditions.push(ilike(transaction.description, `%${filter.description}%`));
+      conditions.push(
+        ilike(transaction.description, `%${filter.description}%`),
+      );
     }
 
     // Exclude income-side of transfers (keep only expense side or non-transfers)

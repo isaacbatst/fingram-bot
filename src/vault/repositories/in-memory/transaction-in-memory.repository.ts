@@ -100,8 +100,7 @@ export class TransactionInMemoryRepository extends TransactionRepository {
       let transferToBoxId: string | null = null;
       if (transaction.transferId) {
         const incomePair = allVaultTransactions.find(
-          (t) =>
-            t.transferId === transaction.transferId && t.type === 'income',
+          (t) => t.transferId === transaction.transferId && t.type === 'income',
         );
         transferToBoxId = incomePair?.boxId ?? null;
       }
