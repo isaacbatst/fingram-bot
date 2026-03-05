@@ -70,7 +70,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
       query += ' AND (t.box_id = ? OR it.box_id = ?)';
       params.push(filter.boxId, filter.boxId);
     }
-    query += ' ORDER BY t.date DESC LIMIT ? OFFSET ?';
+    query += ' ORDER BY t.date DESC, t.created_at DESC LIMIT ? OFFSET ?';
     params.push(pageSize, offset);
     const rows = this.db
       .prepare(query)

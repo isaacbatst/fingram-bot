@@ -104,7 +104,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
         ),
       )
       .where(and(...conditions))
-      .orderBy(desc(transaction.date))
+      .orderBy(desc(transaction.date), desc(transaction.createdAt))
       .limit(pageSize)
       .offset(offset);
 
