@@ -134,7 +134,10 @@ export class Vault {
     let year = now.getFullYear();
     if (now.getDate() < this._budgetStartDay) {
       month -= 1;
-      if (month < 1) { month = 12; year -= 1; }
+      if (month < 1) {
+        month = 12;
+        year -= 1;
+      }
     }
     return { month, year };
   }
@@ -231,7 +234,10 @@ export class Vault {
     this.boxesTracker.registerNew(box);
   }
 
-  editBox(boxId: string, options: { name?: string; goalAmount?: number | null }): Either<string, Box> {
+  editBox(
+    boxId: string,
+    options: { name?: string; goalAmount?: number | null },
+  ): Either<string, Box> {
     const box = this.boxes.get(boxId);
     if (!box) return left('Caixinha não encontrada');
     if (options.name !== undefined) box.name = options.name;
@@ -245,7 +251,8 @@ export class Vault {
     if (!box) return left('Caixinha não encontrada');
     if (box.isDefault) return left('Não é possível deletar a caixinha padrão');
     for (const tx of this.transactions.values()) {
-      if (tx.boxId === boxId) return left('Não é possível deletar uma caixinha com transações');
+      if (tx.boxId === boxId)
+        return left('Não é possível deletar uma caixinha com transações');
     }
     this.boxes.delete(boxId);
     this.boxesTracker.registerDeleted(box);
@@ -261,12 +268,18 @@ export class Vault {
     return total;
   }
 
-  createTransfer(input: { fromBoxId: string; toBoxId: string; amount: number; date: Date }): Either<string, string> {
+  createTransfer(input: {
+    fromBoxId: string;
+    toBoxId: string;
+    amount: number;
+    date: Date;
+  }): Either<string, string> {
     const fromBox = this.boxes.get(input.fromBoxId);
     const toBox = this.boxes.get(input.toBoxId);
     if (!fromBox) return left('Caixinha de origem não encontrada');
     if (!toBox) return left('Caixinha de destino não encontrada');
-    if (input.fromBoxId === input.toBoxId) return left('Não é possível transferir para a mesma caixinha');
+    if (input.fromBoxId === input.toBoxId)
+      return left('Não é possível transferir para a mesma caixinha');
 
     const transferId = crypto.randomUUID();
 
@@ -294,6 +307,58 @@ export class Vault {
     this.commitTransaction(incomeTx.id);
 
     return right(transferId);
+  }
+
+  editTransfer(
+    transferId: string,
+    options: {
+      amount?: number;
+      date?: Date;
+      fromBoxId?: string;
+      toBoxId?: string;
+    },
+  ): Either<string, boolean> {
+    const transferTxs: Transaction[] = [];
+    for (const tx of this.transactions.values()) {
+      if (tx.transferId === transferId) transferTxs.push(tx);
+    }
+    if (transferTxs.length === 0) return left('Transferência não encontrada');
+
+    const expenseTx = transferTxs.find((tx) => tx.type === 'expense');
+    const incomeTx = transferTxs.find((tx) => tx.type === 'income');
+    if (!expenseTx || !incomeTx) return left('Transferência inválida');
+
+    // Validate all inputs before mutating
+    if (options.fromBoxId !== undefined && !this.boxes.get(options.fromBoxId)) {
+      return left('Caixinha de origem não encontrada');
+    }
+    if (options.toBoxId !== undefined && !this.boxes.get(options.toBoxId)) {
+      return left('Caixinha de destino não encontrada');
+    }
+
+    const nextFromBoxId = options.fromBoxId ?? expenseTx.boxId;
+    const nextToBoxId = options.toBoxId ?? incomeTx.boxId;
+    if (nextFromBoxId === nextToBoxId) {
+      return left('Não é possível transferir para a mesma caixinha');
+    }
+
+    // Apply mutations after all validations pass
+    if (options.fromBoxId !== undefined) expenseTx.boxId = options.fromBoxId;
+    if (options.toBoxId !== undefined) incomeTx.boxId = options.toBoxId;
+
+    if (options.amount !== undefined) {
+      expenseTx.amount = options.amount;
+      incomeTx.amount = options.amount;
+    }
+
+    if (options.date !== undefined) {
+      expenseTx.date = options.date;
+      incomeTx.date = options.date;
+    }
+
+    this.transactionsTracker.registerDirty(expenseTx);
+    this.transactionsTracker.registerDirty(incomeTx);
+    return right(true);
   }
 
   deleteTransfer(transferId: string): Either<string, boolean> {

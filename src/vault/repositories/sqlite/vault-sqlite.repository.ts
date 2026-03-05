@@ -71,7 +71,7 @@ export class VaultSqliteRepository extends VaultRepository {
       for (const transaction of transactionsChanges.dirty) {
         this.db
           .prepare(
-            'UPDATE "transaction" SET amount = ?, category_id = ?, created_at = ?, description = ?, type = ?, date = ? WHERE vault_id = ? AND id = ?',
+            'UPDATE "transaction" SET amount = ?, category_id = ?, created_at = ?, description = ?, type = ?, date = ?, committed = ?, box_id = ?, transfer_id = ? WHERE vault_id = ? AND id = ?',
           )
           .run(
             transaction.amount,
@@ -80,6 +80,9 @@ export class VaultSqliteRepository extends VaultRepository {
             transaction.description,
             transaction.type,
             transaction.date.toISOString(),
+            transaction.isCommitted ? 1 : 0,
+            transaction.boxId || null,
+            transaction.transferId ?? null,
             vault.id,
             transaction.id,
           );

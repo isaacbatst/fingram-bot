@@ -633,6 +633,43 @@ export class VaultWebService {
     }
   }
 
+  async editTransfer(
+    vaultId: string,
+    data: {
+      transferId: string;
+      amount?: number;
+      date?: Date;
+      fromBoxId?: string;
+      toBoxId?: string;
+    },
+  ): Promise<Either<VaultError, boolean>> {
+    try {
+      const [error, result] = await this.vaultService.editTransfer({
+        vaultId,
+        transferId: data.transferId,
+        amount: data.amount,
+        date: data.date,
+        fromBoxId: data.fromBoxId,
+        toBoxId: data.toBoxId,
+      });
+      if (error !== null) {
+        return left({
+          type: VaultErrorType.VAULT_NOT_FOUND,
+          message: error,
+        });
+      }
+      return right(result);
+    } catch (error) {
+      this.logger.error(
+        `Error editing transfer for vault ${vaultId}: ${error}`,
+      );
+      return left({
+        type: VaultErrorType.INTERNAL_ERROR,
+        message: 'Erro interno ao editar transferência',
+      });
+    }
+  }
+
   async deleteTransfer(
     vaultId: string,
     transferId: string,

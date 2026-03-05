@@ -665,6 +665,29 @@ export class VaultService {
     return right(transferId);
   }
 
+  async editTransfer(input: {
+    vaultId: string;
+    transferId: string;
+    amount?: number;
+    date?: Date;
+    fromBoxId?: string;
+    toBoxId?: string;
+  }) {
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) return left('Cofre não encontrado');
+
+    const [err] = vault.editTransfer(input.transferId, {
+      amount: input.amount,
+      date: input.date,
+      fromBoxId: input.fromBoxId,
+      toBoxId: input.toBoxId,
+    });
+    if (err !== null) return left(err);
+
+    await this.vaultRepository.update(vault);
+    return right(true);
+  }
+
   async deleteTransfer(input: { vaultId: string; transferId: string }) {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) return left('Cofre não encontrado');

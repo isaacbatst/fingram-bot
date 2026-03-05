@@ -507,6 +507,37 @@ export class VaultWebController {
   }
 
   @UseGuards(VaultAccessTokenGuard)
+  @Post('edit-transfer')
+  async editTransfer(
+    @VaultSession() vaultId: string,
+    @Body()
+    data: {
+      transferId: string;
+      amount?: number;
+      date?: string;
+      fromBoxId?: string;
+      toBoxId?: string;
+    },
+  ) {
+    if (!data.transferId) {
+      throw new BadRequestException('ID da transferência é obrigatório');
+    }
+    if (data.amount !== undefined && data.amount <= 0) {
+      throw new BadRequestException(
+        'Valor da transferência deve ser positivo',
+      );
+    }
+    const [error] = await this.vaultWebService.editTransfer(vaultId, {
+      transferId: data.transferId,
+      amount: data.amount,
+      date: data.date ? new Date(data.date) : undefined,
+      fromBoxId: data.fromBoxId,
+      toBoxId: data.toBoxId,
+    });
+    if (error !== null) this.handleError(error.type, error.message);
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
   @Post('delete-transfer')
   async deleteTransfer(
     @VaultSession() vaultId: string,

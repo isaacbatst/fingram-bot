@@ -1,8 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray } from 'drizzle-orm';
 import { BatchItem } from 'drizzle-orm/batch';
+import { NeonHttpDatabase } from 'drizzle-orm/neon-http';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import {
   DRIZZLE_DATABASE,
+  DRIZZLE_IS_NEON,
   DrizzleDatabase,
 } from '@/shared/persistence/drizzle/drizzle.module';
 import {
@@ -12,6 +15,7 @@ import {
   vaultCategory,
   box,
 } from '@/shared/persistence/drizzle/schema';
+import * as schema from '@/shared/persistence/drizzle/schema';
 import { Box } from '../../domain/box';
 import { Category } from '../../domain/category';
 import { Transaction } from '../../domain/transaction';
@@ -22,7 +26,10 @@ import { VaultRepository } from '../vault.repository';
 export class VaultDrizzleRepository extends VaultRepository {
   private readonly logger = new Logger(VaultDrizzleRepository.name);
 
-  constructor(@Inject(DRIZZLE_DATABASE) private readonly db: DrizzleDatabase) {
+  constructor(
+    @Inject(DRIZZLE_DATABASE) private readonly db: DrizzleDatabase,
+    @Inject(DRIZZLE_IS_NEON) private readonly isNeon: boolean,
+  ) {
     super();
   }
 
@@ -163,9 +170,7 @@ export class VaultDrizzleRepository extends VaultRepository {
     // Delete removed boxes
     const deletedBoxIds = boxChanges.deleted.map((b) => b.id);
     if (deletedBoxIds.length > 0) {
-      queries.push(
-        this.db.delete(box).where(inArray(box.id, deletedBoxIds)),
-      );
+      queries.push(this.db.delete(box).where(inArray(box.id, deletedBoxIds)));
     }
 
     // Update dirty boxes
@@ -181,10 +186,20 @@ export class VaultDrizzleRepository extends VaultRepository {
       );
     }
 
-    // Execute all queries in a batch
+    // Execute queries
     if (queries.length > 0) {
-      const [first, ...rest] = queries;
-      await this.db.batch([first, ...rest]);
+      if (this.isNeon) {
+        const neonDb = this.db as NeonHttpDatabase<typeof schema>;
+        const [first, ...rest] = queries;
+        await neonDb.batch([first, ...rest]);
+      } else {
+        const pgDb = this.db as NodePgDatabase<typeof schema>;
+        await pgDb.transaction(async (tx) => {
+          for (const query of queries) {
+            await tx.execute(query as any);
+          }
+        });
+      }
     }
 
     vaultEntity.clearChanges();
