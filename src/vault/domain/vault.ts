@@ -1,5 +1,5 @@
 import * as crypto from 'crypto';
-import { Box } from './box';
+import { Box, BoxType } from './box';
 import { Category } from './category';
 import { Either, left, right } from './either';
 import { Transaction } from './transaction';
@@ -31,6 +31,7 @@ export interface SerializedBox {
   name: string;
   goalAmount: number | null;
   isDefault: boolean;
+  type: BoxType;
   balance: number;
   goalProgress: number;
 }
@@ -222,7 +223,14 @@ export class Vault {
     return right(true);
   }
 
-  getBalance(): number {
+  private isSpendingTransaction(transaction: Transaction): boolean {
+    const box = transaction.boxId
+      ? this.boxes.get(transaction.boxId)
+      : undefined;
+    return !box || box.type !== 'saving';
+  }
+
+  getBalance(options?: { includeAll?: boolean }): number {
     const sumOrSubtract = (
       type: 'income' | 'expense',
       amount: number,
@@ -232,6 +240,8 @@ export class Vault {
     let total = 0;
     for (const transaction of this.transactions.values()) {
       if (!transaction.isCommitted) continue;
+      if (!options?.includeAll && !this.isSpendingTransaction(transaction))
+        continue;
       total += sumOrSubtract(transaction.type, transaction.amount);
     }
     return total;
@@ -244,12 +254,13 @@ export class Vault {
 
   editBox(
     boxId: string,
-    options: { name?: string; goalAmount?: number | null },
+    options: { name?: string; goalAmount?: number | null; type?: BoxType },
   ): Either<string, Box> {
     const box = this.boxes.get(boxId);
     if (!box) return left('Caixinha não encontrada');
     if (options.name !== undefined) box.name = options.name;
     if (options.goalAmount !== undefined) box.goalAmount = options.goalAmount;
+    if (options.type !== undefined) box.type = options.type;
     this.boxesTracker.registerDirty(box);
     return right(box);
   }
@@ -465,7 +476,10 @@ export class Vault {
     }
     return total;
   }
-  totalSpentAmount(date?: { month: number; year: number }): number {
+  totalSpentAmount(
+    date?: { month: number; year: number },
+    options?: { includeAll?: boolean },
+  ): number {
     let total = 0;
     if (!date) {
       date = this.getCurrentBudgetPeriod();
@@ -473,6 +487,8 @@ export class Vault {
 
     for (const transaction of this.transactions.values()) {
       if (transaction.type === 'expense' && !transaction.transferId) {
+        if (!options?.includeAll && !this.isSpendingTransaction(transaction))
+          continue;
         const transactionDate = new Date(transaction.date);
         if (this.isDateInBudgetPeriod(transactionDate, date.month, date.year)) {
           total += Math.abs(transaction.amount);
@@ -482,7 +498,10 @@ export class Vault {
     return total;
   }
 
-  totalIncomeAmount(date?: { month: number; year: number }): number {
+  totalIncomeAmount(
+    date?: { month: number; year: number },
+    options?: { includeAll?: boolean },
+  ): number {
     let total = 0;
     if (!date) {
       date = this.getCurrentBudgetPeriod();
@@ -490,6 +509,8 @@ export class Vault {
 
     for (const transaction of this.transactions.values()) {
       if (transaction.type === 'income' && !transaction.transferId) {
+        if (!options?.includeAll && !this.isSpendingTransaction(transaction))
+          continue;
         const transactionDate = new Date(transaction.date);
         if (this.isDateInBudgetPeriod(transactionDate, date.month, date.year)) {
           total += transaction.amount;
@@ -568,6 +589,7 @@ export class Vault {
         name: box.name,
         goalAmount: box.goalAmount,
         isDefault: box.isDefault,
+        type: box.type,
         balance,
         goalProgress,
       };

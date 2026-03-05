@@ -1,11 +1,14 @@
 import crypto from 'crypto';
 
+export type BoxType = 'spending' | 'saving';
+
 type ConstructorParams = {
   id: string;
   vaultId: string;
   name: string;
   goalAmount: number | null;
   isDefault: boolean;
+  type: BoxType;
   createdAt: Date;
 };
 
@@ -14,6 +17,7 @@ type CreateParams = {
   name: string;
   goalAmount?: number | null;
   isDefault?: boolean;
+  type?: BoxType;
 };
 
 export class Box {
@@ -24,6 +28,7 @@ export class Box {
       name: params.name,
       goalAmount: params.goalAmount ?? null,
       isDefault: params.isDefault ?? false,
+      type: params.type ?? 'spending',
       createdAt: new Date(),
     });
   }
@@ -37,6 +42,7 @@ export class Box {
   public name: string;
   public goalAmount: number | null;
   public readonly isDefault: boolean;
+  public type: BoxType;
   public readonly createdAt: Date;
 
   private constructor(params: ConstructorParams) {
@@ -45,6 +51,7 @@ export class Box {
     this.name = params.name;
     this.goalAmount = params.goalAmount;
     this.isDefault = params.isDefault;
+    this.type = params.type;
     this.createdAt = params.createdAt;
   }
 }

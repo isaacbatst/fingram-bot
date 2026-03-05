@@ -1,6 +1,6 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { eq, and } from 'drizzle-orm';
-import { Box } from '../../domain/box';
+import { Box, BoxType } from '../../domain/box';
 import { BoxRepository } from '../box.repository';
 import {
   DRIZZLE_DATABASE,
@@ -27,16 +27,14 @@ export class BoxDrizzleRepository extends BoxRepository {
         name: row.name,
         goalAmount: row.goalAmount,
         isDefault: row.isDefault,
+        type: row.type as BoxType,
         createdAt: row.createdAt,
       }),
     );
   }
 
   async findById(id: string): Promise<Box | null> {
-    const rows = await this.db
-      .select()
-      .from(box)
-      .where(eq(box.id, id));
+    const rows = await this.db.select().from(box).where(eq(box.id, id));
 
     if (rows.length === 0) return null;
     const row = rows[0];
@@ -47,6 +45,7 @@ export class BoxDrizzleRepository extends BoxRepository {
       name: row.name,
       goalAmount: row.goalAmount,
       isDefault: row.isDefault,
+      type: row.type as BoxType,
       createdAt: row.createdAt,
     });
   }
@@ -58,6 +57,7 @@ export class BoxDrizzleRepository extends BoxRepository {
       name: boxEntity.name,
       goalAmount: boxEntity.goalAmount,
       isDefault: boxEntity.isDefault,
+      type: boxEntity.type,
       createdAt: boxEntity.createdAt,
     });
   }
@@ -68,6 +68,7 @@ export class BoxDrizzleRepository extends BoxRepository {
       .set({
         name: boxEntity.name,
         goalAmount: boxEntity.goalAmount,
+        type: boxEntity.type,
       })
       .where(eq(box.id, boxEntity.id));
   }
@@ -80,9 +81,7 @@ export class BoxDrizzleRepository extends BoxRepository {
     const rows = await this.db
       .select()
       .from(box)
-      .where(
-        and(eq(box.vaultId, vaultId), eq(box.isDefault, true)),
-      );
+      .where(and(eq(box.vaultId, vaultId), eq(box.isDefault, true)));
 
     if (rows.length === 0) return null;
     const row = rows[0];
@@ -93,6 +92,7 @@ export class BoxDrizzleRepository extends BoxRepository {
       name: row.name,
       goalAmount: row.goalAmount,
       isDefault: row.isDefault,
+      type: row.type as BoxType,
       createdAt: row.createdAt,
     });
   }

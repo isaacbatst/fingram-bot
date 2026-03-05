@@ -16,7 +16,7 @@ import {
   box,
 } from '@/shared/persistence/drizzle/schema';
 import * as schema from '@/shared/persistence/drizzle/schema';
-import { Box } from '../../domain/box';
+import { Box, BoxType } from '../../domain/box';
 import { Category } from '../../domain/category';
 import { Transaction } from '../../domain/transaction';
 import { Vault } from '../../domain/vault';
@@ -162,6 +162,7 @@ export class VaultDrizzleRepository extends VaultRepository {
           name: b.name,
           goalAmount: b.goalAmount,
           isDefault: b.isDefault,
+          type: b.type,
           createdAt: b.createdAt,
         }),
       );
@@ -181,6 +182,7 @@ export class VaultDrizzleRepository extends VaultRepository {
           .set({
             name: b.name,
             goalAmount: b.goalAmount,
+            type: b.type,
           })
           .where(eq(box.id, b.id)),
       );
@@ -300,6 +302,7 @@ export class VaultDrizzleRepository extends VaultRepository {
           name: b.name,
           goalAmount: b.goalAmount,
           isDefault: b.isDefault,
+          type: b.type as BoxType,
           createdAt: b.createdAt,
         }),
       );

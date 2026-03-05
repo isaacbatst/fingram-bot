@@ -8,6 +8,13 @@
       "when": 1772407107298,
       "tag": "0000_talented_dragon_man",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1772742678145,
+      "tag": "0001_sour_may_parker",
+      "breakpoints": true
     }
   ]
 }

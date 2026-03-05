@@ -47,6 +47,7 @@ export const box = pgTable('box', {
   name: text('name').notNull(),
   goalAmount: doublePrecision('goal_amount'),
   isDefault: boolean('is_default').notNull().default(false),
+  type: text('type').notNull().default('spending'),
   createdAt: timestamp('created_at').notNull(),
 });
 

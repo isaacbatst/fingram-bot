@@ -498,9 +498,7 @@ export class VaultWebService {
     }
   }
 
-  async getBoxes(
-    vaultId: string,
-  ): Promise<Either<VaultError, any[]>> {
+  async getBoxes(vaultId: string): Promise<Either<VaultError, any[]>> {
     try {
       const [error, boxes] = await this.vaultService.getBoxes(vaultId);
       if (error !== null) {
@@ -511,9 +509,7 @@ export class VaultWebService {
       }
       return right(boxes);
     } catch (error) {
-      this.logger.error(
-        `Error getting boxes for vault ${vaultId}: ${error}`,
-      );
+      this.logger.error(`Error getting boxes for vault ${vaultId}: ${error}`);
       return left({
         type: VaultErrorType.INTERNAL_ERROR,
         message: 'Erro interno ao obter caixinhas',
@@ -523,13 +519,14 @@ export class VaultWebService {
 
   async createBox(
     vaultId: string,
-    data: { name: string; goalAmount?: number },
+    data: { name: string; goalAmount?: number; type?: 'spending' | 'saving' },
   ): Promise<Either<VaultError, any>> {
     try {
       const [error, box] = await this.vaultService.createBox({
         vaultId,
         name: data.name,
         goalAmount: data.goalAmount,
+        type: data.type,
       });
       if (error !== null) {
         return left({
@@ -539,9 +536,7 @@ export class VaultWebService {
       }
       return right(box);
     } catch (error) {
-      this.logger.error(
-        `Error creating box for vault ${vaultId}: ${error}`,
-      );
+      this.logger.error(`Error creating box for vault ${vaultId}: ${error}`);
       return left({
         type: VaultErrorType.INTERNAL_ERROR,
         message: 'Erro interno ao criar caixinha',
@@ -551,7 +546,12 @@ export class VaultWebService {
 
   async editBox(
     vaultId: string,
-    data: { boxId: string; name?: string; goalAmount?: number | null },
+    data: {
+      boxId: string;
+      name?: string;
+      goalAmount?: number | null;
+      type?: 'spending' | 'saving';
+    },
   ): Promise<Either<VaultError, any>> {
     try {
       const [error, box] = await this.vaultService.editBox({
@@ -559,6 +559,7 @@ export class VaultWebService {
         boxId: data.boxId,
         name: data.name,
         goalAmount: data.goalAmount,
+        type: data.type,
       });
       if (error !== null) {
         return left({
@@ -568,9 +569,7 @@ export class VaultWebService {
       }
       return right(box);
     } catch (error) {
-      this.logger.error(
-        `Error editing box for vault ${vaultId}: ${error}`,
-      );
+      this.logger.error(`Error editing box for vault ${vaultId}: ${error}`);
       return left({
         type: VaultErrorType.INTERNAL_ERROR,
         message: 'Erro interno ao editar caixinha',
@@ -595,9 +594,7 @@ export class VaultWebService {
       }
       return right(result);
     } catch (error) {
-      this.logger.error(
-        `Error deleting box for vault ${vaultId}: ${error}`,
-      );
+      this.logger.error(`Error deleting box for vault ${vaultId}: ${error}`);
       return left({
         type: VaultErrorType.INTERNAL_ERROR,
         message: 'Erro interno ao deletar caixinha',

@@ -430,14 +430,21 @@ export class VaultWebController {
   @Post('create-box')
   async createBox(
     @VaultSession() vaultId: string,
-    @Body() data: { name: string; goalAmount?: number },
+    @Body()
+    data: { name: string; goalAmount?: number; type?: 'spending' | 'saving' },
   ) {
     if (!data.name?.trim()) {
       throw new BadRequestException('Nome da caixinha é obrigatório');
     }
+    if (data.type && data.type !== 'spending' && data.type !== 'saving') {
+      throw new BadRequestException(
+        'Tipo da caixinha deve ser "spending" ou "saving"',
+      );
+    }
     const [error, box] = await this.vaultWebService.createBox(vaultId, {
       name: data.name.trim(),
       goalAmount: data.goalAmount,
+      type: data.type,
     });
     if (error !== null) this.handleError(error.type, error.message);
     return box;
@@ -448,10 +455,20 @@ export class VaultWebController {
   async editBox(
     @VaultSession() vaultId: string,
     @Body()
-    data: { boxId: string; name?: string; goalAmount?: number | null },
+    data: {
+      boxId: string;
+      name?: string;
+      goalAmount?: number | null;
+      type?: 'spending' | 'saving';
+    },
   ) {
     if (!data.boxId) {
       throw new BadRequestException('ID da caixinha é obrigatório');
+    }
+    if (data.type && data.type !== 'spending' && data.type !== 'saving') {
+      throw new BadRequestException(
+        'Tipo da caixinha deve ser "spending" ou "saving"',
+      );
     }
     const [error, box] = await this.vaultWebService.editBox(vaultId, data);
     if (error !== null) this.handleError(error.type, error.message);
@@ -489,9 +506,7 @@ export class VaultWebController {
       );
     }
     if (!data.amount || data.amount <= 0) {
-      throw new BadRequestException(
-        'Valor da transferência deve ser positivo',
-      );
+      throw new BadRequestException('Valor da transferência deve ser positivo');
     }
 
     const [error, transferId] = await this.vaultWebService.createTransfer(
@@ -524,9 +539,7 @@ export class VaultWebController {
       throw new BadRequestException('ID da transferência é obrigatório');
     }
     if (data.amount !== undefined && data.amount <= 0) {
-      throw new BadRequestException(
-        'Valor da transferência deve ser positivo',
-      );
+      throw new BadRequestException('Valor da transferência deve ser positivo');
     }
     const [error] = await this.vaultWebService.editTransfer(vaultId, {
       transferId: data.transferId,

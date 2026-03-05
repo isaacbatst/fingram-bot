@@ -586,6 +586,7 @@ export class VaultService {
       name: box.name,
       goalAmount: box.goalAmount,
       isDefault: box.isDefault,
+      type: box.type,
       balance: vault.getBoxBalance(box.id),
       goalProgress: box.goalAmount
         ? (vault.getBoxBalance(box.id) / box.goalAmount) * 100
@@ -599,6 +600,7 @@ export class VaultService {
     vaultId: string;
     name: string;
     goalAmount?: number;
+    type?: 'spending' | 'saving';
   }) {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) return left('Cofre não encontrado');
@@ -607,6 +609,7 @@ export class VaultService {
       vaultId: vault.id,
       name: input.name,
       goalAmount: input.goalAmount ?? null,
+      type: input.type,
     });
     vault.addBox(box);
     await this.vaultRepository.update(vault);
@@ -616,6 +619,7 @@ export class VaultService {
       name: box.name,
       goalAmount: box.goalAmount,
       isDefault: box.isDefault,
+      type: box.type,
       balance: 0,
       goalProgress: box.goalAmount ? 0 : null,
     });
@@ -626,6 +630,7 @@ export class VaultService {
     boxId: string;
     name?: string;
     goalAmount?: number | null;
+    type?: 'spending' | 'saving';
   }) {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) return left('Cofre não encontrado');
@@ -633,6 +638,7 @@ export class VaultService {
     const [err, box] = vault.editBox(input.boxId, {
       name: input.name,
       goalAmount: input.goalAmount,
+      type: input.type,
     });
     if (err !== null) return left(err);
 
