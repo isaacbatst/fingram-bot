@@ -230,6 +230,21 @@ export class Vault {
     return !box || box.type !== 'saving';
   }
 
+  private isCrossTypeTransfer(transferId: string): boolean {
+    let expenseBoxType: 'spending' | 'saving' = 'spending';
+    let incomeBoxType: 'spending' | 'saving' = 'spending';
+
+    for (const tx of this.transactions.values()) {
+      if (tx.transferId !== transferId) continue;
+      const box = tx.boxId ? this.boxes.get(tx.boxId) : undefined;
+      const boxType = box?.type ?? 'spending';
+      if (tx.type === 'expense') expenseBoxType = boxType;
+      else incomeBoxType = boxType;
+    }
+
+    return expenseBoxType !== incomeBoxType;
+  }
+
   getBalance(options?: { includeAll?: boolean }): number {
     const sumOrSubtract = (
       type: 'income' | 'expense',
@@ -486,13 +501,22 @@ export class Vault {
     }
 
     for (const transaction of this.transactions.values()) {
-      if (transaction.type === 'expense' && !transaction.transferId) {
+      if (transaction.type !== 'expense') continue;
+
+      if (transaction.transferId) {
+        // includeAll: exclude all transfers (they cancel out vault-wide)
+        if (options?.includeAll) continue;
+        // spending-only: include cross-type transfers from spending boxes
+        if (!this.isSpendingTransaction(transaction)) continue;
+        if (!this.isCrossTypeTransfer(transaction.transferId)) continue;
+      } else {
         if (!options?.includeAll && !this.isSpendingTransaction(transaction))
           continue;
-        const transactionDate = new Date(transaction.date);
-        if (this.isDateInBudgetPeriod(transactionDate, date.month, date.year)) {
-          total += Math.abs(transaction.amount);
-        }
+      }
+
+      const transactionDate = new Date(transaction.date);
+      if (this.isDateInBudgetPeriod(transactionDate, date.month, date.year)) {
+        total += Math.abs(transaction.amount);
       }
     }
     return total;
@@ -508,13 +532,20 @@ export class Vault {
     }
 
     for (const transaction of this.transactions.values()) {
-      if (transaction.type === 'income' && !transaction.transferId) {
+      if (transaction.type !== 'income') continue;
+
+      if (transaction.transferId) {
+        if (options?.includeAll) continue;
+        if (!this.isSpendingTransaction(transaction)) continue;
+        if (!this.isCrossTypeTransfer(transaction.transferId)) continue;
+      } else {
         if (!options?.includeAll && !this.isSpendingTransaction(transaction))
           continue;
-        const transactionDate = new Date(transaction.date);
-        if (this.isDateInBudgetPeriod(transactionDate, date.month, date.year)) {
-          total += transaction.amount;
-        }
+      }
+
+      const transactionDate = new Date(transaction.date);
+      if (this.isDateInBudgetPeriod(transactionDate, date.month, date.year)) {
+        total += transaction.amount;
       }
     }
     return total;
