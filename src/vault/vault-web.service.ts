@@ -339,6 +339,7 @@ export class VaultWebService {
       newCategory?: string;
       newDescription?: string;
       newType?: 'income' | 'expense';
+      newBoxId?: string;
     },
   ): Promise<
     Either<
@@ -361,6 +362,7 @@ export class VaultWebService {
         categoryCode: data.newCategory,
         description: data.newDescription,
         type: data.newType,
+        boxId: data.newBoxId,
       });
 
       if (error !== null) {

@@ -143,6 +143,7 @@ export class VaultWebController {
       newCategory?: string;
       newDescription?: string;
       newType?: 'income' | 'expense';
+      newBoxId?: string;
     },
   ) {
     if (!data.transactionCode) {

@@ -175,10 +175,18 @@ export class Vault {
       categoryId?: string;
       date?: Date;
       type?: 'income' | 'expense';
+      boxId?: string;
     },
   ): Either<string, Transaction> {
     const transaction = this.findTransactionByCode(code);
     if (!transaction) return left(`Transação #${code} não encontrada`);
+
+    if (options.boxId !== undefined) {
+      if (!this.boxes.get(options.boxId)) {
+        return left('Caixinha não encontrada');
+      }
+      transaction.boxId = options.boxId;
+    }
 
     if (options.amount !== undefined) {
       transaction.amount = options.amount;

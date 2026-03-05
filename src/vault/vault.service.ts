@@ -316,6 +316,7 @@ export class VaultService {
     categoryCode?: string;
     date?: Date;
     type?: 'income' | 'expense';
+    boxId?: string;
   }) {
     this.logger.log(`Editing transaction in vault: ${JSON.stringify(input)}`);
     const vault = await this.vaultRepository.findById(input.vaultId);
@@ -344,6 +345,7 @@ export class VaultService {
       categoryId?: string;
       date?: Date;
       type?: 'income' | 'expense';
+      boxId?: string;
     } = {};
 
     if (typeof input.newAmount === 'number')
@@ -353,6 +355,7 @@ export class VaultService {
     if (categoryId) updatedData.categoryId = categoryId;
     if (input.date) updatedData.date = input.date;
     if (input.type) updatedData.type = input.type;
+    if (typeof input.boxId === 'string') updatedData.boxId = input.boxId;
 
     const [err, transaction] = vault.editTransaction(
       input.transactionCode,
