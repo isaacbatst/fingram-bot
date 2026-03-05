@@ -1,8 +1,14 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { neon } from '@neondatabase/serverless';
-import { drizzle as drizzleNeon, NeonHttpDatabase } from 'drizzle-orm/neon-http';
-import { drizzle as drizzleNode, NodePgDatabase } from 'drizzle-orm/node-postgres';
+import {
+  drizzle as drizzleNeon,
+  NeonHttpDatabase,
+} from 'drizzle-orm/neon-http';
+import {
+  drizzle as drizzleNode,
+  NodePgDatabase,
+} from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as schema from './schema';
 import { CATEGORIES_SEED } from '../seed';
