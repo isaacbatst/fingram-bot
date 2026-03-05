@@ -188,7 +188,11 @@ describe('Vault', () => {
 describe('Vault - Boxes', () => {
   it('should add a box', () => {
     const vault = new Vault();
-    const box = Box.create({ vaultId: vault.id, name: 'Emergência', goalAmount: 1000 });
+    const box = Box.create({
+      vaultId: vault.id,
+      name: 'Emergência',
+      goalAmount: 1000,
+    });
     vault.addBox(box);
 
     expect(vault.boxes.size).toBe(1);
@@ -199,10 +203,17 @@ describe('Vault - Boxes', () => {
 
   it('should edit a box name and goalAmount', () => {
     const vault = new Vault();
-    const box = Box.create({ vaultId: vault.id, name: 'Emergência', goalAmount: 1000 });
+    const box = Box.create({
+      vaultId: vault.id,
+      name: 'Emergência',
+      goalAmount: 1000,
+    });
     vault.addBox(box);
 
-    const [err, editedBox] = vault.editBox(box.id, { name: 'Reserva', goalAmount: 2000 });
+    const [err, editedBox] = vault.editBox(box.id, {
+      name: 'Reserva',
+      goalAmount: 2000,
+    });
     expect(err).toBeNull();
     expect(editedBox!.name).toBe('Reserva');
     expect(editedBox!.goalAmount).toBe(2000);
@@ -211,7 +222,11 @@ describe('Vault - Boxes', () => {
 
   it('should not delete a default box', () => {
     const vault = new Vault();
-    const box = Box.create({ vaultId: vault.id, name: 'Padrão', isDefault: true });
+    const box = Box.create({
+      vaultId: vault.id,
+      name: 'Padrão',
+      isDefault: true,
+    });
     vault.addBox(box);
 
     const [err] = vault.deleteBox(box.id);
@@ -425,18 +440,38 @@ describe('Vault - Boxes', () => {
     vault.addBox(boxB);
 
     // Regular expense (should count in budget)
-    vault.addTransaction(Transaction.restore({
-      id: '1', code: '1', vaultId: vault.id, boxId: boxA.id,
-      amount: 200, isCommitted: true, createdAt: new Date(),
-      categoryId: 'c1', type: 'expense', date: new Date('2026-03-15'), transferId: null,
-    }));
+    vault.addTransaction(
+      Transaction.restore({
+        id: '1',
+        code: '1',
+        vaultId: vault.id,
+        boxId: boxA.id,
+        amount: 200,
+        isCommitted: true,
+        createdAt: new Date(),
+        categoryId: 'c1',
+        type: 'expense',
+        date: new Date('2026-03-15'),
+        transferId: null,
+      }),
+    );
 
     // Transfer expense (should NOT count in budget)
-    vault.addTransaction(Transaction.restore({
-      id: '2', code: '2', vaultId: vault.id, boxId: boxA.id,
-      amount: 100, isCommitted: true, createdAt: new Date(),
-      categoryId: null, type: 'expense', date: new Date('2026-03-15'), transferId: 'tf-1',
-    }));
+    vault.addTransaction(
+      Transaction.restore({
+        id: '2',
+        code: '2',
+        vaultId: vault.id,
+        boxId: boxA.id,
+        amount: 100,
+        isCommitted: true,
+        createdAt: new Date(),
+        categoryId: null,
+        type: 'expense',
+        date: new Date('2026-03-15'),
+        transferId: 'tf-1',
+      }),
+    );
 
     const summary = vault.getBudgetsSummary(3, 2026);
     expect(summary[0].spent).toBe(200); // Only regular expense, not transfer
@@ -447,17 +482,37 @@ describe('Vault - Boxes', () => {
     const boxA = Box.create({ vaultId: vault.id, name: 'A' });
     vault.addBox(boxA);
 
-    vault.addTransaction(Transaction.restore({
-      id: '1', code: '1', vaultId: vault.id, boxId: boxA.id,
-      amount: 300, isCommitted: true, createdAt: new Date(),
-      categoryId: null, type: 'expense', date: new Date('2026-03-15'), transferId: null,
-    }));
+    vault.addTransaction(
+      Transaction.restore({
+        id: '1',
+        code: '1',
+        vaultId: vault.id,
+        boxId: boxA.id,
+        amount: 300,
+        isCommitted: true,
+        createdAt: new Date(),
+        categoryId: null,
+        type: 'expense',
+        date: new Date('2026-03-15'),
+        transferId: null,
+      }),
+    );
 
-    vault.addTransaction(Transaction.restore({
-      id: '2', code: '2', vaultId: vault.id, boxId: boxA.id,
-      amount: 500, isCommitted: true, createdAt: new Date(),
-      categoryId: null, type: 'expense', date: new Date('2026-03-15'), transferId: 'tf-1',
-    }));
+    vault.addTransaction(
+      Transaction.restore({
+        id: '2',
+        code: '2',
+        vaultId: vault.id,
+        boxId: boxA.id,
+        amount: 500,
+        isCommitted: true,
+        createdAt: new Date(),
+        categoryId: null,
+        type: 'expense',
+        date: new Date('2026-03-15'),
+        transferId: 'tf-1',
+      }),
+    );
 
     expect(vault.totalSpentAmount({ month: 3, year: 2026 })).toBe(300);
   });
@@ -467,17 +522,37 @@ describe('Vault - Boxes', () => {
     const boxA = Box.create({ vaultId: vault.id, name: 'A' });
     vault.addBox(boxA);
 
-    vault.addTransaction(Transaction.restore({
-      id: '1', code: '1', vaultId: vault.id, boxId: boxA.id,
-      amount: 1000, isCommitted: true, createdAt: new Date(),
-      categoryId: null, type: 'income', date: new Date('2026-03-15'), transferId: null,
-    }));
+    vault.addTransaction(
+      Transaction.restore({
+        id: '1',
+        code: '1',
+        vaultId: vault.id,
+        boxId: boxA.id,
+        amount: 1000,
+        isCommitted: true,
+        createdAt: new Date(),
+        categoryId: null,
+        type: 'income',
+        date: new Date('2026-03-15'),
+        transferId: null,
+      }),
+    );
 
-    vault.addTransaction(Transaction.restore({
-      id: '2', code: '2', vaultId: vault.id, boxId: boxA.id,
-      amount: 500, isCommitted: true, createdAt: new Date(),
-      categoryId: null, type: 'income', date: new Date('2026-03-15'), transferId: 'tf-1',
-    }));
+    vault.addTransaction(
+      Transaction.restore({
+        id: '2',
+        code: '2',
+        vaultId: vault.id,
+        boxId: boxA.id,
+        amount: 500,
+        isCommitted: true,
+        createdAt: new Date(),
+        categoryId: null,
+        type: 'income',
+        date: new Date('2026-03-15'),
+        transferId: 'tf-1',
+      }),
+    );
 
     expect(vault.totalIncomeAmount({ month: 3, year: 2026 })).toBe(1000);
   });

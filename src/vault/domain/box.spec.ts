@@ -13,12 +13,20 @@ describe('Box', () => {
   });
 
   it('should create a box with goal amount', () => {
-    const box = Box.create({ vaultId: 'vault-1', name: 'Reserva', goalAmount: 10000 });
+    const box = Box.create({
+      vaultId: 'vault-1',
+      name: 'Reserva',
+      goalAmount: 10000,
+    });
     expect(box.goalAmount).toBe(10000);
   });
 
   it('should create a default box', () => {
-    const box = Box.create({ vaultId: 'vault-1', name: 'Principal', isDefault: true });
+    const box = Box.create({
+      vaultId: 'vault-1',
+      name: 'Principal',
+      isDefault: true,
+    });
     expect(box.isDefault).toBe(true);
   });
 

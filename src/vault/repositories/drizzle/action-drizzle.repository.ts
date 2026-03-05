@@ -1,6 +1,11 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { Action, ActionPayload, ActionType, ActionStatus } from '../../domain/action';
+import {
+  Action,
+  ActionPayload,
+  ActionType,
+  ActionStatus,
+} from '../../domain/action';
 import { ActionRepository } from '../action.repository';
 import {
   DRIZZLE_DATABASE,

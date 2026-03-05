@@ -4,7 +4,10 @@ import { Category } from '../../domain/category';
 import { CategoryRepository } from '../category.repository';
 import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
 import { Database } from 'better-sqlite3';
-import { CategoryRow, VaultCategoryRow } from '@/shared/persistence/sqlite/rows';
+import {
+  CategoryRow,
+  VaultCategoryRow,
+} from '@/shared/persistence/sqlite/rows';
 import * as crypto from 'crypto';
 
 @Injectable()

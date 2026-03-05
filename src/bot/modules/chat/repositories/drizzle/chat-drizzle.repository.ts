@@ -42,10 +42,7 @@ export class ChatDrizzleRepository extends ChatRepository {
   }
 
   async findByVaultId(id: string): Promise<Chat[]> {
-    const rows = await this.db
-      .select()
-      .from(chat)
-      .where(eq(chat.vaultId, id));
+    const rows = await this.db.select().from(chat).where(eq(chat.vaultId, id));
     return rows.map((row) => new Chat(row.id, row.telegramChatId, row.vaultId));
   }
 }
