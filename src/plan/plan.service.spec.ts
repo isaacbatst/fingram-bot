@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PlanService } from './plan.service';
 import { PlanInMemoryRepository } from './repositories/in-memory/plan-in-memory.repository';
-import { FundRule, Premises } from './domain/plan';
+import { FundRule, Phase, Premises } from './domain/plan';
 
 describe('PlanService', () => {
   let service: PlanService;
@@ -9,12 +9,15 @@ describe('PlanService', () => {
 
   const defaultPremises: Premises = {
     salary: 10000,
-    monthlyCost: 6000,
   };
 
   const defaultFundAllocation: FundRule[] = [
     { fundId: 'emergency', label: 'Emergencia', target: 10000, priority: 1 },
     { fundId: 'car', label: 'Carro', target: 20000, priority: 2 },
+  ];
+
+  const defaultPhases: Phase[] = [
+    { id: 'general', name: 'Geral', startMonth: 0, endMonth: 119, monthlyCost: 6000 },
   ];
 
   beforeEach(() => {
@@ -29,6 +32,7 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: defaultFundAllocation,
       });
 
@@ -46,6 +50,7 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: defaultFundAllocation,
       });
 
@@ -60,6 +65,7 @@ describe('PlanService', () => {
         name: '  ',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: defaultFundAllocation,
       });
 
@@ -71,23 +77,51 @@ describe('PlanService', () => {
         vaultId: 'vault-1',
         name: 'Plan',
         startDate: new Date('2026-01-01'),
-        premises: { salary: -1000, monthlyCost: 5000 },
+        premises: { salary: -1000 },
+        phases: defaultPhases,
         fundAllocation: [],
       });
 
       expect(error).toBe('Salario nao pode ser negativo');
     });
 
-    it('should reject negative monthly cost', async () => {
+    it('should reject plan with no phases', async () => {
       const [error] = await service.create({
         vaultId: 'vault-1',
         name: 'Plan',
         startDate: new Date('2026-01-01'),
-        premises: { salary: 10000, monthlyCost: -1000 },
+        premises: defaultPremises,
+        phases: [],
         fundAllocation: [],
       });
 
-      expect(error).toBe('Custo mensal nao pode ser negativo');
+      expect(error).toBe('Plano deve ter pelo menos uma fase');
+    });
+
+    it('should reject phase with negative cost', async () => {
+      const [error] = await service.create({
+        vaultId: 'vault-1',
+        name: 'Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+        phases: [{ id: 'p', name: 'P', startMonth: 0, endMonth: 11, monthlyCost: -100 }],
+        fundAllocation: [],
+      });
+
+      expect(error).toBe('Custo mensal da fase nao pode ser negativo');
+    });
+
+    it('should reject phase with startMonth > endMonth', async () => {
+      const [error] = await service.create({
+        vaultId: 'vault-1',
+        name: 'Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+        phases: [{ id: 'p', name: 'P', startMonth: 10, endMonth: 5, monthlyCost: 1000 }],
+        fundAllocation: [],
+      });
+
+      expect(error).toBe('Mes inicial da fase deve ser menor ou igual ao mes final');
     });
 
     it('should reject negative monthly investment', async () => {
@@ -95,7 +129,8 @@ describe('PlanService', () => {
         vaultId: 'vault-1',
         name: 'Plan',
         startDate: new Date('2026-01-01'),
-        premises: { salary: 10000, monthlyCost: 5000, monthlyInvestment: -100 },
+        premises: { salary: 10000, monthlyInvestment: -100 },
+        phases: defaultPhases,
         fundAllocation: [],
       });
 
@@ -110,6 +145,7 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: defaultFundAllocation,
       });
 
@@ -129,6 +165,7 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: defaultFundAllocation,
       });
 
@@ -144,6 +181,7 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: defaultFundAllocation,
       });
 
@@ -171,6 +209,7 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: defaultFundAllocation,
       });
 
@@ -184,6 +223,7 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: defaultFundAllocation,
       });
 
@@ -200,6 +240,7 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: defaultFundAllocation,
       });
 
@@ -221,6 +262,7 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: defaultFundAllocation,
       });
 
@@ -240,6 +282,7 @@ describe('PlanService', () => {
         name: 'Plan A',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: [],
       });
 
@@ -248,6 +291,7 @@ describe('PlanService', () => {
         name: 'Plan B',
         startDate: new Date('2026-02-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: [],
       });
 
@@ -256,6 +300,7 @@ describe('PlanService', () => {
         name: 'Plan C',
         startDate: new Date('2026-03-01'),
         premises: defaultPremises,
+        phases: defaultPhases,
         fundAllocation: [],
       });
 
