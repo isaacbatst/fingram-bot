@@ -4,7 +4,6 @@ export type PlanStatus = 'draft' | 'active' | 'archived';
 
 export interface Premises {
   salary: number;
-  monthlyCost: number;
   monthlyInvestment?: number;
 }
 
@@ -15,9 +14,26 @@ export interface FundRule {
   priority: number;
 }
 
+export interface Phase {
+  id: string;
+  name: string;
+  startMonth: number;
+  endMonth: number;
+  monthlyCost: number;
+}
+
+export type MilestoneType = 'start' | 'fund_complete' | 'action' | 'decision' | 'celebration';
+
+export interface Milestone {
+  month: number;
+  label: string;
+  type: MilestoneType;
+}
+
 export interface MonthData {
   month: number;
   date: Date;
+  phase: string;
   income: number;
   expenses: number;
   surplus: number;
@@ -32,6 +48,8 @@ type ConstructorParams = {
   startDate: Date;
   premises: Premises;
   fundAllocation: FundRule[];
+  phases: Phase[];
+  milestones: Milestone[];
   createdAt: Date;
 };
 
@@ -41,6 +59,8 @@ type CreateParams = {
   startDate: Date;
   premises: Premises;
   fundAllocation: FundRule[];
+  phases: Phase[];
+  milestones?: Milestone[];
 };
 
 export class Plan {
@@ -53,6 +73,8 @@ export class Plan {
       startDate: params.startDate,
       premises: params.premises,
       fundAllocation: params.fundAllocation,
+      phases: params.phases,
+      milestones: params.milestones ?? [],
       createdAt: new Date(),
     });
   }
@@ -68,6 +90,8 @@ export class Plan {
   public startDate: Date;
   public premises: Premises;
   public fundAllocation: FundRule[];
+  public phases: Phase[];
+  public milestones: Milestone[];
   readonly createdAt: Date;
 
   private constructor(params: ConstructorParams) {
@@ -78,6 +102,8 @@ export class Plan {
     this.startDate = params.startDate;
     this.premises = params.premises;
     this.fundAllocation = params.fundAllocation;
+    this.phases = params.phases;
+    this.milestones = params.milestones;
     this.createdAt = params.createdAt;
   }
 
@@ -90,6 +116,8 @@ export class Plan {
       startDate: this.startDate.toISOString(),
       premises: this.premises,
       fundAllocation: this.fundAllocation,
+      phases: this.phases,
+      milestones: this.milestones,
       createdAt: this.createdAt.toISOString(),
     };
   }
