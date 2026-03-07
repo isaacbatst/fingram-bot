@@ -9,10 +9,10 @@ function createPlan(
     vaultId: 'vault-1',
     name: 'Test Plan',
     startDate: new Date('2026-01-01'),
-    premises: {
-      salary: 10000,
-      monthlyCost: 6000,
-    },
+    premises: { salary: 10000 },
+    phases: [
+      { id: 'default', name: 'Default', startMonth: 0, endMonth: 119, monthlyCost: 6000 },
+    ],
     fundAllocation: [
       { fundId: 'emergency', label: 'Emergencia', target: 10000, priority: 1 },
       { fundId: 'car', label: 'Carro', target: 20000, priority: 2 },
@@ -52,7 +52,8 @@ describe('runProjection', () => {
 
   it('should allocate surplus via waterfall (priority order)', () => {
     const plan = createPlan({
-      premises: { salary: 10000, monthlyCost: 6000 },
+      premises: { salary: 10000 },
+      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 6000 }],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -96,7 +97,8 @@ describe('runProjection', () => {
 
   it('should handle free-accumulating fund (target=0)', () => {
     const plan = createPlan({
-      premises: { salary: 10000, monthlyCost: 6000 },
+      premises: { salary: 10000 },
+      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 6000 }],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -127,7 +129,8 @@ describe('runProjection', () => {
 
   it('should handle negative surplus (no allocation)', () => {
     const plan = createPlan({
-      premises: { salary: 5000, monthlyCost: 7000 },
+      premises: { salary: 5000 },
+      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 7000 }],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -149,7 +152,8 @@ describe('runProjection', () => {
 
   it('should handle all funds full (surplus has nowhere to go)', () => {
     const plan = createPlan({
-      premises: { salary: 10000, monthlyCost: 6000 },
+      premises: { salary: 10000 },
+      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 6000 }],
       fundAllocation: [
         { fundId: 'small', label: 'Pequeno', target: 2000, priority: 1 },
       ],
@@ -167,7 +171,8 @@ describe('runProjection', () => {
 
   it('should deduct monthly investment before waterfall', () => {
     const plan = createPlan({
-      premises: { salary: 10000, monthlyCost: 6000, monthlyInvestment: 800 },
+      premises: { salary: 10000, monthlyInvestment: 800 },
+      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 6000 }],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -190,7 +195,8 @@ describe('runProjection', () => {
 
   it('should not allocate when investment exceeds surplus', () => {
     const plan = createPlan({
-      premises: { salary: 10000, monthlyCost: 9500, monthlyInvestment: 800 },
+      premises: { salary: 10000, monthlyInvestment: 800 },
+      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 9500 }],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -231,7 +237,8 @@ describe('runProjection', () => {
 
   it('should accumulate funds across months correctly', () => {
     const plan = createPlan({
-      premises: { salary: 10000, monthlyCost: 9000 },
+      premises: { salary: 10000 },
+      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 9000 }],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -258,5 +265,63 @@ describe('runProjection', () => {
     expect(result[3].funds['free']).toBe(1000);
     expect(result[4].funds['free']).toBe(2000);
     expect(result[5].funds['free']).toBe(3000);
+  });
+
+  it('should use different costs per phase', () => {
+    const plan = createPlan({
+      premises: { salary: 10000 },
+      phases: [
+        { id: 'cheap', name: 'Cheap', startMonth: 0, endMonth: 2, monthlyCost: 4000 },
+        { id: 'expensive', name: 'Expensive', startMonth: 3, endMonth: 5, monthlyCost: 8000 },
+      ],
+    });
+
+    const result = runProjection(plan, 6);
+
+    expect(result[0].expenses).toBe(4000);
+    expect(result[0].surplus).toBe(6000);
+    expect(result[0].phase).toBe('cheap');
+    expect(result[2].expenses).toBe(4000);
+    expect(result[2].phase).toBe('cheap');
+
+    expect(result[3].expenses).toBe(8000);
+    expect(result[3].surplus).toBe(2000);
+    expect(result[3].phase).toBe('expensive');
+    expect(result[5].expenses).toBe(8000);
+    expect(result[5].phase).toBe('expensive');
+  });
+
+  it('should have zero cost for months outside any phase', () => {
+    const plan = createPlan({
+      premises: { salary: 10000 },
+      phases: [
+        { id: 'only', name: 'Only Phase', startMonth: 0, endMonth: 2, monthlyCost: 5000 },
+      ],
+    });
+
+    const result = runProjection(plan, 5);
+
+    expect(result[0].expenses).toBe(5000);
+    expect(result[2].expenses).toBe(5000);
+    expect(result[3].expenses).toBe(0);
+    expect(result[3].surplus).toBe(10000);
+    expect(result[3].phase).toBe('');
+  });
+
+  it('should include phase id in MonthData', () => {
+    const plan = createPlan({
+      premises: { salary: 10000 },
+      phases: [
+        { id: 'phase-a', name: 'A', startMonth: 0, endMonth: 1, monthlyCost: 3000 },
+        { id: 'phase-b', name: 'B', startMonth: 2, endMonth: 3, monthlyCost: 7000 },
+      ],
+    });
+
+    const result = runProjection(plan, 4);
+
+    expect(result[0].phase).toBe('phase-a');
+    expect(result[1].phase).toBe('phase-a');
+    expect(result[2].phase).toBe('phase-b');
+    expect(result[3].phase).toBe('phase-b');
   });
 });
