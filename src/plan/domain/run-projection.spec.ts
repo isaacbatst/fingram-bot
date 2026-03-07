@@ -416,4 +416,51 @@ describe('runProjection', () => {
     expect(result[2].phase).toBe('phase-b');
     expect(result[3].phase).toBe('phase-b');
   });
+
+  it('should project plan.md v4 phases correctly', () => {
+    const plan = createPlan({
+      premises: { salary: 33000, monthlyInvestment: 800 },
+      phases: [
+        { id: 'entrada', name: 'Entrada terreno', startMonth: 0, endMonth: 4, monthlyCost: 18000 },
+        { id: 'casamento', name: 'Pre-entrega + casamento', startMonth: 5, endMonth: 11, monthlyCost: 20500 },
+        { id: 'pre-entrega', name: 'Pre-entrega', startMonth: 12, endMonth: 26, monthlyCost: 18000 },
+        { id: 'casa-quitada', name: 'Casa quitada', startMonth: 27, endMonth: 32, monthlyCost: 17400 },
+        { id: 'pos-entrega', name: 'Pos-entrega', startMonth: 33, endMonth: 55, monthlyCost: 20141 },
+        { id: 'terreno-quitado', name: 'Terreno quitado', startMonth: 56, endMonth: 73, monthlyCost: 17400 },
+      ],
+      fundAllocation: [
+        { fundId: 'reserva', label: 'Reserva', target: 126000, priority: 1 },
+        { fundId: 'casa', label: 'Casa', target: 110000, priority: 2 },
+        { fundId: 'livre', label: 'Livre', target: 0, priority: 3 },
+      ],
+    });
+
+    const result = runProjection(plan, 74);
+
+    // Month 1 (index 0): entrada phase, surplus = 33000 - 18000 = 15000, available = 15000 - 800 = 14200
+    expect(result[0].phase).toBe('entrada');
+    expect(result[0].surplus).toBe(15000);
+    expect(result[0].funds['reserva']).toBe(14200);
+
+    // Month 6 (index 5): casamento phase, surplus = 33000 - 20500 = 12500, available = 11700
+    expect(result[5].phase).toBe('casamento');
+    expect(result[5].surplus).toBe(12500);
+
+    // Month 12 (index 11): last month of casamento
+    expect(result[11].phase).toBe('casamento');
+
+    // Month 13 (index 12): pre-entrega phase, surplus = 33000 - 18000 = 15000
+    expect(result[12].phase).toBe('pre-entrega');
+    expect(result[12].surplus).toBe(15000);
+
+    // Reserva should be complete around month 10-11 (126000 / 14200 per month in early phases)
+    // Then casa starts filling
+    const reservaCompleteMonth = result.findIndex((m) => m.funds['reserva'] >= 126000);
+    expect(reservaCompleteMonth).toBeGreaterThan(0);
+    expect(result[reservaCompleteMonth].funds['reserva']).toBe(126000);
+
+    // By month 74, livre should be accumulating
+    expect(result[73].funds['livre']).toBeGreaterThan(0);
+    expect(result[73].phase).toBe('terreno-quitado');
+  });
 });
