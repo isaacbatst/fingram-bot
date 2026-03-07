@@ -1,7 +1,11 @@
-import { FundRule, MonthData, Plan } from './plan';
+import { FundRule, MonthData, Phase, Plan } from './plan';
+
+function getPhaseForMonth(month: number, phases: Phase[]): Phase | undefined {
+  return phases.find((p) => month >= p.startMonth && month <= p.endMonth);
+}
 
 export function runProjection(plan: Plan, months: number = 120): MonthData[] {
-  const { salary, monthlyCost, monthlyInvestment } = plan.premises;
+  const { salary, monthlyInvestment } = plan.premises;
   const sortedFunds = [...plan.fundAllocation].sort(
     (a, b) => a.priority - b.priority,
   );
@@ -17,15 +21,14 @@ export function runProjection(plan: Plan, months: number = 120): MonthData[] {
     const date = new Date(plan.startDate);
     date.setMonth(date.getMonth() + i);
 
+    const currentPhase = getPhaseForMonth(i, plan.phases);
     const income = salary;
-    const expenses = monthlyCost;
+    const expenses = currentPhase?.monthlyCost ?? 0;
     const rawSurplus = income - expenses;
 
-    // Deduct fixed investment before waterfall
     const investmentDeduction = monthlyInvestment ?? 0;
     const availableSurplus = rawSurplus - investmentDeduction;
 
-    // Waterfall allocation: only allocate if surplus is positive
     if (availableSurplus > 0) {
       allocateWaterfall(sortedFunds, fundBalances, availableSurplus);
     }
@@ -33,6 +36,7 @@ export function runProjection(plan: Plan, months: number = 120): MonthData[] {
     result.push({
       month: i + 1,
       date,
+      phase: currentPhase?.id ?? '',
       income,
       expenses,
       surplus: rawSurplus,
@@ -57,13 +61,11 @@ function allocateWaterfall(
     const isFreeAccumulating = fund.target === 0;
 
     if (isFreeAccumulating) {
-      // Free-accumulating fund: absorbs all remaining surplus
       fundBalances[fund.fundId] = currentBalance + remaining;
       remaining = 0;
     } else {
       const gap = fund.target - currentBalance;
       if (gap <= 0) {
-        // Fund is already full, overflow to next
         continue;
       }
       const allocation = Math.min(remaining, gap);
