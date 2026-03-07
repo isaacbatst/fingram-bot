@@ -92,3 +92,16 @@ export const action = pgTable('action', {
   createdAt: timestamp('created_at').notNull(),
   status: text('status').notNull(), // 'pending' | 'executed' | 'failed' | 'cancelled'
 });
+
+export const plan = pgTable('plan', {
+  id: text('id').primaryKey(),
+  vaultId: text('vault_id')
+    .notNull()
+    .references(() => vault.id),
+  name: text('name').notNull(),
+  status: text('status').notNull().default('draft'), // 'draft' | 'active' | 'archived'
+  startDate: timestamp('start_date').notNull(),
+  premises: jsonb('premises').notNull(), // Premises JSON
+  fundAllocation: jsonb('fund_allocation').notNull(), // FundRule[] JSON
+  createdAt: timestamp('created_at').notNull(),
+});

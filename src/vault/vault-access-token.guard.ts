@@ -5,11 +5,11 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { VaultService } from './vault.service';
+import { VaultAuthService } from './vault-auth.service';
 
 @Injectable()
 export class VaultAccessTokenGuard implements CanActivate {
-  constructor(private readonly vaultService: VaultService) {}
+  constructor(private readonly vaultAuthService: VaultAuthService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request: Request = context.switchToHttp().getRequest();
@@ -22,7 +22,7 @@ export class VaultAccessTokenGuard implements CanActivate {
 
     try {
       // Find vault by access token
-      const vault = await this.vaultService.findByToken(accessToken);
+      const vault = await this.vaultAuthService.findByToken(accessToken);
 
       if (!vault) {
         throw new UnauthorizedException('Invalid vault access token');
