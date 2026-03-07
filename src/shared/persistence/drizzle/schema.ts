@@ -103,5 +103,7 @@ export const plan = pgTable('plan', {
   startDate: timestamp('start_date').notNull(),
   premises: jsonb('premises').notNull(), // Premises JSON
   fundAllocation: jsonb('fund_allocation').notNull(), // FundRule[] JSON
+  phases: jsonb('phases').notNull().default('[]'),
+  milestones: jsonb('milestones').notNull().default('[]'),
   createdAt: timestamp('created_at').notNull(),
 });

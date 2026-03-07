@@ -11,7 +11,13 @@ function createPlan(
     startDate: new Date('2026-01-01'),
     premises: { salary: 10000 },
     phases: [
-      { id: 'default', name: 'Default', startMonth: 0, endMonth: 119, monthlyCost: 6000 },
+      {
+        id: 'default',
+        name: 'Default',
+        startMonth: 0,
+        endMonth: 119,
+        monthlyCost: 6000,
+      },
     ],
     fundAllocation: [
       { fundId: 'emergency', label: 'Emergencia', target: 10000, priority: 1 },
@@ -53,7 +59,15 @@ describe('runProjection', () => {
   it('should allocate surplus via waterfall (priority order)', () => {
     const plan = createPlan({
       premises: { salary: 10000 },
-      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 6000 }],
+      phases: [
+        {
+          id: 'p1',
+          name: 'Phase 1',
+          startMonth: 0,
+          endMonth: 119,
+          monthlyCost: 6000,
+        },
+      ],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -98,7 +112,15 @@ describe('runProjection', () => {
   it('should handle free-accumulating fund (target=0)', () => {
     const plan = createPlan({
       premises: { salary: 10000 },
-      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 6000 }],
+      phases: [
+        {
+          id: 'p1',
+          name: 'Phase 1',
+          startMonth: 0,
+          endMonth: 119,
+          monthlyCost: 6000,
+        },
+      ],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -130,7 +152,15 @@ describe('runProjection', () => {
   it('should handle negative surplus (no allocation)', () => {
     const plan = createPlan({
       premises: { salary: 5000 },
-      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 7000 }],
+      phases: [
+        {
+          id: 'p1',
+          name: 'Phase 1',
+          startMonth: 0,
+          endMonth: 119,
+          monthlyCost: 7000,
+        },
+      ],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -153,7 +183,15 @@ describe('runProjection', () => {
   it('should handle all funds full (surplus has nowhere to go)', () => {
     const plan = createPlan({
       premises: { salary: 10000 },
-      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 6000 }],
+      phases: [
+        {
+          id: 'p1',
+          name: 'Phase 1',
+          startMonth: 0,
+          endMonth: 119,
+          monthlyCost: 6000,
+        },
+      ],
       fundAllocation: [
         { fundId: 'small', label: 'Pequeno', target: 2000, priority: 1 },
       ],
@@ -172,7 +210,15 @@ describe('runProjection', () => {
   it('should deduct monthly investment before waterfall', () => {
     const plan = createPlan({
       premises: { salary: 10000, monthlyInvestment: 800 },
-      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 6000 }],
+      phases: [
+        {
+          id: 'p1',
+          name: 'Phase 1',
+          startMonth: 0,
+          endMonth: 119,
+          monthlyCost: 6000,
+        },
+      ],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -196,7 +242,15 @@ describe('runProjection', () => {
   it('should not allocate when investment exceeds surplus', () => {
     const plan = createPlan({
       premises: { salary: 10000, monthlyInvestment: 800 },
-      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 9500 }],
+      phases: [
+        {
+          id: 'p1',
+          name: 'Phase 1',
+          startMonth: 0,
+          endMonth: 119,
+          monthlyCost: 9500,
+        },
+      ],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -238,7 +292,15 @@ describe('runProjection', () => {
   it('should accumulate funds across months correctly', () => {
     const plan = createPlan({
       premises: { salary: 10000 },
-      phases: [{ id: 'p1', name: 'Phase 1', startMonth: 0, endMonth: 119, monthlyCost: 9000 }],
+      phases: [
+        {
+          id: 'p1',
+          name: 'Phase 1',
+          startMonth: 0,
+          endMonth: 119,
+          monthlyCost: 9000,
+        },
+      ],
       fundAllocation: [
         {
           fundId: 'emergency',
@@ -271,8 +333,20 @@ describe('runProjection', () => {
     const plan = createPlan({
       premises: { salary: 10000 },
       phases: [
-        { id: 'cheap', name: 'Cheap', startMonth: 0, endMonth: 2, monthlyCost: 4000 },
-        { id: 'expensive', name: 'Expensive', startMonth: 3, endMonth: 5, monthlyCost: 8000 },
+        {
+          id: 'cheap',
+          name: 'Cheap',
+          startMonth: 0,
+          endMonth: 2,
+          monthlyCost: 4000,
+        },
+        {
+          id: 'expensive',
+          name: 'Expensive',
+          startMonth: 3,
+          endMonth: 5,
+          monthlyCost: 8000,
+        },
       ],
     });
 
@@ -295,7 +369,13 @@ describe('runProjection', () => {
     const plan = createPlan({
       premises: { salary: 10000 },
       phases: [
-        { id: 'only', name: 'Only Phase', startMonth: 0, endMonth: 2, monthlyCost: 5000 },
+        {
+          id: 'only',
+          name: 'Only Phase',
+          startMonth: 0,
+          endMonth: 2,
+          monthlyCost: 5000,
+        },
       ],
     });
 
@@ -312,8 +392,20 @@ describe('runProjection', () => {
     const plan = createPlan({
       premises: { salary: 10000 },
       phases: [
-        { id: 'phase-a', name: 'A', startMonth: 0, endMonth: 1, monthlyCost: 3000 },
-        { id: 'phase-b', name: 'B', startMonth: 2, endMonth: 3, monthlyCost: 7000 },
+        {
+          id: 'phase-a',
+          name: 'A',
+          startMonth: 0,
+          endMonth: 1,
+          monthlyCost: 3000,
+        },
+        {
+          id: 'phase-b',
+          name: 'B',
+          startMonth: 2,
+          endMonth: 3,
+          monthlyCost: 7000,
+        },
       ],
     });
 

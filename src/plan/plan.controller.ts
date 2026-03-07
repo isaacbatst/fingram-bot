@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { VaultAccessTokenGuard } from '@/vault/vault-access-token.guard';
 import { VaultSession } from '@/vault/vault-session.decorator';
+import { MilestoneType } from './domain/plan';
 import { PlanService } from './plan.service';
 
 @Controller('plans')
@@ -34,9 +35,20 @@ export class PlanController {
       startDate: string;
       premises: {
         salary: number;
-        monthlyCost: number;
         monthlyInvestment?: number;
       };
+      phases: {
+        id: string;
+        name: string;
+        startMonth: number;
+        endMonth: number;
+        monthlyCost: number;
+      }[];
+      milestones?: {
+        month: number;
+        label: string;
+        type: MilestoneType;
+      }[];
       fundAllocation: {
         fundId: string;
         label: string;
@@ -61,8 +73,8 @@ export class PlanController {
       throw new BadRequestException('Salario e obrigatorio');
     }
 
-    if (typeof data.premises.monthlyCost !== 'number') {
-      throw new BadRequestException('Custo mensal e obrigatorio');
+    if (!Array.isArray(data.phases) || data.phases.length === 0) {
+      throw new BadRequestException('Plano deve ter pelo menos uma fase');
     }
 
     if (!Array.isArray(data.fundAllocation)) {
@@ -87,6 +99,8 @@ export class PlanController {
       name: data.name,
       startDate: new Date(data.startDate),
       premises: data.premises,
+      phases: data.phases,
+      milestones: data.milestones,
       fundAllocation: data.fundAllocation,
     });
 

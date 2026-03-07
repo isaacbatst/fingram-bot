@@ -5,7 +5,14 @@ import {
   DrizzleDatabase,
 } from '@/shared/persistence/drizzle/drizzle.module';
 import { plan } from '@/shared/persistence/drizzle/schema';
-import { Plan, PlanStatus, Premises, FundRule } from '../../domain/plan';
+import {
+  Plan,
+  PlanStatus,
+  Premises,
+  FundRule,
+  Phase,
+  Milestone,
+} from '../../domain/plan';
 import { PlanRepository } from '../plan.repository';
 
 @Injectable()
@@ -23,6 +30,8 @@ export class PlanDrizzleRepository extends PlanRepository {
       startDate: planEntity.startDate,
       premises: planEntity.premises,
       fundAllocation: planEntity.fundAllocation,
+      phases: planEntity.phases,
+      milestones: planEntity.milestones,
       createdAt: planEntity.createdAt,
     });
   }
@@ -50,6 +59,8 @@ export class PlanDrizzleRepository extends PlanRepository {
         startDate: planEntity.startDate,
         premises: planEntity.premises,
         fundAllocation: planEntity.fundAllocation,
+        phases: planEntity.phases,
+        milestones: planEntity.milestones,
       })
       .where(eq(plan.id, planEntity.id));
   }
@@ -66,6 +77,8 @@ export class PlanDrizzleRepository extends PlanRepository {
     startDate: Date;
     premises: unknown;
     fundAllocation: unknown;
+    phases: unknown;
+    milestones: unknown;
     createdAt: Date;
   }): Plan {
     return Plan.restore({
@@ -76,6 +89,8 @@ export class PlanDrizzleRepository extends PlanRepository {
       startDate: row.startDate,
       premises: row.premises as Premises,
       fundAllocation: row.fundAllocation as FundRule[],
+      phases: (row.phases as Phase[]) ?? [],
+      milestones: (row.milestones as Milestone[]) ?? [],
       createdAt: row.createdAt,
     });
   }

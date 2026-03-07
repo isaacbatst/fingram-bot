@@ -17,7 +17,13 @@ describe('PlanService', () => {
   ];
 
   const defaultPhases: Phase[] = [
-    { id: 'general', name: 'Geral', startMonth: 0, endMonth: 119, monthlyCost: 6000 },
+    {
+      id: 'general',
+      name: 'Geral',
+      startMonth: 0,
+      endMonth: 119,
+      monthlyCost: 6000,
+    },
   ];
 
   beforeEach(() => {
@@ -104,7 +110,15 @@ describe('PlanService', () => {
         name: 'Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        phases: [{ id: 'p', name: 'P', startMonth: 0, endMonth: 11, monthlyCost: -100 }],
+        phases: [
+          {
+            id: 'p',
+            name: 'P',
+            startMonth: 0,
+            endMonth: 11,
+            monthlyCost: -100,
+          },
+        ],
         fundAllocation: [],
       });
 
@@ -117,11 +131,21 @@ describe('PlanService', () => {
         name: 'Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        phases: [{ id: 'p', name: 'P', startMonth: 10, endMonth: 5, monthlyCost: 1000 }],
+        phases: [
+          {
+            id: 'p',
+            name: 'P',
+            startMonth: 10,
+            endMonth: 5,
+            monthlyCost: 1000,
+          },
+        ],
         fundAllocation: [],
       });
 
-      expect(error).toBe('Mes inicial da fase deve ser menor ou igual ao mes final');
+      expect(error).toBe(
+        'Mes inicial da fase deve ser menor ou igual ao mes final',
+      );
     });
 
     it('should reject negative monthly investment', async () => {

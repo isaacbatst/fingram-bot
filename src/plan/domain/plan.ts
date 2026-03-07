@@ -22,7 +22,12 @@ export interface Phase {
   monthlyCost: number;
 }
 
-export type MilestoneType = 'start' | 'fund_complete' | 'action' | 'decision' | 'celebration';
+export type MilestoneType =
+  | 'start'
+  | 'fund_complete'
+  | 'action'
+  | 'decision'
+  | 'celebration';
 
 export interface Milestone {
   month: number;
