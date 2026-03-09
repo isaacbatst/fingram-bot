@@ -129,9 +129,7 @@ describe('runProjection', () => {
           target: 50000,
           monthlyAmount: [],
           holdsFunds: false,
-          scheduledPayments: [
-            { month: 2, amount: 10000, label: 'Entrada' },
-          ],
+          scheduledPayments: [{ month: 2, amount: 10000, label: 'Entrada' }],
         },
       ],
     });

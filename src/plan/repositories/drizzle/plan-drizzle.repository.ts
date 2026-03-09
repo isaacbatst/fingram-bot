@@ -5,13 +5,7 @@ import {
   DrizzleDatabase,
 } from '@/shared/persistence/drizzle/drizzle.module';
 import { plan } from '@/shared/persistence/drizzle/schema';
-import {
-  Plan,
-  PlanStatus,
-  Premises,
-  Box,
-  Milestone,
-} from '../../domain/plan';
+import { Plan, PlanStatus, Premises, Box, Milestone } from '../../domain/plan';
 import { PlanRepository } from '../plan.repository';
 
 @Injectable()

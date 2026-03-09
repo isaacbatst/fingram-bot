@@ -19,9 +19,7 @@ function getBoxOutflow(
       (sum, p) => sum + p.amount,
       0,
     );
-    const hasAdditional = paymentsThisMonth.some(
-      (p) => p.additionalToMonthly,
-    );
+    const hasAdditional = paymentsThisMonth.some((p) => p.additionalToMonthly);
 
     let outflow = scheduledTotal;
     if (hasAdditional) {

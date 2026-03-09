@@ -191,9 +191,7 @@ describe('PlanService', () => {
         ],
       });
 
-      expect(error).toBe(
-        'Valor do pagamento agendado deve ser maior que zero',
-      );
+      expect(error).toBe('Valor do pagamento agendado deve ser maior que zero');
     });
 
     it('should reject scheduled payment with empty label', async () => {
