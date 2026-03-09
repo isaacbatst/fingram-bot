@@ -34,26 +34,26 @@ export class PlanController {
       name: string;
       startDate: string;
       premises: {
-        salary: number;
-        monthlyInvestment?: number;
+        salaryChangePoints: { month: number; amount: number }[];
+        costOfLivingChangePoints: { month: number; amount: number }[];
       };
-      phases: {
-        id: string;
-        name: string;
-        startMonth: number;
-        endMonth: number;
-        monthlyCost: number;
+      boxes: {
+        id?: string;
+        label: string;
+        target: number;
+        monthlyAmount: { month: number; amount: number }[];
+        holdsFunds: boolean;
+        scheduledPayments: {
+          month: number;
+          amount: number;
+          label: string;
+          additionalToMonthly?: boolean;
+        }[];
       }[];
       milestones?: {
         month: number;
         label: string;
         type: MilestoneType;
-      }[];
-      fundAllocation: {
-        fundId: string;
-        label: string;
-        target: number;
-        priority: number;
       }[];
     },
   ) {
@@ -69,29 +69,26 @@ export class PlanController {
       throw new BadRequestException('Premissas sao obrigatorias');
     }
 
-    if (typeof data.premises.salary !== 'number') {
-      throw new BadRequestException('Salario e obrigatorio');
+    if (
+      !Array.isArray(data.premises.salaryChangePoints) ||
+      data.premises.salaryChangePoints.length === 0
+    ) {
+      throw new BadRequestException(
+        'Premissas devem ter pelo menos um change point de salario',
+      );
     }
 
-    if (!Array.isArray(data.phases) || data.phases.length === 0) {
-      throw new BadRequestException('Plano deve ter pelo menos uma fase');
+    if (
+      !Array.isArray(data.premises.costOfLivingChangePoints) ||
+      data.premises.costOfLivingChangePoints.length === 0
+    ) {
+      throw new BadRequestException(
+        'Premissas devem ter pelo menos um change point de custo de vida',
+      );
     }
 
-    if (!Array.isArray(data.fundAllocation)) {
-      throw new BadRequestException('Alocacao de fundos e obrigatoria');
-    }
-
-    for (const fund of data.fundAllocation) {
-      if (!fund.fundId || !fund.label || typeof fund.priority !== 'number') {
-        throw new BadRequestException(
-          'Cada fundo deve ter fundId, label, target e priority',
-        );
-      }
-      if (typeof fund.target !== 'number' || fund.target < 0) {
-        throw new BadRequestException(
-          'Target do fundo deve ser um numero >= 0',
-        );
-      }
+    if (!Array.isArray(data.boxes)) {
+      throw new BadRequestException('Boxes deve ser um array');
     }
 
     const [error, plan] = await this.planService.create({
@@ -99,9 +96,14 @@ export class PlanController {
       name: data.name,
       startDate: new Date(data.startDate),
       premises: data.premises,
-      phases: data.phases,
-      milestones: data.milestones,
-      fundAllocation: data.fundAllocation,
+      boxes: data.boxes.map((b) => ({
+        id: b.id || '',
+        label: b.label,
+        target: b.target,
+        monthlyAmount: b.monthlyAmount ?? [],
+        holdsFunds: b.holdsFunds ?? true,
+        scheduledPayments: b.scheduledPayments ?? [],
+      })),
     });
 
     if (error !== null) {
