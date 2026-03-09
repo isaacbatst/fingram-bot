@@ -1,25 +1,27 @@
 import * as crypto from 'crypto';
+import { ChangePoint } from './change-point';
 
 export type PlanStatus = 'draft' | 'active' | 'archived';
 
 export interface Premises {
-  salary: number;
-  monthlyInvestment?: number;
+  salaryChangePoints: ChangePoint[];
+  costOfLivingChangePoints: ChangePoint[];
 }
 
-export interface FundRule {
-  fundId: string;
+export interface BoxScheduledPayment {
+  month: number;
+  amount: number;
+  label: string;
+  additionalToMonthly?: boolean;
+}
+
+export interface Box {
+  id: string;
   label: string;
   target: number;
-  priority: number;
-}
-
-export interface Phase {
-  id: string;
-  name: string;
-  startMonth: number;
-  endMonth: number;
-  monthlyCost: number;
+  monthlyAmount: ChangePoint[];
+  holdsFunds: boolean;
+  scheduledPayments: BoxScheduledPayment[];
 }
 
 export type MilestoneType =
@@ -38,11 +40,15 @@ export interface Milestone {
 export interface MonthData {
   month: number;
   date: Date;
-  phase: string;
   income: number;
-  expenses: number;
+  costOfLiving: number;
   surplus: number;
-  funds: Record<string, number>;
+  cash: number;
+  boxes: Record<string, number>;
+  boxPayments: Record<string, number>;
+  scheduledPayments: { boxId: string; amount: number; label: string }[];
+  totalWealth: number;
+  totalCommitted: number;
 }
 
 type ConstructorParams = {
@@ -52,8 +58,7 @@ type ConstructorParams = {
   status: PlanStatus;
   startDate: Date;
   premises: Premises;
-  fundAllocation: FundRule[];
-  phases: Phase[];
+  boxes: Box[];
   milestones: Milestone[];
   createdAt: Date;
 };
@@ -63,8 +68,7 @@ type CreateParams = {
   name: string;
   startDate: Date;
   premises: Premises;
-  fundAllocation: FundRule[];
-  phases: Phase[];
+  boxes: Box[];
   milestones?: Milestone[];
 };
 
@@ -77,8 +81,10 @@ export class Plan {
       status: 'draft',
       startDate: params.startDate,
       premises: params.premises,
-      fundAllocation: params.fundAllocation,
-      phases: params.phases,
+      boxes: params.boxes.map((b) => ({
+        ...b,
+        id: b.id || crypto.randomUUID(),
+      })),
       milestones: params.milestones ?? [],
       createdAt: new Date(),
     });
@@ -94,8 +100,7 @@ export class Plan {
   public status: PlanStatus;
   public startDate: Date;
   public premises: Premises;
-  public fundAllocation: FundRule[];
-  public phases: Phase[];
+  public boxes: Box[];
   public milestones: Milestone[];
   readonly createdAt: Date;
 
@@ -106,8 +111,7 @@ export class Plan {
     this.status = params.status;
     this.startDate = params.startDate;
     this.premises = params.premises;
-    this.fundAllocation = params.fundAllocation;
-    this.phases = params.phases;
+    this.boxes = params.boxes;
     this.milestones = params.milestones;
     this.createdAt = params.createdAt;
   }
@@ -120,8 +124,7 @@ export class Plan {
       status: this.status,
       startDate: this.startDate.toISOString(),
       premises: this.premises,
-      fundAllocation: this.fundAllocation,
-      phases: this.phases,
+      boxes: this.boxes,
       milestones: this.milestones,
       createdAt: this.createdAt.toISOString(),
     };

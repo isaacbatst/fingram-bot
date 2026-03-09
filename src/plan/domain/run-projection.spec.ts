@@ -9,20 +9,19 @@ function createPlan(
     vaultId: 'vault-1',
     name: 'Test Plan',
     startDate: new Date('2026-01-01'),
-    premises: { salary: 10000 },
-    phases: [
+    premises: {
+      salaryChangePoints: [{ month: 0, amount: 10000 }],
+      costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+    },
+    boxes: [
       {
-        id: 'default',
-        name: 'Default',
-        startMonth: 0,
-        endMonth: 119,
-        monthlyCost: 6000,
+        id: 'reserva',
+        label: 'Reserva',
+        target: 10000,
+        monthlyAmount: [{ month: 0, amount: 4000 }],
+        holdsFunds: true,
+        scheduledPayments: [],
       },
-    ],
-    fundAllocation: [
-      { fundId: 'emergency', label: 'Emergencia', target: 10000, priority: 1 },
-      { fundId: 'car', label: 'Carro', target: 20000, priority: 2 },
-      { fundId: 'free', label: 'Livre', target: 0, priority: 3 },
     ],
     ...overrides,
   });
@@ -35,432 +34,386 @@ describe('runProjection', () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].income).toBe(10000);
-    expect(result[0].expenses).toBe(6000);
-    expect(result[0].surplus).toBe(4000);
+    expect(result[0].costOfLiving).toBe(6000);
+    expect(result[0].surplus).toBe(0);
+    expect(result[0].cash).toBe(0);
+    expect(result[0].boxes['reserva']).toBe(4000);
   });
 
   it('should return correct month numbers and dates', () => {
     const plan = createPlan({
-      startDate: new Date(2026, 2, 1), // March 1, 2026 (local time)
+      startDate: new Date(2026, 2, 1),
     });
     const result = runProjection(plan, 3);
 
     expect(result[0].month).toBe(1);
-    expect(result[0].date.getFullYear()).toBe(2026);
-    expect(result[0].date.getMonth()).toBe(2); // March = 2
-
+    expect(result[0].date.getMonth()).toBe(2);
     expect(result[1].month).toBe(2);
-    expect(result[1].date.getMonth()).toBe(3); // April = 3
-
+    expect(result[1].date.getMonth()).toBe(3);
     expect(result[2].month).toBe(3);
-    expect(result[2].date.getMonth()).toBe(4); // May = 4
+    expect(result[2].date.getMonth()).toBe(4);
   });
 
-  it('should allocate surplus via waterfall (priority order)', () => {
+  it('should handle salary change points', () => {
     const plan = createPlan({
-      premises: { salary: 10000 },
-      phases: [
-        {
-          id: 'p1',
-          name: 'Phase 1',
-          startMonth: 0,
-          endMonth: 119,
-          monthlyCost: 6000,
-        },
-      ],
-      fundAllocation: [
-        {
-          fundId: 'emergency',
-          label: 'Emergencia',
-          target: 10000,
-          priority: 1,
-        },
-        { fundId: 'car', label: 'Carro', target: 5000, priority: 2 },
-      ],
+      premises: {
+        salaryChangePoints: [
+          { month: 0, amount: 10000 },
+          { month: 3, amount: 15000 },
+        ],
+        costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+      },
+      boxes: [],
     });
-
-    // Surplus = 4000/month
-    // Month 1: emergency gets 4000 (total: 4000)
-    // Month 2: emergency gets 4000 (total: 8000)
-    // Month 3: emergency gets 2000 (full at 10000), car gets 2000
-    // Month 4: car gets 3000 (full at 5000), nothing left
-    // Month 5: nothing to allocate (both full), surplus still flows
-
     const result = runProjection(plan, 5);
 
-    // Month 1
-    expect(result[0].funds['emergency']).toBe(4000);
-    expect(result[0].funds['car']).toBe(0);
-
-    // Month 2
-    expect(result[1].funds['emergency']).toBe(8000);
-    expect(result[1].funds['car']).toBe(0);
-
-    // Month 3: emergency fills, overflow to car
-    expect(result[2].funds['emergency']).toBe(10000);
-    expect(result[2].funds['car']).toBe(2000);
-
-    // Month 4: car gets remaining
-    expect(result[3].funds['emergency']).toBe(10000);
-    expect(result[3].funds['car']).toBe(5000);
-
-    // Month 5: both full, no more allocation
-    expect(result[4].funds['emergency']).toBe(10000);
-    expect(result[4].funds['car']).toBe(5000);
+    expect(result[0].income).toBe(10000);
+    expect(result[2].income).toBe(10000);
+    expect(result[3].income).toBe(15000);
+    expect(result[4].income).toBe(15000);
   });
 
-  it('should handle free-accumulating fund (target=0)', () => {
+  it('should handle cost of living change points', () => {
     const plan = createPlan({
-      premises: { salary: 10000 },
-      phases: [
+      premises: {
+        salaryChangePoints: [{ month: 0, amount: 10000 }],
+        costOfLivingChangePoints: [
+          { month: 0, amount: 6000 },
+          { month: 2, amount: 5000 },
+        ],
+      },
+      boxes: [],
+    });
+    const result = runProjection(plan, 4);
+
+    expect(result[0].costOfLiving).toBe(6000);
+    expect(result[1].costOfLiving).toBe(6000);
+    expect(result[2].costOfLiving).toBe(5000);
+    expect(result[3].costOfLiving).toBe(5000);
+  });
+
+  it('should stop box when target is reached', () => {
+    const plan = createPlan({
+      premises: {
+        salaryChangePoints: [{ month: 0, amount: 10000 }],
+        costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+      },
+      boxes: [
         {
-          id: 'p1',
-          name: 'Phase 1',
-          startMonth: 0,
-          endMonth: 119,
-          monthlyCost: 6000,
-        },
-      ],
-      fundAllocation: [
-        {
-          fundId: 'emergency',
-          label: 'Emergencia',
+          id: 'reserva',
+          label: 'Reserva',
           target: 5000,
-          priority: 1,
+          monthlyAmount: [{ month: 0, amount: 4000 }],
+          holdsFunds: true,
+          scheduledPayments: [],
         },
-        { fundId: 'free', label: 'Livre', target: 0, priority: 2 },
       ],
     });
-
-    // Surplus = 4000/month
-    // Month 1: emergency gets 4000
-    // Month 2: emergency gets 1000 (full), free gets 3000
-    // Month 3: free gets 4000 (total: 7000)
-
     const result = runProjection(plan, 3);
 
-    expect(result[0].funds['emergency']).toBe(4000);
-    expect(result[0].funds['free']).toBe(0);
-
-    expect(result[1].funds['emergency']).toBe(5000);
-    expect(result[1].funds['free']).toBe(3000);
-
-    expect(result[2].funds['emergency']).toBe(5000);
-    expect(result[2].funds['free']).toBe(7000);
+    expect(result[0].boxes['reserva']).toBe(4000);
+    expect(result[0].boxPayments['reserva']).toBe(4000);
+    expect(result[1].boxes['reserva']).toBe(5000);
+    expect(result[1].boxPayments['reserva']).toBe(1000);
+    expect(result[2].boxes['reserva']).toBe(5000);
+    expect(result[2].boxPayments['reserva']).toBe(0);
+    expect(result[2].cash).toBeGreaterThan(0);
   });
 
-  it('should handle negative surplus (no allocation)', () => {
+  it('should handle box with no monthly amount (only scheduled payments)', () => {
     const plan = createPlan({
-      premises: { salary: 5000 },
-      phases: [
+      boxes: [
         {
-          id: 'p1',
-          name: 'Phase 1',
-          startMonth: 0,
-          endMonth: 119,
-          monthlyCost: 7000,
-        },
-      ],
-      fundAllocation: [
-        {
-          fundId: 'emergency',
-          label: 'Emergencia',
-          target: 10000,
-          priority: 1,
+          id: 'pontual',
+          label: 'Pontual',
+          target: 50000,
+          monthlyAmount: [],
+          holdsFunds: false,
+          scheduledPayments: [
+            { month: 2, amount: 10000, label: 'Entrada' },
+          ],
         },
       ],
     });
+    const result = runProjection(plan, 4);
 
+    expect(result[0].boxPayments['pontual']).toBe(0);
+    expect(result[1].boxPayments['pontual']).toBe(0);
+    expect(result[2].boxPayments['pontual']).toBe(10000);
+    expect(result[2].boxes['pontual']).toBe(10000);
+    expect(result[3].boxPayments['pontual']).toBe(0);
+  });
+
+  it('should replace monthly with scheduled payment by default', () => {
+    const plan = createPlan({
+      boxes: [
+        {
+          id: 'terreno',
+          label: 'Terreno',
+          target: 100000,
+          monthlyAmount: [{ month: 0, amount: 2000 }],
+          holdsFunds: false,
+          scheduledPayments: [
+            { month: 1, amount: 10000, label: 'Entrada 1/4' },
+          ],
+        },
+      ],
+    });
     const result = runProjection(plan, 3);
 
-    // Surplus is -2000, no allocation should happen
-    expect(result[0].surplus).toBe(-2000);
-    expect(result[0].funds['emergency']).toBe(0);
-    expect(result[1].funds['emergency']).toBe(0);
-    expect(result[2].funds['emergency']).toBe(0);
+    expect(result[0].boxPayments['terreno']).toBe(2000);
+    expect(result[1].boxPayments['terreno']).toBe(10000);
+    expect(result[1].scheduledPayments).toEqual([
+      { boxId: 'terreno', amount: 10000, label: 'Entrada 1/4' },
+    ]);
+    expect(result[2].boxPayments['terreno']).toBe(2000);
   });
 
-  it('should handle all funds full (surplus has nowhere to go)', () => {
+  it('should add monthly when additionalToMonthly is true', () => {
     const plan = createPlan({
-      premises: { salary: 10000 },
-      phases: [
+      boxes: [
         {
-          id: 'p1',
-          name: 'Phase 1',
-          startMonth: 0,
-          endMonth: 119,
-          monthlyCost: 6000,
+          id: 'terreno',
+          label: 'Terreno',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 2000 }],
+          holdsFunds: false,
+          scheduledPayments: [
+            {
+              month: 1,
+              amount: 10000,
+              label: 'Extra',
+              additionalToMonthly: true,
+            },
+          ],
         },
       ],
-      fundAllocation: [
-        { fundId: 'small', label: 'Pequeno', target: 2000, priority: 1 },
-      ],
     });
-
-    // Surplus = 4000, but fund only needs 2000
-    // Month 1: small gets 2000 (full), 2000 unallocated
-    // Month 2: small stays 2000, 4000 unallocated
-
     const result = runProjection(plan, 2);
 
-    expect(result[0].funds['small']).toBe(2000);
-    expect(result[1].funds['small']).toBe(2000);
+    expect(result[1].boxPayments['terreno']).toBe(12000);
   });
 
-  it('should deduct monthly investment before waterfall', () => {
+  it('should sum multiple scheduled payments in same month same box', () => {
     const plan = createPlan({
-      premises: { salary: 10000, monthlyInvestment: 800 },
-      phases: [
+      boxes: [
         {
-          id: 'p1',
-          name: 'Phase 1',
-          startMonth: 0,
-          endMonth: 119,
-          monthlyCost: 6000,
-        },
-      ],
-      fundAllocation: [
-        {
-          fundId: 'emergency',
-          label: 'Emergencia',
-          target: 10000,
-          priority: 1,
+          id: 'terreno',
+          label: 'Terreno',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          holdsFunds: false,
+          scheduledPayments: [
+            { month: 2, amount: 5000, label: 'Part A' },
+            { month: 2, amount: 3000, label: 'Part B' },
+          ],
         },
       ],
     });
+    const result = runProjection(plan, 3);
 
-    // Surplus = 10000 - 6000 = 4000
-    // Available after investment = 4000 - 800 = 3200
-    // Emergency gets 3200
+    expect(result[2].boxPayments['terreno']).toBe(8000);
+    expect(result[2].scheduledPayments).toHaveLength(2);
+  });
 
+  it('should NOT cap scheduled payments at target', () => {
+    const plan = createPlan({
+      boxes: [
+        {
+          id: 'box',
+          label: 'Box',
+          target: 5000,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          holdsFunds: true,
+          scheduledPayments: [
+            { month: 3, amount: 10000, label: 'Big payment' },
+          ],
+        },
+      ],
+    });
+    const result = runProjection(plan, 5);
+
+    expect(result[2].boxes['box']).toBe(3000);
+    expect(result[3].boxes['box']).toBe(13000);
+    expect(result[3].boxPayments['box']).toBe(10000);
+    expect(result[4].boxPayments['box']).toBe(0);
+  });
+
+  it('should handle negative surplus (cash goes negative)', () => {
+    const plan = createPlan({
+      premises: {
+        salaryChangePoints: [{ month: 0, amount: 5000 }],
+        costOfLivingChangePoints: [{ month: 0, amount: 7000 }],
+      },
+      boxes: [],
+    });
+    const result = runProjection(plan, 3);
+
+    expect(result[0].surplus).toBe(-2000);
+    expect(result[0].cash).toBe(-2000);
+    expect(result[1].cash).toBe(-4000);
+    expect(result[2].cash).toBe(-6000);
+  });
+
+  it('should compute totalWealth and totalCommitted correctly', () => {
+    const plan = createPlan({
+      premises: {
+        salaryChangePoints: [{ month: 0, amount: 20000 }],
+        costOfLivingChangePoints: [{ month: 0, amount: 10000 }],
+      },
+      boxes: [
+        {
+          id: 'reserva',
+          label: 'Reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 3000 }],
+          holdsFunds: true,
+          scheduledPayments: [],
+        },
+        {
+          id: 'terreno',
+          label: 'Terreno',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 2000 }],
+          holdsFunds: false,
+          scheduledPayments: [],
+        },
+      ],
+    });
     const result = runProjection(plan, 1);
 
-    expect(result[0].surplus).toBe(4000); // surplus is before investment deduction
-    expect(result[0].funds['emergency']).toBe(3200);
+    expect(result[0].surplus).toBe(5000);
+    expect(result[0].cash).toBe(5000);
+    expect(result[0].totalWealth).toBe(8000);
+    expect(result[0].totalCommitted).toBe(2000);
   });
 
-  it('should not allocate when investment exceeds surplus', () => {
+  it('should default to 120 months when no explicit months given', () => {
+    const plan = createPlan({ boxes: [] });
+    const result = runProjection(plan);
+    expect(result).toHaveLength(120);
+  });
+
+  it('should handle change point without month 0 (uses fallback 0)', () => {
     const plan = createPlan({
-      premises: { salary: 10000, monthlyInvestment: 800 },
-      phases: [
+      premises: {
+        salaryChangePoints: [{ month: 5, amount: 10000 }],
+        costOfLivingChangePoints: [{ month: 0, amount: 0 }],
+      },
+      boxes: [],
+    });
+    const result = runProjection(plan, 7);
+
+    expect(result[0].income).toBe(0);
+    expect(result[4].income).toBe(0);
+    expect(result[5].income).toBe(10000);
+    expect(result[6].income).toBe(10000);
+  });
+
+  it('should handle box monthlyAmount change points', () => {
+    const plan = createPlan({
+      premises: {
+        salaryChangePoints: [{ month: 0, amount: 20000 }],
+        costOfLivingChangePoints: [{ month: 0, amount: 5000 }],
+      },
+      boxes: [
         {
-          id: 'p1',
-          name: 'Phase 1',
-          startMonth: 0,
-          endMonth: 119,
-          monthlyCost: 9500,
-        },
-      ],
-      fundAllocation: [
-        {
-          fundId: 'emergency',
-          label: 'Emergencia',
-          target: 10000,
-          priority: 1,
+          id: 'terreno',
+          label: 'Terreno',
+          target: 0,
+          monthlyAmount: [
+            { month: 0, amount: 1893 },
+            { month: 10, amount: 2741 },
+          ],
+          holdsFunds: false,
+          scheduledPayments: [],
         },
       ],
     });
+    const result = runProjection(plan, 12);
 
-    // Surplus = 500, investment = 800
-    // Available = 500 - 800 = -300 (negative, no allocation)
-
-    const result = runProjection(plan, 1);
-
-    expect(result[0].surplus).toBe(500);
-    expect(result[0].funds['emergency']).toBe(0);
+    expect(result[0].boxPayments['terreno']).toBe(1893);
+    expect(result[9].boxPayments['terreno']).toBe(1893);
+    expect(result[10].boxPayments['terreno']).toBe(2741);
+    expect(result[11].boxPayments['terreno']).toBe(2741);
   });
 
-  it('should handle empty fund allocation', () => {
-    const plan = createPlan({
-      fundAllocation: [],
-    });
-
+  it('should handle empty boxes', () => {
+    const plan = createPlan({ boxes: [] });
     const result = runProjection(plan, 3);
 
     expect(result).toHaveLength(3);
     expect(result[0].surplus).toBe(4000);
-    expect(Object.keys(result[0].funds)).toHaveLength(0);
+    expect(result[0].cash).toBe(4000);
+    expect(Object.keys(result[0].boxes)).toHaveLength(0);
   });
 
-  it('should default to 120 months', () => {
-    const plan = createPlan();
-    const result = runProjection(plan);
-
-    expect(result).toHaveLength(120);
-  });
-
-  it('should accumulate funds across months correctly', () => {
+  it('should handle boxes deducting unconditionally even when cash is negative', () => {
     const plan = createPlan({
-      premises: { salary: 10000 },
-      phases: [
+      premises: {
+        salaryChangePoints: [{ month: 0, amount: 10000 }],
+        costOfLivingChangePoints: [{ month: 0, amount: 9500 }],
+      },
+      boxes: [
         {
-          id: 'p1',
-          name: 'Phase 1',
-          startMonth: 0,
-          endMonth: 119,
-          monthlyCost: 9000,
+          id: 'acoes',
+          label: 'Acoes',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 800 }],
+          holdsFunds: true,
+          scheduledPayments: [],
         },
-      ],
-      fundAllocation: [
-        {
-          fundId: 'emergency',
-          label: 'Emergencia',
-          target: 3000,
-          priority: 1,
-        },
-        { fundId: 'free', label: 'Livre', target: 0, priority: 2 },
       ],
     });
+    const result = runProjection(plan, 1);
 
-    // Surplus = 1000/month
-    // Months 1-3: emergency grows 1000/month to 3000
-    // Month 4+: emergency stays 3000, free grows 1000/month
+    expect(result[0].surplus).toBe(-300);
+    expect(result[0].cash).toBe(-300);
+    expect(result[0].boxes['acoes']).toBe(800);
+  });
 
+  it('should project real plan.md scenario (4 down payments)', () => {
+    const plan = createPlan({
+      premises: {
+        salaryChangePoints: [{ month: 0, amount: 33000 }],
+        costOfLivingChangePoints: [{ month: 0, amount: 18000 }],
+      },
+      boxes: [
+        {
+          id: 'terreno',
+          label: 'Parcela terreno',
+          target: 530000,
+          monthlyAmount: [{ month: 0, amount: 1893 }],
+          holdsFunds: false,
+          scheduledPayments: [
+            { month: 0, amount: 10000, label: 'Entrada 1/4' },
+            { month: 1, amount: 10000, label: 'Entrada 2/4' },
+            { month: 2, amount: 10000, label: 'Entrada 3/4' },
+            { month: 3, amount: 23000, label: 'Entrada 4/4' },
+          ],
+        },
+        {
+          id: 'acoes',
+          label: 'Acoes',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 800 }],
+          holdsFunds: true,
+          scheduledPayments: [],
+        },
+      ],
+    });
     const result = runProjection(plan, 6);
 
-    expect(result[0].funds['emergency']).toBe(1000);
-    expect(result[1].funds['emergency']).toBe(2000);
-    expect(result[2].funds['emergency']).toBe(3000);
-    expect(result[3].funds['emergency']).toBe(3000);
+    expect(result[0].income).toBe(33000);
+    expect(result[0].boxPayments['terreno']).toBe(10000);
+    expect(result[0].boxPayments['acoes']).toBe(800);
+    expect(result[0].surplus).toBe(4200);
 
-    expect(result[2].funds['free']).toBe(0);
-    expect(result[3].funds['free']).toBe(1000);
-    expect(result[4].funds['free']).toBe(2000);
-    expect(result[5].funds['free']).toBe(3000);
-  });
+    expect(result[3].boxPayments['terreno']).toBe(23000);
+    expect(result[3].surplus).toBe(-8800);
+    expect(result[3].cash).toBe(3800);
 
-  it('should use different costs per phase', () => {
-    const plan = createPlan({
-      premises: { salary: 10000 },
-      phases: [
-        {
-          id: 'cheap',
-          name: 'Cheap',
-          startMonth: 0,
-          endMonth: 2,
-          monthlyCost: 4000,
-        },
-        {
-          id: 'expensive',
-          name: 'Expensive',
-          startMonth: 3,
-          endMonth: 5,
-          monthlyCost: 8000,
-        },
-      ],
-    });
-
-    const result = runProjection(plan, 6);
-
-    expect(result[0].expenses).toBe(4000);
-    expect(result[0].surplus).toBe(6000);
-    expect(result[0].phase).toBe('cheap');
-    expect(result[2].expenses).toBe(4000);
-    expect(result[2].phase).toBe('cheap');
-
-    expect(result[3].expenses).toBe(8000);
-    expect(result[3].surplus).toBe(2000);
-    expect(result[3].phase).toBe('expensive');
-    expect(result[5].expenses).toBe(8000);
-    expect(result[5].phase).toBe('expensive');
-  });
-
-  it('should have zero cost for months outside any phase', () => {
-    const plan = createPlan({
-      premises: { salary: 10000 },
-      phases: [
-        {
-          id: 'only',
-          name: 'Only Phase',
-          startMonth: 0,
-          endMonth: 2,
-          monthlyCost: 5000,
-        },
-      ],
-    });
-
-    const result = runProjection(plan, 5);
-
-    expect(result[0].expenses).toBe(5000);
-    expect(result[2].expenses).toBe(5000);
-    expect(result[3].expenses).toBe(0);
-    expect(result[3].surplus).toBe(10000);
-    expect(result[3].phase).toBe('');
-  });
-
-  it('should include phase id in MonthData', () => {
-    const plan = createPlan({
-      premises: { salary: 10000 },
-      phases: [
-        {
-          id: 'phase-a',
-          name: 'A',
-          startMonth: 0,
-          endMonth: 1,
-          monthlyCost: 3000,
-        },
-        {
-          id: 'phase-b',
-          name: 'B',
-          startMonth: 2,
-          endMonth: 3,
-          monthlyCost: 7000,
-        },
-      ],
-    });
-
-    const result = runProjection(plan, 4);
-
-    expect(result[0].phase).toBe('phase-a');
-    expect(result[1].phase).toBe('phase-a');
-    expect(result[2].phase).toBe('phase-b');
-    expect(result[3].phase).toBe('phase-b');
-  });
-
-  it('should project plan.md v4 phases correctly', () => {
-    const plan = createPlan({
-      premises: { salary: 33000, monthlyInvestment: 800 },
-      phases: [
-        { id: 'entrada', name: 'Entrada terreno', startMonth: 0, endMonth: 4, monthlyCost: 18000 },
-        { id: 'casamento', name: 'Pre-entrega + casamento', startMonth: 5, endMonth: 11, monthlyCost: 20500 },
-        { id: 'pre-entrega', name: 'Pre-entrega', startMonth: 12, endMonth: 26, monthlyCost: 18000 },
-        { id: 'casa-quitada', name: 'Casa quitada', startMonth: 27, endMonth: 32, monthlyCost: 17400 },
-        { id: 'pos-entrega', name: 'Pos-entrega', startMonth: 33, endMonth: 55, monthlyCost: 20141 },
-        { id: 'terreno-quitado', name: 'Terreno quitado', startMonth: 56, endMonth: 73, monthlyCost: 17400 },
-      ],
-      fundAllocation: [
-        { fundId: 'reserva', label: 'Reserva', target: 126000, priority: 1 },
-        { fundId: 'casa', label: 'Casa', target: 110000, priority: 2 },
-        { fundId: 'livre', label: 'Livre', target: 0, priority: 3 },
-      ],
-    });
-
-    const result = runProjection(plan, 74);
-
-    // Month 1 (index 0): entrada phase, surplus = 33000 - 18000 = 15000, available = 15000 - 800 = 14200
-    expect(result[0].phase).toBe('entrada');
-    expect(result[0].surplus).toBe(15000);
-    expect(result[0].funds['reserva']).toBe(14200);
-
-    // Month 6 (index 5): casamento phase, surplus = 33000 - 20500 = 12500, available = 11700
-    expect(result[5].phase).toBe('casamento');
-    expect(result[5].surplus).toBe(12500);
-
-    // Month 12 (index 11): last month of casamento
-    expect(result[11].phase).toBe('casamento');
-
-    // Month 13 (index 12): pre-entrega phase, surplus = 33000 - 18000 = 15000
-    expect(result[12].phase).toBe('pre-entrega');
-    expect(result[12].surplus).toBe(15000);
-
-    // Reserva should be complete around month 10-11 (126000 / 14200 per month in early phases)
-    // Then casa starts filling
-    const reservaCompleteMonth = result.findIndex((m) => m.funds['reserva'] >= 126000);
-    expect(reservaCompleteMonth).toBeGreaterThan(0);
-    expect(result[reservaCompleteMonth].funds['reserva']).toBe(126000);
-
-    // By month 74, livre should be accumulating
-    expect(result[73].funds['livre']).toBeGreaterThan(0);
-    expect(result[73].phase).toBe('terreno-quitado');
+    expect(result[4].boxPayments['terreno']).toBe(1893);
+    expect(result[4].surplus).toBe(33000 - 18000 - 1893 - 800);
   });
 });
