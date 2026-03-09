@@ -1,13 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Either, left, right } from '@/vault/domain/either';
-import {
-  Plan,
-  FundRule,
-  MonthData,
-  Premises,
-  Phase,
-  Milestone,
-} from './domain/plan';
+import { Plan, Box, MonthData, Premises } from './domain/plan';
 import { runProjection } from './domain/run-projection';
 import { PlanRepository } from './repositories/plan.repository';
 
@@ -22,9 +15,7 @@ export class PlanService {
     name: string;
     startDate: Date;
     premises: Premises;
-    phases: Phase[];
-    milestones?: Milestone[];
-    fundAllocation: FundRule[];
+    boxes: Box[];
   }): Promise<Either<string, Plan>> {
     this.logger.log(`Creating plan for vault: ${input.vaultId}`);
 
@@ -32,27 +23,66 @@ export class PlanService {
       return left('Nome do plano e obrigatorio');
     }
 
-    if (input.premises.salary < 0) {
-      return left('Salario nao pode ser negativo');
+    if (
+      !input.premises.salaryChangePoints ||
+      input.premises.salaryChangePoints.length === 0
+    ) {
+      return left('Premissas devem ter pelo menos um change point de salario');
     }
 
     if (
-      input.premises.monthlyInvestment !== undefined &&
-      input.premises.monthlyInvestment < 0
+      !input.premises.costOfLivingChangePoints ||
+      input.premises.costOfLivingChangePoints.length === 0
     ) {
-      return left('Investimento mensal nao pode ser negativo');
+      return left(
+        'Premissas devem ter pelo menos um change point de custo de vida',
+      );
     }
 
-    if (!input.phases || input.phases.length === 0) {
-      return left('Plano deve ter pelo menos uma fase');
-    }
-
-    for (const phase of input.phases) {
-      if (phase.monthlyCost < 0) {
-        return left('Custo mensal da fase nao pode ser negativo');
+    for (const cp of input.premises.salaryChangePoints) {
+      if (cp.amount < 0) {
+        return left('Valor do change point de salario nao pode ser negativo');
       }
-      if (phase.startMonth > phase.endMonth) {
-        return left('Mes inicial da fase deve ser menor ou igual ao mes final');
+      if (cp.month < 0) {
+        return left('Mes do change point nao pode ser negativo');
+      }
+    }
+
+    for (const cp of input.premises.costOfLivingChangePoints) {
+      if (cp.amount < 0) {
+        return left(
+          'Valor do change point de custo de vida nao pode ser negativo',
+        );
+      }
+      if (cp.month < 0) {
+        return left('Mes do change point nao pode ser negativo');
+      }
+    }
+
+    for (const box of input.boxes) {
+      if (!box.label?.trim()) {
+        return left('Label da box e obrigatoria');
+      }
+      if (box.target < 0) {
+        return left('Target da box nao pode ser negativo');
+      }
+      for (const cp of box.monthlyAmount) {
+        if (cp.amount < 0) {
+          return left(
+            'Valor do change point de aporte mensal nao pode ser negativo',
+          );
+        }
+      }
+      for (const sp of box.scheduledPayments) {
+        if (sp.amount <= 0) {
+          return left('Valor do pagamento agendado deve ser maior que zero');
+        }
+        if (sp.month < 0) {
+          return left('Mes do pagamento agendado nao pode ser negativo');
+        }
+        if (!sp.label?.trim()) {
+          return left('Label do pagamento agendado e obrigatoria');
+        }
       }
     }
 
@@ -61,9 +91,7 @@ export class PlanService {
       name: input.name.trim(),
       startDate: input.startDate,
       premises: input.premises,
-      phases: input.phases,
-      milestones: input.milestones,
-      fundAllocation: input.fundAllocation,
+      boxes: input.boxes,
     });
 
     await this.planRepository.create(plan);
