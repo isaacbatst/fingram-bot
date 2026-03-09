@@ -237,6 +237,38 @@ describe('runProjection', () => {
     expect(result[4].boxPayments['box']).toBe(0);
   });
 
+  it('should execute scheduled payments even after target is reached', () => {
+    const plan = createPlan({
+      boxes: [
+        {
+          id: 'box',
+          label: 'Box',
+          target: 2000,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          holdsFunds: false,
+          scheduledPayments: [
+            { month: 3, amount: 5000, label: 'Lump sum' },
+          ],
+        },
+      ],
+    });
+    const result = runProjection(plan, 5);
+
+    // Month 0: +1000 (balance 1000)
+    // Month 1: +1000 (balance 2000 = target reached)
+    // Month 2: target reached, no monthly (balance 2000)
+    // Month 3: scheduled payment fires despite target reached (balance 7000)
+    // Month 4: target reached, no monthly (balance 7000)
+    expect(result[1].boxes['box']).toBe(2000);
+    expect(result[2].boxPayments['box']).toBe(0);
+    expect(result[3].boxPayments['box']).toBe(5000);
+    expect(result[3].boxes['box']).toBe(7000);
+    expect(result[3].scheduledPayments).toEqual([
+      { boxId: 'box', amount: 5000, label: 'Lump sum' },
+    ]);
+    expect(result[4].boxPayments['box']).toBe(0);
+  });
+
   it('should handle negative surplus (cash goes negative)', () => {
     const plan = createPlan({
       premises: {

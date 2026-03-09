@@ -6,10 +6,6 @@ function getBoxOutflow(
   month: number,
   currentBalance: number,
 ): { outflow: number; scheduledPayments: { amount: number; label: string }[] } {
-  if (box.target > 0 && currentBalance >= box.target) {
-    return { outflow: 0, scheduledPayments: [] };
-  }
-
   const paymentsThisMonth = box.scheduledPayments.filter(
     (p) => p.month === month,
   );
@@ -33,6 +29,10 @@ function getBoxOutflow(
         label: p.label,
       })),
     };
+  }
+
+  if (box.target > 0 && currentBalance >= box.target) {
+    return { outflow: 0, scheduledPayments: [] };
   }
 
   let outflow = getActiveValue(box.monthlyAmount, month);
