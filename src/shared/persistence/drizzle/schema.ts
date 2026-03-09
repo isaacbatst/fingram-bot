@@ -99,11 +99,10 @@ export const plan = pgTable('plan', {
     .notNull()
     .references(() => vault.id),
   name: text('name').notNull(),
-  status: text('status').notNull().default('draft'), // 'draft' | 'active' | 'archived'
+  status: text('status').notNull().default('draft'),
   startDate: timestamp('start_date').notNull(),
-  premises: jsonb('premises').notNull(), // Premises JSON
-  fundAllocation: jsonb('fund_allocation').notNull(), // FundRule[] JSON
-  phases: jsonb('phases').notNull().default('[]'),
+  premises: jsonb('premises').notNull(),
+  boxes: jsonb('boxes').notNull().default('[]'),
   milestones: jsonb('milestones').notNull().default('[]'),
   createdAt: timestamp('created_at').notNull(),
 });
