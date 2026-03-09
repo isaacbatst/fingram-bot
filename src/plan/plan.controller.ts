@@ -57,38 +57,12 @@ export class PlanController {
       }[];
     },
   ) {
-    if (!data.name?.trim()) {
-      throw new BadRequestException('Nome do plano e obrigatorio');
-    }
-
     if (!data.startDate) {
-      throw new BadRequestException('Data de inicio e obrigatoria');
+      throw new BadRequestException('Data de início é obrigatória');
     }
 
     if (!data.premises) {
-      throw new BadRequestException('Premissas sao obrigatorias');
-    }
-
-    if (
-      !Array.isArray(data.premises.salaryChangePoints) ||
-      data.premises.salaryChangePoints.length === 0
-    ) {
-      throw new BadRequestException(
-        'Premissas devem ter pelo menos um change point de salario',
-      );
-    }
-
-    if (
-      !Array.isArray(data.premises.costOfLivingChangePoints) ||
-      data.premises.costOfLivingChangePoints.length === 0
-    ) {
-      throw new BadRequestException(
-        'Premissas devem ter pelo menos um change point de custo de vida',
-      );
-    }
-
-    if (!Array.isArray(data.boxes)) {
-      throw new BadRequestException('Boxes deve ser um array');
+      throw new BadRequestException('Premissas são obrigatórias');
     }
 
     const [error, plan] = await this.planService.create({
@@ -96,7 +70,7 @@ export class PlanController {
       name: data.name,
       startDate: new Date(data.startDate),
       premises: data.premises,
-      boxes: data.boxes.map((b) => ({
+      boxes: (data.boxes ?? []).map((b) => ({
         id: b.id || '',
         label: b.label,
         target: b.target,
@@ -104,6 +78,7 @@ export class PlanController {
         holdsFunds: b.holdsFunds ?? true,
         scheduledPayments: b.scheduledPayments ?? [],
       })),
+      milestones: data.milestones,
     });
 
     if (error !== null) {
@@ -144,7 +119,7 @@ export class PlanController {
     const months = monthsParam ? parseInt(monthsParam, 10) : 120;
 
     if (isNaN(months) || months < 1 || months > 600) {
-      throw new BadRequestException('Numero de meses deve ser entre 1 e 600');
+      throw new BadRequestException('Número de meses deve ser entre 1 e 600');
     }
 
     const [error, projection] = await this.planService.getProjection(

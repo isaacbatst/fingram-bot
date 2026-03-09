@@ -77,7 +77,7 @@ describe('PlanService', () => {
         boxes: defaultBoxes,
       });
 
-      expect(error).toBe('Nome do plano e obrigatorio');
+      expect(error).toBe('Nome do plano é obrigatório');
     });
 
     it('should reject empty salary change points', async () => {
@@ -93,7 +93,7 @@ describe('PlanService', () => {
       });
 
       expect(error).toBe(
-        'Premissas devem ter pelo menos um change point de salario',
+        'Premissas devem ter pelo menos um change point de salário',
       );
     });
 
@@ -127,7 +127,7 @@ describe('PlanService', () => {
       });
 
       expect(error).toBe(
-        'Valor do change point de salario nao pode ser negativo',
+        'Valor do change point de salário não pode ser negativo',
       );
     });
 
@@ -149,7 +149,7 @@ describe('PlanService', () => {
         ],
       });
 
-      expect(error).toBe('Label da box e obrigatoria');
+      expect(error).toBe('Label da box é obrigatória');
     });
 
     it('should reject box with negative target', async () => {
@@ -170,7 +170,7 @@ describe('PlanService', () => {
         ],
       });
 
-      expect(error).toBe('Target da box nao pode ser negativo');
+      expect(error).toBe('Target da box não pode ser negativo');
     });
 
     it('should reject scheduled payment with zero amount', async () => {
@@ -212,7 +212,7 @@ describe('PlanService', () => {
         ],
       });
 
-      expect(error).toBe('Label do pagamento agendado e obrigatoria');
+      expect(error).toBe('Label do pagamento agendado é obrigatória');
     });
 
     it('should create plan with empty boxes', async () => {
@@ -246,7 +246,7 @@ describe('PlanService', () => {
 
     it('should return error when plan not found', async () => {
       const [error] = await service.getById('nonexistent', 'vault-1');
-      expect(error).toBe('Plano nao encontrado');
+      expect(error).toBe('Plano não encontrado');
     });
 
     it('should return error when vault does not match', async () => {
@@ -259,7 +259,7 @@ describe('PlanService', () => {
       });
 
       const [error] = await service.getById(plan!.id, 'vault-2');
-      expect(error).toBe('Plano nao encontrado');
+      expect(error).toBe('Plano não encontrado');
     });
   });
 
@@ -288,7 +288,7 @@ describe('PlanService', () => {
 
     it('should return error when plan not found', async () => {
       const [error] = await service.getProjection('nonexistent', 'vault-1');
-      expect(error).toBe('Plano nao encontrado');
+      expect(error).toBe('Plano não encontrado');
     });
 
     it('should return error when vault does not match', async () => {
@@ -301,7 +301,7 @@ describe('PlanService', () => {
       });
 
       const [error] = await service.getProjection(plan!.id, 'vault-2');
-      expect(error).toBe('Plano nao encontrado');
+      expect(error).toBe('Plano não encontrado');
     });
 
     it('should default to 120 months', async () => {
@@ -346,7 +346,7 @@ describe('PlanService', () => {
       });
 
       const [error] = await service.delete(plan!.id, 'vault-2');
-      expect(error).toBe('Plano nao encontrado');
+      expect(error).toBe('Plano não encontrado');
 
       // Plan should still exist
       const found = await repository.findById(plan!.id);

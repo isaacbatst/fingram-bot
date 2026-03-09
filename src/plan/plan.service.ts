@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Either, left, right } from '@/vault/domain/either';
-import { Plan, Box, MonthData, Premises } from './domain/plan';
+import { Plan, Box, Milestone, MonthData, Premises } from './domain/plan';
 import { runProjection } from './domain/run-projection';
 import { PlanRepository } from './repositories/plan.repository';
 
@@ -16,18 +16,19 @@ export class PlanService {
     startDate: Date;
     premises: Premises;
     boxes: Box[];
+    milestones?: Milestone[];
   }): Promise<Either<string, Plan>> {
     this.logger.log(`Creating plan for vault: ${input.vaultId}`);
 
     if (!input.name?.trim()) {
-      return left('Nome do plano e obrigatorio');
+      return left('Nome do plano é obrigatório');
     }
 
     if (
       !input.premises.salaryChangePoints ||
       input.premises.salaryChangePoints.length === 0
     ) {
-      return left('Premissas devem ter pelo menos um change point de salario');
+      return left('Premissas devem ter pelo menos um change point de salário');
     }
 
     if (
@@ -41,36 +42,39 @@ export class PlanService {
 
     for (const cp of input.premises.salaryChangePoints) {
       if (cp.amount < 0) {
-        return left('Valor do change point de salario nao pode ser negativo');
+        return left('Valor do change point de salário não pode ser negativo');
       }
       if (cp.month < 0) {
-        return left('Mes do change point nao pode ser negativo');
+        return left('Mês do change point não pode ser negativo');
       }
     }
 
     for (const cp of input.premises.costOfLivingChangePoints) {
       if (cp.amount < 0) {
         return left(
-          'Valor do change point de custo de vida nao pode ser negativo',
+          'Valor do change point de custo de vida não pode ser negativo',
         );
       }
       if (cp.month < 0) {
-        return left('Mes do change point nao pode ser negativo');
+        return left('Mês do change point não pode ser negativo');
       }
     }
 
     for (const box of input.boxes) {
       if (!box.label?.trim()) {
-        return left('Label da box e obrigatoria');
+        return left('Label da box é obrigatória');
       }
       if (box.target < 0) {
-        return left('Target da box nao pode ser negativo');
+        return left('Target da box não pode ser negativo');
       }
       for (const cp of box.monthlyAmount) {
         if (cp.amount < 0) {
           return left(
-            'Valor do change point de aporte mensal nao pode ser negativo',
+            'Valor do change point de aporte mensal não pode ser negativo',
           );
+        }
+        if (cp.month < 0) {
+          return left('Mês do change point não pode ser negativo');
         }
       }
       for (const sp of box.scheduledPayments) {
@@ -78,10 +82,10 @@ export class PlanService {
           return left('Valor do pagamento agendado deve ser maior que zero');
         }
         if (sp.month < 0) {
-          return left('Mes do pagamento agendado nao pode ser negativo');
+          return left('Mês do pagamento agendado não pode ser negativo');
         }
         if (!sp.label?.trim()) {
-          return left('Label do pagamento agendado e obrigatoria');
+          return left('Label do pagamento agendado é obrigatória');
         }
       }
     }
@@ -92,6 +96,7 @@ export class PlanService {
       startDate: input.startDate,
       premises: input.premises,
       boxes: input.boxes,
+      milestones: input.milestones,
     });
 
     await this.planRepository.create(plan);
@@ -103,10 +108,10 @@ export class PlanService {
     this.logger.log(`Getting plan: ${id}`);
     const plan = await this.planRepository.findById(id);
     if (!plan) {
-      return left('Plano nao encontrado');
+      return left('Plano não encontrado');
     }
     if (plan.vaultId !== vaultId) {
-      return left('Plano nao encontrado');
+      return left('Plano não encontrado');
     }
     return right(plan);
   }
@@ -119,10 +124,10 @@ export class PlanService {
     this.logger.log(`Getting projection for plan: ${id}, months: ${months}`);
     const plan = await this.planRepository.findById(id);
     if (!plan) {
-      return left('Plano nao encontrado');
+      return left('Plano não encontrado');
     }
     if (plan.vaultId !== vaultId) {
-      return left('Plano nao encontrado');
+      return left('Plano não encontrado');
     }
     const projection = runProjection(plan, months);
     return right(projection);
@@ -132,7 +137,7 @@ export class PlanService {
     this.logger.log(`Deleting plan: ${id}`);
     const plan = await this.planRepository.findById(id);
     if (!plan || plan.vaultId !== vaultId) {
-      return left('Plano nao encontrado');
+      return left('Plano não encontrado');
     }
     await this.planRepository.delete(id);
     return right(true);
