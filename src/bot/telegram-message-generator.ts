@@ -20,7 +20,7 @@ export class TelegramMessageGenerator {
 
   /**
    * Formata uma mensagem de sucesso para uma transação
-   * @param vault Cofre onde a transação foi registrada
+   * @param vault Duna onde a transação foi registrada
    * @param transaction Dados da transação
    * @returns Mensagem formatada em Markdown V2
    */
@@ -58,8 +58,8 @@ export class TelegramMessageGenerator {
   }
 
   /**
-   * Formata um resumo do cofre incluindo saldo e orçamentos
-   * @param vault Cofre a ser formatado
+   * Formata um resumo do Duna incluindo saldo e orçamentos
+   * @param vault Duna a ser formatado
    * @returns Mensagem formatada em Markdown V2
    */
   formatVault(
@@ -80,7 +80,7 @@ export class TelegramMessageGenerator {
       minimumFractionDigits: 2,
     });
 
-    let text = `💰 Cofre\n`;
+    let text = `Duna\n`;
     text += `Token: \`${this.escapeMarkdownV2(vault.token)}\`\n`;
     text += `Criado em: ${this.escapeMarkdownV2(new Date(vault.createdAt).toLocaleDateString('pt-BR'))}\n`;
     text += `Resumo referente a: ${date.month.toString().padStart(2, '0')}/${date.year}\n`;
@@ -128,21 +128,21 @@ export class TelegramMessageGenerator {
 
   formatVaultCreated(vault: Vault): string {
     return (
-      `Cofre criado com sucesso\\!\n\n` +
+      `Duna criado com sucesso\\!\n\n` +
       `*Token de Acesso:* \`${this.escapeMarkdownV2(vault.token)}\`\n\n` +
       'Envie uma mensagem começando com `/ai`:\n\n' +
       '_Exemplos:_ \n\n`/ai 100 salário de setembro`\n`/ai 50 compra de supermercado`\n\n' +
-      'Você também pode usar o comando `/miniapp` para acessar o app visual do cofre\\.\n\n' +
+      'Você também pode usar o comando `/miniapp` para acessar o app visual do Duna\\.\n\n' +
       `Use /help para ver os comandos disponíveis\\.`
     );
   }
 
   formatVaultJoined(vault: { id: string; token: string }): string {
     return (
-      `Você se conectou ao cofre com sucesso\\!\n\n` +
-      `*ID do Cofre:* ${this.escapeMarkdownV2(vault.id)}\n` +
+      `Você se conectou ao Duna com sucesso\\!\n\n` +
+      `*ID do Duna:* ${this.escapeMarkdownV2(vault.id)}\n` +
       `*Token de Acesso:* ${this.escapeMarkdownV2(vault.token)}\n\n` +
-      `Agora você pode registrar receitas e despesas neste cofre\\.`
+      `Agora você pode registrar receitas e despesas no Duna\\.`
     );
   }
 
@@ -254,7 +254,7 @@ export class TelegramMessageGenerator {
       1,
       Math.ceil(paginated.total / paginated.pageSize),
     );
-    let text = `*Transações do Cofre:*\n\n`;
+    let text = `*Transações do Duna:*\n\n`;
 
     // Metadata about filters
     let dateArg = '';
@@ -311,17 +311,17 @@ export class TelegramMessageGenerator {
       '• /ai — Registra receitas e despesas rapidamente.\n' +
       '• /miniapp — Gera um link para o app visual.\n\n' +
       '*Comandos avançados/opcionais:*\n' +
-      '• /create — Cria um novo cofre.\n' +
-      '• /join <token> — Entra em um cofre existente usando o token.\n' +
+      '• /create — Cria um novo Duna.\n' +
+      '• /join <token> — Entra em um Duna existente usando o token.\n' +
       '• /income <quantia> [descrição] — Registra uma receita manualmente.\n' +
       '• /expense <quantia> [descrição] — Registra uma despesa manualmente.\n' +
       '• /edit <código> [opções] — Edita uma transação existente.\n' +
       '    Opções: -v <valor>, -d <dd/mm/yyyy>, -c <categoria>, -desc "descrição"\n' +
       '• /setbudget <categoria1> <quantia1>, <categoria2> <quantia2> ... — Define orçamentos para categorias.\n' +
-      '• /summary [-d mm/yyyy] — Mostra o resumo do cofre.\n' +
+      '• /summary [-d mm/yyyy] — Mostra o resumo do Duna.\n' +
       '• /categories — Lista as categorias disponíveis.\n' +
-      '• /transactions [-p página] [-d mm/yyyy|dd/mm/yyyy] — Lista transações do cofre.\n' +
-      '• /editprompt <novo prompt> — Edita o prompt do cofre.\n' +
+      '• /transactions [-p página] [-d mm/yyyy|dd/mm/yyyy] — Lista transações do Duna.\n' +
+      '• /editprompt <novo prompt> — Edita o prompt do Duna.\n' +
       '• /delete <código> — Deleta uma transação pelo código.\n' +
       '• /help — Mostra esta mensagem de ajuda.\n\n' +
       'Para detalhes de uso de cada comando, digite o comando sem argumentos.'

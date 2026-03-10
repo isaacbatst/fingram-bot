@@ -251,7 +251,7 @@ export class TelegramHandler {
       // Aceita /create ou /create@BOT_USERNAME, sem argumentos
       if (args.length > 0) {
         await ctx.reply(
-          'Uso: /create\n\nCria um novo cofre para o chat atual.',
+          'Uso: /create\n\nCria um novo Duna para o chat atual.',
         );
         return;
       }
@@ -266,7 +266,7 @@ export class TelegramHandler {
       const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
-          'Uso: /join <token\\>\n\nEntre em um cofre existente usando o token de acesso\\. Exemplo: /join ABC123',
+          'Uso: /join <token\\>\n\nEntre em um Duna existente usando o token de acesso\\. Exemplo: /join ABC123',
           { parse_mode: 'MarkdownV2' },
         );
         return;
@@ -287,7 +287,7 @@ export class TelegramHandler {
       const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
-          'Uso: /income <quantia> [descrição]\n\nRegistra uma receita no cofre atual. Exemplo: /income 100 Salário',
+          'Uso: /income <quantia> [descrição]\n\nRegistra uma receita no Duna atual. Exemplo: /income 100 Salário',
           { parse_mode: 'MarkdownV2' },
         );
         return;
@@ -328,7 +328,7 @@ export class TelegramHandler {
       const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
-          'Uso: /expense <quantia> [descrição]\n\nRegistra uma despesa no cofre atual. Exemplo: /expense 50 Supermercado',
+          'Uso: /expense <quantia> [descrição]\n\nRegistra uma despesa no Duna atual. Exemplo: /expense 50 Supermercado',
           { parse_mode: 'MarkdownV2' },
         );
         return;
@@ -479,7 +479,7 @@ export class TelegramHandler {
       );
       if (parseArgsError !== null) {
         await ctx.reply(
-          'Uso: /transactions [-p página] [-d mm/yyyy|dd/mm/yyyy]\n\nExibe as transações do cofre. Exemplo: /transactions -p 2 -d 06/2024',
+          'Uso: /transactions [-p página] [-d mm/yyyy|dd/mm/yyyy]\n\nExibe as transações do Duna. Exemplo: /transactions -p 2 -d 06/2024',
           { parse_mode: 'MarkdownV2' },
         );
         return;
@@ -554,7 +554,7 @@ export class TelegramHandler {
       const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
-          'Uso: /editprompt <novo prompt>\n\nEdita o prompt do cofre para personalizar a IA. Exemplo: /editprompt "Transferências para João são despesas de transporte"',
+          'Uso: /editprompt <novo prompt>\n\nEdita o prompt do Duna para personalizar a IA. Exemplo: /editprompt "Transferências para João são despesas de transporte"',
         );
         return;
       }
@@ -569,7 +569,7 @@ export class TelegramHandler {
       );
     });
 
-    // Comando para ler o prompt atual do cofre
+    // Comando para ler o prompt atual do Duna
     this.telegraf.command('getprompt', async (ctx) => {
       const chatId = ctx.chat.id.toString();
       const [err, prompt] = await this.botService.getVaultPrompt(chatId);
@@ -578,17 +578,17 @@ export class TelegramHandler {
         return;
       }
       await ctx.reply(
-        `Prompt atual do cofre:\n\n${prompt || 'Nenhum prompt definido.'}`,
+        `Prompt atual do Duna:\n\n${prompt || 'Nenhum prompt definido.'}`,
       );
     });
 
-    // Comando para adicionar texto ao prompt existente do cofre
+    // Comando para adicionar texto ao prompt existente do Duna
     this.telegraf.command('appendprompt', async (ctx) => {
       const chatId = ctx.chat.id.toString();
       const { args } = this.parseCommandAndArgs(ctx.message.text);
       if (args.length === 0) {
         await ctx.reply(
-          'Uso: /appendprompt \\<texto para adicionar\\>\n\nAdiciona texto ao prompt atual do cofre\\.',
+          'Uso: /appendprompt \\<texto para adicionar\\>\n\nAdiciona texto ao prompt atual do Duna\\.',
           { parse_mode: 'MarkdownV2' },
         );
         return;

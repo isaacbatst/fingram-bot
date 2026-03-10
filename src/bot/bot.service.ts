@@ -8,7 +8,7 @@ import { TelegramMessageGenerator } from './telegram-message-generator';
 @Injectable()
 export class BotService {
   private static readonly NOT_STARTED_MESSAGE =
-    'Cofre não inicializado. Use /create para criar um novo cofre ou /join para entrar em um cofre existente.';
+    'Duna não inicializado. Use /create para criar o Duna ou /join para entrar em um existente.';
 
   private readonly logger = new Logger(BotService.name);
 
@@ -32,14 +32,14 @@ export class BotService {
     }
     const vault = await this.vaultService.findByToken(token);
     if (!vault) {
-      return left('Cofre não encontrado ou token inválido.');
+      return left('Duna não encontrado ou token inválido.');
     }
     await this.chatService.joinVault({ chatId, vaultId: vault.id });
     return right({ vault });
   }
 
   /**
-   * Registra uma receita no cofre
+   * Registra uma receita no Duna
    * @param chatId ID do chat do Telegram
    * @param params Parâmetros já processados para a receita
    */
@@ -48,7 +48,7 @@ export class BotService {
     params: { amount: number; description?: string },
   ) {
     const chat = await this.chatService.findChatByTelegramChatId(chatId);
-    if (!chat) return left('Cofre não encontrado.');
+    if (!chat) return left('Duna não encontrado.');
     if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
     return await this.vaultService.addTransactionToVault({
       vaultId: chat.vaultId,
@@ -72,7 +72,7 @@ export class BotService {
     }
     const description = args.slice(1).join(' ') || undefined;
     const chat = await this.chatService.findChatByTelegramChatId(chatId);
-    if (!chat) return left('Cofre não encontrado.');
+    if (!chat) return left('Duna não encontrado.');
     if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
     return await this.vaultService.addTransactionToVault({
       vaultId: chat.vaultId,
@@ -87,7 +87,7 @@ export class BotService {
   }
 
   /**
-   * Edita uma transação existente no cofre
+   * Edita uma transação existente no Duna
    * @param chatId ID do chat do Telegram
    * @param params Parâmetros já processados para edição da transação
    */
@@ -116,7 +116,7 @@ export class BotService {
     }
 
     const chat = await this.chatService.findChatByTelegramChatId(chatId);
-    if (!chat) return left('Cofre não encontrado.');
+    if (!chat) return left('Duna não encontrado.');
     if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
     return await this.vaultService.editTransactionInVault({
       vaultId: chat.vaultId,
@@ -157,7 +157,7 @@ export class BotService {
       budgets.push({ categoryCode, amount });
     }
     const chat = await this.chatService.findChatByTelegramChatId(chatId);
-    if (!chat) return left('Cofre não encontrado.');
+    if (!chat) return left('Duna não encontrado.');
     if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
     return await this.vaultService.setBudgets({
       vaultId: chat.vaultId,
@@ -189,7 +189,7 @@ export class BotService {
       date = { month: now.getMonth() + 1, year: now.getFullYear() };
     }
     const chat = await this.chatService.findChatByTelegramChatId(chatId);
-    if (!chat) return left('Cofre não encontrado.');
+    if (!chat) return left('Duna não encontrado.');
     if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
     const [err, vault] = await this.vaultService.getVault({
       vaultId: chat.vaultId,
@@ -223,7 +223,7 @@ export class BotService {
     },
   ) {
     const chat = await this.chatService.findChatByTelegramChatId(chatId);
-    if (!chat) return left('Cofre não encontrado.');
+    if (!chat) return left('Duna não encontrado.');
     if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
     return await this.vaultService.getTransactions({
       vaultId: chat.vaultId,
@@ -236,7 +236,7 @@ export class BotService {
 
   async handleProcessFile(chatId: string, fileUrl: string) {
     const chat = await this.chatService.findChatByTelegramChatId(chatId);
-    if (!chat) return left('Cofre não encontrado.');
+    if (!chat) return left('Duna não encontrado.');
     if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
     return await this.vaultService.processTransactionsFile({
       vaultId: chat.vaultId,
@@ -283,7 +283,7 @@ export class BotService {
     if (err !== null) {
       return left(err);
     }
-    return right(`Prompt do cofre atualizado com sucesso:\n\n`);
+    return right(`Prompt do Duna atualizado com sucesso:\n\n`);
   }
 
   async deleteTransaction(
@@ -291,7 +291,7 @@ export class BotService {
     transactionCode: string,
   ): Promise<Either<string, string>> {
     const chat = await this.chatService.findChatByTelegramChatId(chatId);
-    if (!chat) return left('Cofre não encontrado.');
+    if (!chat) return left('Duna não encontrado.');
     if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
     const [err] = await this.vaultService.deleteTransaction({
       vaultId: chat.vaultId,
