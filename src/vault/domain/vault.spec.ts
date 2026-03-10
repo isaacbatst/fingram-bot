@@ -230,7 +230,7 @@ describe('Vault - Boxes', () => {
     vault.addBox(box);
 
     const [err] = vault.deleteBox(box.id);
-    expect(err).toBe('Não é possível deletar a caixinha padrão');
+    expect(err).toBe('Não é possível deletar o estrato padrão');
     expect(vault.boxes.size).toBe(1);
   });
 
@@ -256,7 +256,7 @@ describe('Vault - Boxes', () => {
     );
 
     const [err] = vault.deleteBox(box.id);
-    expect(err).toBe('Não é possível deletar uma caixinha com transações');
+    expect(err).toBe('Não é possível deletar um estrato com transações');
     expect(vault.boxes.size).toBe(1);
   });
 
@@ -426,7 +426,7 @@ describe('Vault - Boxes', () => {
       date: new Date(),
     });
 
-    expect(err).toBe('Não é possível transferir para a mesma caixinha');
+    expect(err).toBe('Não é possível transferir para o mesmo estrato');
   });
 
   it('should exclude transfers from budget calculations', () => {

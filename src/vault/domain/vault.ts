@@ -184,7 +184,7 @@ export class Vault {
 
     if (options.boxId !== undefined) {
       if (!this.boxes.get(options.boxId)) {
-        return left('Caixinha não encontrada');
+        return left('Estrato não encontrado');
       }
       transaction.boxId = options.boxId;
     }
@@ -272,7 +272,7 @@ export class Vault {
     options: { name?: string; goalAmount?: number | null; type?: BoxType },
   ): Either<string, Box> {
     const box = this.boxes.get(boxId);
-    if (!box) return left('Caixinha não encontrada');
+    if (!box) return left('Estrato não encontrado');
     if (options.name !== undefined) box.name = options.name;
     if (options.goalAmount !== undefined) box.goalAmount = options.goalAmount;
     if (options.type !== undefined) box.type = options.type;
@@ -282,11 +282,11 @@ export class Vault {
 
   deleteBox(boxId: string): Either<string, boolean> {
     const box = this.boxes.get(boxId);
-    if (!box) return left('Caixinha não encontrada');
-    if (box.isDefault) return left('Não é possível deletar a caixinha padrão');
+    if (!box) return left('Estrato não encontrado');
+    if (box.isDefault) return left('Não é possível deletar o estrato padrão');
     for (const tx of this.transactions.values()) {
       if (tx.boxId === boxId)
-        return left('Não é possível deletar uma caixinha com transações');
+        return left('Não é possível deletar um estrato com transações');
     }
     this.boxes.delete(boxId);
     this.boxesTracker.registerDeleted(box);
@@ -310,10 +310,10 @@ export class Vault {
   }): Either<string, string> {
     const fromBox = this.boxes.get(input.fromBoxId);
     const toBox = this.boxes.get(input.toBoxId);
-    if (!fromBox) return left('Caixinha de origem não encontrada');
-    if (!toBox) return left('Caixinha de destino não encontrada');
+    if (!fromBox) return left('Estrato de origem não encontrado');
+    if (!toBox) return left('Estrato de destino não encontrado');
     if (input.fromBoxId === input.toBoxId)
-      return left('Não é possível transferir para a mesma caixinha');
+      return left('Não é possível transferir para o mesmo estrato');
 
     const transferId = crypto.randomUUID();
 
@@ -364,16 +364,16 @@ export class Vault {
 
     // Validate all inputs before mutating
     if (options.fromBoxId !== undefined && !this.boxes.get(options.fromBoxId)) {
-      return left('Caixinha de origem não encontrada');
+      return left('Estrato de origem não encontrado');
     }
     if (options.toBoxId !== undefined && !this.boxes.get(options.toBoxId)) {
-      return left('Caixinha de destino não encontrada');
+      return left('Estrato de destino não encontrado');
     }
 
     const nextFromBoxId = options.fromBoxId ?? expenseTx.boxId;
     const nextToBoxId = options.toBoxId ?? incomeTx.boxId;
     if (nextFromBoxId === nextToBoxId) {
-      return left('Não é possível transferir para a mesma caixinha');
+      return left('Não é possível transferir para o mesmo estrato');
     }
 
     // Apply mutations after all validations pass
@@ -606,7 +606,7 @@ export class Vault {
       },
     ]);
 
-    // Serializar caixinhas
+    // Serializar estratos
     const serializedBoxes: SerializedBox[] = Array.from(
       this.boxes.values(),
     ).map((box) => {
