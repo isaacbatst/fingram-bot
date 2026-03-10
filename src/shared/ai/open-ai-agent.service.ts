@@ -35,7 +35,7 @@ export class OpenAiAgentService {
     this.agent = new Agent<AgentContext>({
       name: 'FinGram Agent',
       model: 'gpt-4.1-nano',
-      instructions: `Você é um agente que ajuda o usuário a gerenciar seu cofre financeiro.
+      instructions: `Você é um agente que ajuda o usuário a gerenciar o Duna, seu copiloto financeiro.
         Caso o usuário pergunte sobre as categorias disponíveis, use a ferramenta getCategories para obter as categorias disponíveis.
         Caso o usuário queira adicionar uma transação, use a ferramenta addTransaction para adicionar a transação. Esse pedido normalmente será simplesmente uma descrição de uma transação, como "Salário de 1000 reais" ou "Aluguel 1000 reais", considere essas mensagens um pedido de adição de transação e chame a ferramenta addTransaction imediatamente.
         Se for necessário buscar as categorias disponíveis para adicionar uma transação, busque-as imediatamente.
@@ -48,7 +48,7 @@ export class OpenAiAgentService {
         Fluxo padrão:
 
         - Usuário: uber 10 reais no dia 10 de novembro de 2025
-        - Agente: getCategories -> addTransaction -> informa que a transação foi adicionada com sucesso e o saldo atual do cofre financeiro.
+        - Agente: getCategories -> addTransaction -> informa que a transação foi adicionada com sucesso e o saldo atual do Duna.
 
         Use esse fluxo para evitar ficar confirmando ações do usuário.
 
@@ -63,7 +63,7 @@ export class OpenAiAgentService {
         - Você deve ser ágil, não fique confirmando, justifique as suas ações e use as ferramentas para adicionar a transação. A exceção é caso o usuário não forneça o valor da transação, nesse caso, pergunte ao usuário para fornecer o valor da transação.
         - Nunca sugira uma categoria que não está na lista de categorias disponíveis.
         - Sempre mencione datas formatadas para o usuário final, como "10 de novembro de 2025" e nunca no formato ISO 8601.
-        - Sempre que uma transação for adicionada, informe o saldo atual do cofre financeiro formatado de maneira apropriada para o usuário final com moeda (R$) e casas decimais apropriadas, ele será retornado pela ferramenta addTransaction.
+        - Sempre que uma transação for adicionada, informe o saldo atual do Duna formatado de maneira apropriada para o usuário final com moeda (R$) e casas decimais apropriadas, ele será retornado pela ferramenta addTransaction.
 
         Exemplo de entrada:
         - "Salário de 1000 reais" (income)
@@ -196,7 +196,7 @@ export class OpenAiAgentService {
     });
     const addTransaction = tool({
       name: 'addTransaction',
-      description: 'Adiciona uma transação ao cofre financeiro.',
+      description: 'Adiciona uma transação ao Duna.',
       needsApproval: true,
       parameters: z.object({
         transaction: z.object({

@@ -217,7 +217,7 @@ export class MiniappService {
     if (!chat.vaultId) {
       return left({
         message:
-          'Cofre não inicializado. É necessário criar um novo cofre ou entrar em um cofre existente.',
+          'Duna não inicializado. É necessário criar um novo Duna ou entrar em um existente.',
         type: MiniappErrorType.VAULT_NOT_FOUND,
       });
     }
@@ -230,7 +230,7 @@ export class MiniappService {
     customDate?: { year: number; month: number },
   ): Promise<Either<MiniappError, SummaryData>> {
     try {
-      // Buscar o cofre diretamente usando o VaultService
+      // Buscar o Duna diretamente usando o VaultService
       const [vaultError, vault] = await this.vaultService.getVault({ vaultId });
       if (vaultError !== null) {
         return left({

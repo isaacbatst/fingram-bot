@@ -57,8 +57,8 @@ export class OpenAiService extends AiService {
   ): Promise<Either<string, Action>> {
     const response = await this.openAi.responses.parse({
       model: 'gpt-4.1-nano',
-      instructions: `Você é um assistente que interpreta comandos para um cofre financeiro.
-      O usuário pode solicitar ações de criar receitas e despesas no cofre.
+      instructions: `Você é um assistente que interpreta comandos para o Duna, um copiloto financeiro.
+      O usuário pode solicitar ações de criar receitas e despesas.
       
       Se o usuário não solicitar uma ação ou não puder ser interpretada, retorne uma ação 'noAction' e match false.
 
@@ -253,7 +253,7 @@ export class OpenAiService extends AiService {
     }));
 
     return `
-Você é um assistente que interpreta comandos para um cofre financeiro.
+Você é um assistente que interpreta comandos para o Duna, um copiloto financeiro.
 O usuário enviou um extrato de transações financeiras.
 Seu objetivo é identificar a categoria de cada transação com base na descrição e no tipo.
 Use apenas as categorias abaixo:
