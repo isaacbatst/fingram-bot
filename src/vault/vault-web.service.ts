@@ -169,7 +169,7 @@ export class VaultWebService {
       return left({
         type: VaultErrorType.VAULT_NOT_FOUND,
         message:
-          'Cofre não inicializado. É necessário criar um novo cofre ou entrar em um cofre existente.',
+          'Duna não inicializado. É necessário criar um novo Duna ou entrar em um existente.',
       });
     }
     return right(chat.vaultId);
@@ -512,7 +512,7 @@ export class VaultWebService {
       this.logger.error(`Error getting boxes for vault ${vaultId}: ${error}`);
       return left({
         type: VaultErrorType.INTERNAL_ERROR,
-        message: 'Erro interno ao obter caixinhas',
+        message: 'Erro interno ao obter estratos',
       });
     }
   }
@@ -539,7 +539,7 @@ export class VaultWebService {
       this.logger.error(`Error creating box for vault ${vaultId}: ${error}`);
       return left({
         type: VaultErrorType.INTERNAL_ERROR,
-        message: 'Erro interno ao criar caixinha',
+        message: 'Erro interno ao criar estrato',
       });
     }
   }
@@ -572,7 +572,7 @@ export class VaultWebService {
       this.logger.error(`Error editing box for vault ${vaultId}: ${error}`);
       return left({
         type: VaultErrorType.INTERNAL_ERROR,
-        message: 'Erro interno ao editar caixinha',
+        message: 'Erro interno ao editar estrato',
       });
     }
   }
@@ -597,7 +597,7 @@ export class VaultWebService {
       this.logger.error(`Error deleting box for vault ${vaultId}: ${error}`);
       return left({
         type: VaultErrorType.INTERNAL_ERROR,
-        message: 'Erro interno ao deletar caixinha',
+        message: 'Erro interno ao deletar estrato',
       });
     }
   }

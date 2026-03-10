@@ -294,7 +294,7 @@ export class VaultWebController {
 
     return {
       vaultId: vault.id,
-      message: 'Carteira criada com sucesso! Você foi automaticamente logado.',
+      message: 'Duna criado com sucesso! Você foi automaticamente conectado.',
     };
   }
 
@@ -434,11 +434,11 @@ export class VaultWebController {
     data: { name: string; goalAmount?: number; type?: 'spending' | 'saving' },
   ) {
     if (!data.name?.trim()) {
-      throw new BadRequestException('Nome da caixinha é obrigatório');
+      throw new BadRequestException('Nome do estrato é obrigatório');
     }
     if (data.type && data.type !== 'spending' && data.type !== 'saving') {
       throw new BadRequestException(
-        'Tipo da caixinha deve ser "spending" ou "saving"',
+        'Tipo do estrato deve ser "spending" ou "saving"',
       );
     }
     const [error, box] = await this.vaultWebService.createBox(vaultId, {
@@ -463,11 +463,11 @@ export class VaultWebController {
     },
   ) {
     if (!data.boxId) {
-      throw new BadRequestException('ID da caixinha é obrigatório');
+      throw new BadRequestException('ID do estrato é obrigatório');
     }
     if (data.type && data.type !== 'spending' && data.type !== 'saving') {
       throw new BadRequestException(
-        'Tipo da caixinha deve ser "spending" ou "saving"',
+        'Tipo do estrato deve ser "spending" ou "saving"',
       );
     }
     const [error, box] = await this.vaultWebService.editBox(vaultId, data);
@@ -482,7 +482,7 @@ export class VaultWebController {
     @Body() data: { boxId: string },
   ) {
     if (!data.boxId) {
-      throw new BadRequestException('ID da caixinha é obrigatório');
+      throw new BadRequestException('ID do estrato é obrigatório');
     }
     const [error] = await this.vaultWebService.deleteBox(vaultId, data.boxId);
     if (error !== null) this.handleError(error.type, error.message);
@@ -502,7 +502,7 @@ export class VaultWebController {
   ) {
     if (!data.fromBoxId || !data.toBoxId) {
       throw new BadRequestException(
-        'Caixinhas de origem e destino são obrigatórias',
+        'Estratos de origem e destino são obrigatórios',
       );
     }
     if (!data.amount || data.amount <= 0) {
