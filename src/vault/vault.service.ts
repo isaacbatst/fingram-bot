@@ -55,7 +55,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     const [err] = vault.deleteTransaction(input.transactionCode);
     if (err !== null) {
@@ -76,7 +76,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
 
     const customPrompt = vault.getCustomPrompt();
@@ -121,7 +121,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     switch (action.type) {
       case ActionType.INCOME:
@@ -199,7 +199,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     return right(vault);
   }
@@ -222,7 +222,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
 
     const date = input.date ?? vault.getCurrentBudgetPeriod();
@@ -263,7 +263,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     console.log('categoryId', input.transaction.categoryId);
     const category = input.transaction.categoryId
@@ -322,7 +322,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
 
     let categoryId: string | undefined;
@@ -389,7 +389,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     vault.editCustomPrompt(input.customPrompt);
     await this.vaultRepository.update(vault);
@@ -411,7 +411,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     const categories = await this.categoryRepository.findAllByVaultId(
       input.vaultId,
@@ -449,7 +449,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     const response = await fetch(input.fileUrl);
     if (!response.body) {
@@ -523,7 +523,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     return right(vault.getCustomPrompt());
   }
@@ -533,7 +533,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     const current = vault.getCustomPrompt() || '';
     vault.editCustomPrompt(
@@ -553,7 +553,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     const [err, day] = vault.setBudgetStartDay(input.day);
     if (err !== null) {
@@ -572,7 +572,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     return right(vault.budgetStartDay);
   }
@@ -719,7 +719,7 @@ export class VaultService {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
-      return left(`Cofre não encontrado`);
+      return left(`Dados não encontrados`);
     }
     const categories = await this.categoryRepository.findAllByVaultId(
       input.vaultId,
