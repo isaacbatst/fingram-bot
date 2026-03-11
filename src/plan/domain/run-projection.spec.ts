@@ -444,4 +444,191 @@ describe('runProjection', () => {
     expect(result[4].boxPayments['terreno']).toBe(1893);
     expect(result[4].surplus).toBe(33000 - 18000 - 1893 - 800);
   });
+
+  describe('yield', () => {
+    it('should apply monthly yield to holdsFunds box', () => {
+      const plan = createPlan({
+        premises: {
+          salaryChangePoints: [{ month: 0, amount: 10000 }],
+          costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+        },
+        boxes: [
+          {
+            id: 'reserva',
+            label: 'Reserva',
+            target: 0,
+            monthlyAmount: [{ month: 0, amount: 1000 }],
+            holdsFunds: true,
+            yieldRate: 0.12,
+            scheduledPayments: [],
+          },
+        ],
+      });
+      const result = runProjection(plan, 1);
+
+      const expectedYield = 1000 * (0.12 / 12);
+      expect(result[0].boxYields['reserva']).toBeCloseTo(expectedYield);
+      expect(result[0].boxes['reserva']).toBeCloseTo(1000 + expectedYield);
+    });
+
+    it('should compound yield over multiple months', () => {
+      const plan = createPlan({
+        premises: {
+          salaryChangePoints: [{ month: 0, amount: 10000 }],
+          costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+        },
+        boxes: [
+          {
+            id: 'reserva',
+            label: 'Reserva',
+            target: 0,
+            monthlyAmount: [{ month: 0, amount: 1000 }],
+            holdsFunds: true,
+            yieldRate: 0.12,
+            scheduledPayments: [],
+          },
+        ],
+      });
+      const result = runProjection(plan, 2);
+
+      // Month 0: deposit 1000, yield = 1000 * 0.01 = 10, balance = 1010
+      // Month 1: deposit 1000, balance before yield = 2010, yield = 2010 * 0.01 = 20.10
+      expect(result[1].boxYields['reserva']).toBeCloseTo(2010 * 0.01);
+      expect(result[1].boxes['reserva']).toBeCloseTo(2010 + 2010 * 0.01);
+    });
+
+    it('should continue yielding after target is reached', () => {
+      const plan = createPlan({
+        premises: {
+          salaryChangePoints: [{ month: 0, amount: 10000 }],
+          costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+        },
+        boxes: [
+          {
+            id: 'reserva',
+            label: 'Reserva',
+            target: 2000,
+            monthlyAmount: [{ month: 0, amount: 1000 }],
+            holdsFunds: true,
+            yieldRate: 0.12,
+            scheduledPayments: [],
+          },
+        ],
+      });
+      const result = runProjection(plan, 4);
+
+      // Month 1: balance reaches 2000 (capped), yield makes it > 2000
+      // Month 2: no outflow (target reached), but yield still applies
+      expect(result[2].boxPayments['reserva']).toBe(0);
+      expect(result[2].boxYields['reserva']).toBeGreaterThan(0);
+      expect(result[2].boxes['reserva']).toBeGreaterThan(2000);
+    });
+
+    it('should not yield on holdsFunds: false box', () => {
+      const plan = createPlan({
+        boxes: [
+          {
+            id: 'terreno',
+            label: 'Terreno',
+            target: 0,
+            monthlyAmount: [{ month: 0, amount: 2000 }],
+            holdsFunds: false,
+            yieldRate: 0.12,
+            scheduledPayments: [],
+          },
+        ],
+      });
+      const result = runProjection(plan, 2);
+
+      expect(result[0].boxYields['terreno']).toBe(0);
+      expect(result[1].boxYields['terreno']).toBe(0);
+      expect(result[1].boxes['terreno']).toBe(4000);
+    });
+
+    it('should not yield when yieldRate is undefined', () => {
+      const plan = createPlan();
+      const result = runProjection(plan, 1);
+
+      expect(result[0].boxYields['reserva']).toBe(0);
+    });
+
+    it('should not yield when yieldRate is 0', () => {
+      const plan = createPlan({
+        boxes: [
+          {
+            id: 'reserva',
+            label: 'Reserva',
+            target: 0,
+            monthlyAmount: [{ month: 0, amount: 1000 }],
+            holdsFunds: true,
+            yieldRate: 0,
+            scheduledPayments: [],
+          },
+        ],
+      });
+      const result = runProjection(plan, 1);
+
+      expect(result[0].boxYields['reserva']).toBe(0);
+      expect(result[0].boxes['reserva']).toBe(1000);
+    });
+
+    it('should aggregate totalYield across all boxes', () => {
+      const plan = createPlan({
+        premises: {
+          salaryChangePoints: [{ month: 0, amount: 20000 }],
+          costOfLivingChangePoints: [{ month: 0, amount: 10000 }],
+        },
+        boxes: [
+          {
+            id: 'reserva',
+            label: 'Reserva',
+            target: 0,
+            monthlyAmount: [{ month: 0, amount: 3000 }],
+            holdsFunds: true,
+            yieldRate: 0.12,
+            scheduledPayments: [],
+          },
+          {
+            id: 'acoes',
+            label: 'Acoes',
+            target: 0,
+            monthlyAmount: [{ month: 0, amount: 2000 }],
+            holdsFunds: true,
+            yieldRate: 0.06,
+            scheduledPayments: [],
+          },
+        ],
+      });
+      const result = runProjection(plan, 1);
+
+      const expectedTotal =
+        result[0].boxYields['reserva'] + result[0].boxYields['acoes'];
+      expect(result[0].totalYield).toBeCloseTo(expectedTotal);
+    });
+
+    it('should include yield in totalWealth', () => {
+      const plan = createPlan({
+        premises: {
+          salaryChangePoints: [{ month: 0, amount: 10000 }],
+          costOfLivingChangePoints: [{ month: 0, amount: 9000 }],
+        },
+        boxes: [
+          {
+            id: 'reserva',
+            label: 'Reserva',
+            target: 0,
+            monthlyAmount: [{ month: 0, amount: 1000 }],
+            holdsFunds: true,
+            yieldRate: 0.12,
+            scheduledPayments: [],
+          },
+        ],
+      });
+      const result = runProjection(plan, 1);
+
+      const expectedYield = 1000 * (0.12 / 12);
+      // totalWealth = cash + box balance (which includes yield)
+      expect(result[0].totalWealth).toBeCloseTo(0 + 1000 + expectedYield);
+    });
+  });
 });

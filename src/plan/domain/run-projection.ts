@@ -68,6 +68,7 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
 
     let boxOutflows = 0;
     const boxPayments: Record<string, number> = {};
+    const boxYields: Record<string, number> = {};
     const monthScheduledPayments: {
       boxId: string;
       amount: number;
@@ -84,6 +85,19 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
       boxBalances[box.id] += outflow;
       boxOutflows += outflow;
       boxPayments[box.id] = outflow;
+
+      let yieldEarned = 0;
+      if (
+        box.holdsFunds &&
+        box.yieldRate &&
+        box.yieldRate > 0 &&
+        boxBalances[box.id] > 0
+      ) {
+        const monthlyRate = box.yieldRate / 12;
+        yieldEarned = boxBalances[box.id] * monthlyRate;
+        boxBalances[box.id] += yieldEarned;
+      }
+      boxYields[box.id] = yieldEarned;
 
       for (const sp of scheduledPayments) {
         monthScheduledPayments.push({
@@ -116,6 +130,8 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
       cash,
       boxes: { ...boxBalances },
       boxPayments,
+      boxYields: { ...boxYields },
+      totalYield: Object.values(boxYields).reduce((sum, v) => sum + v, 0),
       scheduledPayments: monthScheduledPayments,
       totalWealth,
       totalCommitted,

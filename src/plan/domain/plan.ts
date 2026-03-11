@@ -21,6 +21,7 @@ export interface Box {
   target: number;
   monthlyAmount: ChangePoint[];
   holdsFunds: boolean;
+  yieldRate?: number;
   scheduledPayments: BoxScheduledPayment[];
 }
 
@@ -46,6 +47,8 @@ export interface MonthData {
   cash: number;
   boxes: Record<string, number>;
   boxPayments: Record<string, number>;
+  boxYields: Record<string, number>;
+  totalYield: number;
   scheduledPayments: { boxId: string; amount: number; label: string }[];
   totalWealth: number;
   totalCommitted: number;

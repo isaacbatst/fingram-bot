@@ -43,6 +43,7 @@ export class PlanController {
         target: number;
         monthlyAmount: { month: number; amount: number }[];
         holdsFunds: boolean;
+        yieldRate?: number;
         scheduledPayments: {
           month: number;
           amount: number;
@@ -76,6 +77,7 @@ export class PlanController {
         target: b.target,
         monthlyAmount: b.monthlyAmount ?? [],
         holdsFunds: b.holdsFunds ?? true,
+        yieldRate: b.yieldRate,
         scheduledPayments: b.scheduledPayments ?? [],
       })),
       milestones: data.milestones,

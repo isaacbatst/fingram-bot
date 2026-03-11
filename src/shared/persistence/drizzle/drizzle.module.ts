@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Inject, Module, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { neon } from '@neondatabase/serverless';
 import {
@@ -15,6 +15,7 @@ import { CATEGORIES_SEED } from '../seed';
 
 export const DRIZZLE_DATABASE = 'DRIZZLE_DATABASE';
 export const DRIZZLE_IS_NEON = 'DRIZZLE_IS_NEON';
+export const DRIZZLE_POOL = 'DRIZZLE_POOL';
 
 export type DrizzleDatabase =
   | NeonHttpDatabase<typeof schema>
@@ -31,18 +32,29 @@ export type DrizzleDatabase =
       inject: [ConfigService],
     },
     {
-      provide: DRIZZLE_DATABASE,
-      useFactory: async (configService: ConfigService, isNeon: boolean) => {
+      provide: DRIZZLE_POOL,
+      useFactory: (configService: ConfigService, isNeon: boolean) => {
+        if (isNeon) return null;
         const databaseUrl = configService.getOrThrow<string>('DATABASE_URL');
-
+        return new Pool({ connectionString: databaseUrl });
+      },
+      inject: [ConfigService, DRIZZLE_IS_NEON],
+    },
+    {
+      provide: DRIZZLE_DATABASE,
+      useFactory: async (
+        configService: ConfigService,
+        isNeon: boolean,
+        pool: Pool | null,
+      ) => {
         let db: DrizzleDatabase;
 
         if (isNeon) {
+          const databaseUrl = configService.getOrThrow<string>('DATABASE_URL');
           const sql = neon(databaseUrl);
           db = drizzleNeon(sql, { schema });
         } else {
-          const pool = new Pool({ connectionString: databaseUrl });
-          db = drizzleNode(pool, { schema });
+          db = drizzleNode(pool!, { schema });
         }
 
         // Seed categories
@@ -63,9 +75,17 @@ export type DrizzleDatabase =
 
         return db;
       },
-      inject: [ConfigService, DRIZZLE_IS_NEON],
+      inject: [ConfigService, DRIZZLE_IS_NEON, DRIZZLE_POOL],
     },
   ],
   exports: [DRIZZLE_DATABASE, DRIZZLE_IS_NEON],
 })
-export class DrizzleModule {}
+export class DrizzleModule implements OnModuleDestroy {
+  constructor(
+    @Inject(DRIZZLE_POOL) private readonly pool: Pool | null,
+  ) {}
+
+  async onModuleDestroy() {
+    await this.pool?.end();
+  }
+}

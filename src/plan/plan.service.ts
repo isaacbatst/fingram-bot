@@ -67,6 +67,14 @@ export class PlanService {
       if (box.target < 0) {
         return left('Target da box não pode ser negativo');
       }
+      if (box.yieldRate !== undefined && box.yieldRate < 0) {
+        return left('Taxa de rendimento não pode ser negativa');
+      }
+      if (box.yieldRate !== undefined && !box.holdsFunds) {
+        return left(
+          'Taxa de rendimento só pode ser definida para boxes que retêm fundos',
+        );
+      }
       for (const cp of box.monthlyAmount) {
         if (cp.amount < 0) {
           return left(
