@@ -77,7 +77,7 @@ export class VaultWebController {
         boxId,
         date,
         page: pageNumber,
-        pageSize: 6,
+        pageSize: 15,
       },
     );
     if (error !== null) {
