@@ -579,7 +579,7 @@ export class VaultService {
 
   async getBoxes(vaultId: string) {
     const vault = await this.vaultRepository.findById(vaultId);
-    if (!vault) return left('Cofre não encontrado');
+    if (!vault) return left('Dados não encontrados');
 
     const boxes = Array.from(vault.boxes.values()).map((box) => ({
       id: box.id,
@@ -603,7 +603,7 @@ export class VaultService {
     type?: 'spending' | 'saving';
   }) {
     const vault = await this.vaultRepository.findById(input.vaultId);
-    if (!vault) return left('Cofre não encontrado');
+    if (!vault) return left('Dados não encontrados');
 
     const box = Box.create({
       vaultId: vault.id,
@@ -633,7 +633,7 @@ export class VaultService {
     type?: 'spending' | 'saving';
   }) {
     const vault = await this.vaultRepository.findById(input.vaultId);
-    if (!vault) return left('Cofre não encontrado');
+    if (!vault) return left('Dados não encontrados');
 
     const [err, box] = vault.editBox(input.boxId, {
       name: input.name,
@@ -648,7 +648,7 @@ export class VaultService {
 
   async deleteBox(input: { vaultId: string; boxId: string }) {
     const vault = await this.vaultRepository.findById(input.vaultId);
-    if (!vault) return left('Cofre não encontrado');
+    if (!vault) return left('Dados não encontrados');
 
     const [err] = vault.deleteBox(input.boxId);
     if (err !== null) return left(err);
@@ -665,7 +665,7 @@ export class VaultService {
     date: Date;
   }) {
     const vault = await this.vaultRepository.findById(input.vaultId);
-    if (!vault) return left('Cofre não encontrado');
+    if (!vault) return left('Dados não encontrados');
 
     const [err, transferId] = vault.createTransfer(input);
     if (err !== null) return left(err);
@@ -683,7 +683,7 @@ export class VaultService {
     toBoxId?: string;
   }) {
     const vault = await this.vaultRepository.findById(input.vaultId);
-    if (!vault) return left('Cofre não encontrado');
+    if (!vault) return left('Dados não encontrados');
 
     const [err] = vault.editTransfer(input.transferId, {
       amount: input.amount,
@@ -699,7 +699,7 @@ export class VaultService {
 
   async deleteTransfer(input: { vaultId: string; transferId: string }) {
     const vault = await this.vaultRepository.findById(input.vaultId);
-    if (!vault) return left('Cofre não encontrado');
+    if (!vault) return left('Dados não encontrados');
 
     const [err] = vault.deleteTransfer(input.transferId);
     if (err !== null) return left(err);

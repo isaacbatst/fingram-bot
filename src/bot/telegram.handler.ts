@@ -250,9 +250,7 @@ export class TelegramHandler {
       const { args } = this.parseCommandAndArgs(ctx.message.text);
       // Aceita /create ou /create@BOT_USERNAME, sem argumentos
       if (args.length > 0) {
-        await ctx.reply(
-          'Uso: /create\n\nCria um novo Duna para o chat atual.',
-        );
+        await ctx.reply('Uso: /create\n\nCria um novo Duna para o chat atual.');
         return;
       }
       const { vault } = await this.botService.handleCreate(chatId);
