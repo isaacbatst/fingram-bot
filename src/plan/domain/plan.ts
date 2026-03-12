@@ -13,6 +13,31 @@ export interface BoxScheduledPayment {
   amount: number;
   label: string;
   additionalToMonthly?: boolean;
+  sourceBoxId?: string;
+}
+
+export interface BoxFinancing {
+  principal: number;
+  annualRate: number;
+  termMonths: number;
+  system: 'sac' | 'price';
+  constructionMonths?: number;
+  gracePeriodMonths?: number;
+  releasePercent?: number;
+}
+
+export type FinancingPhase =
+  | 'construction'
+  | 'grace'
+  | 'amortization'
+  | 'paid_off';
+
+export interface FinancingMonthDetail {
+  payment: number;
+  amortization: number;
+  interest: number;
+  outstandingBalance: number;
+  phase: FinancingPhase;
 }
 
 export interface Box {
@@ -22,6 +47,7 @@ export interface Box {
   monthlyAmount: ChangePoint[];
   holdsFunds: boolean;
   yieldRate?: number;
+  financing?: BoxFinancing;
   scheduledPayments: BoxScheduledPayment[];
 }
 
@@ -52,6 +78,7 @@ export interface MonthData {
   scheduledPayments: { boxId: string; amount: number; label: string }[];
   totalWealth: number;
   totalCommitted: number;
+  financingDetails: Record<string, FinancingMonthDetail>;
 }
 
 type ConstructorParams = {

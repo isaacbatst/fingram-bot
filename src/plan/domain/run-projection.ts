@@ -1,5 +1,10 @@
 import { getActiveValue } from './change-point';
-import { Box, MonthData, Plan } from './plan';
+import {
+  computeFinancingMonth,
+  FinancingState,
+  initFinancingState,
+} from './financing-calculator';
+import { Box, FinancingMonthDetail, MonthData, Plan } from './plan';
 
 function getBoxOutflow(
   box: Box,
@@ -49,8 +54,13 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
   const totalMonths = months ?? 120;
 
   const boxBalances: Record<string, number> = {};
+  const financingStates: Record<string, FinancingState> = {};
+
   for (const box of plan.boxes) {
     boxBalances[box.id] = 0;
+    if (box.financing) {
+      financingStates[box.id] = initFinancingState(box.financing);
+    }
   }
 
   let cash = 0;
@@ -69,13 +79,18 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
     let boxOutflows = 0;
     const boxPayments: Record<string, number> = {};
     const boxYields: Record<string, number> = {};
+    const financingDetails: Record<string, FinancingMonthDetail> = {};
     const monthScheduledPayments: {
       boxId: string;
       amount: number;
       label: string;
     }[] = [];
 
+    // Pass 1: Process regular boxes (deposits + yields) so balances are
+    // up-to-date before financing boxes reference them via sourceBoxId.
     for (const box of plan.boxes) {
+      if (box.financing) continue;
+
       const { outflow, scheduledPayments } = getBoxOutflow(
         box,
         i,
@@ -108,6 +123,57 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
       }
     }
 
+    // Pass 2: Process financing boxes (may deduct from source boxes).
+    for (const box of plan.boxes) {
+      if (!box.financing) continue;
+
+      const scheduledThisMonth = box.scheduledPayments.filter(
+        (p) => p.month === i,
+      );
+
+      // Process extra amortizations
+      let extraAmortization = 0;
+      for (const sp of scheduledThisMonth) {
+        if (sp.sourceBoxId) {
+          // Deduct from source box (direct transfer, not from cash)
+          const available = boxBalances[sp.sourceBoxId] ?? 0;
+          const deduction = Math.min(sp.amount, available);
+          boxBalances[sp.sourceBoxId] -= deduction;
+          extraAmortization += deduction;
+        } else {
+          // Deduct from cash via boxOutflows
+          extraAmortization += sp.amount;
+          boxOutflows += sp.amount;
+        }
+        monthScheduledPayments.push({
+          boxId: box.id,
+          amount: sp.amount,
+          label: sp.label,
+        });
+      }
+
+      const { detail, nextState } = computeFinancingMonth(
+        box.financing,
+        financingStates[box.id],
+        i,
+        extraAmortization,
+      );
+
+      financingStates[box.id] = nextState;
+      financingDetails[box.id] = detail;
+
+      // Full payment (amort + interest) comes from cash
+      boxOutflows += detail.payment;
+      boxPayments[box.id] = detail.payment;
+
+      // Balance tracks amortization progress (not total paid)
+      boxBalances[box.id] =
+        box.financing.principal - detail.outstandingBalance;
+
+      // No yield on financing boxes
+      boxYields[box.id] = 0;
+    }
+
     const surplus = income - costOfLiving - boxOutflows;
     cash += surplus;
 
@@ -135,6 +201,7 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
       scheduledPayments: monthScheduledPayments,
       totalWealth,
       totalCommitted,
+      financingDetails,
     });
   }
 

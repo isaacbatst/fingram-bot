@@ -95,6 +95,75 @@ export class PlanService {
         if (!sp.label?.trim()) {
           return left('Label do pagamento agendado é obrigatória');
         }
+        if (
+          sp.sourceBoxId &&
+          !input.boxes.some((b) => b.id === sp.sourceBoxId)
+        ) {
+          return left(
+            'sourceBoxId referencia uma box que não existe no plano',
+          );
+        }
+      }
+
+      if (box.financing) {
+        if (box.holdsFunds) {
+          return left(
+            'Box com financiamento não pode reter fundos (holdsFunds deve ser false)',
+          );
+        }
+        if (box.yieldRate !== undefined) {
+          return left(
+            'Box com financiamento não pode ter taxa de rendimento',
+          );
+        }
+        if (box.financing.principal <= 0) {
+          return left('Principal do financiamento deve ser maior que zero');
+        }
+        if (box.financing.annualRate <= 0) {
+          return left(
+            'Taxa de juros do financiamento deve ser maior que zero',
+          );
+        }
+        if (
+          box.financing.termMonths <= 0 ||
+          !Number.isInteger(box.financing.termMonths)
+        ) {
+          return left(
+            'Prazo do financiamento deve ser um inteiro positivo',
+          );
+        }
+        if (
+          box.financing.system !== 'sac' &&
+          box.financing.system !== 'price'
+        ) {
+          return left(
+            'Sistema de amortização deve ser "sac" ou "price"',
+          );
+        }
+        if (
+          box.financing.constructionMonths !== undefined &&
+          box.financing.constructionMonths < 0
+        ) {
+          return left(
+            'Meses de obra não podem ser negativos',
+          );
+        }
+        if (
+          box.financing.gracePeriodMonths !== undefined &&
+          box.financing.gracePeriodMonths < 0
+        ) {
+          return left(
+            'Meses de carência não podem ser negativos',
+          );
+        }
+        if (
+          box.financing.releasePercent !== undefined &&
+          (box.financing.releasePercent <= 0 || box.financing.releasePercent > 1)
+        ) {
+          return left(
+            'Percentual de liberação deve ser entre 0 (exclusivo) e 1 (inclusivo)',
+          );
+        }
       }
     }
 

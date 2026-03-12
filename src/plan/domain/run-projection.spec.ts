@@ -631,4 +631,447 @@ describe('runProjection', () => {
       expect(result[0].totalWealth).toBeCloseTo(0 + 1000 + expectedYield);
     });
   });
+
+  describe('financing', () => {
+    it('should calculate SAC payments with declining installments', () => {
+      // SAC (Sistema de Amortizacao Constante) R$120.000 a 12% a.a. (1% a.m.) em 12 meses.
+      //
+      // Amortizacao constante = principal / n = 120.000 / 12 = R$10.000/mes
+      // Juros = saldo_devedor * taxa_mensal (cai a cada mes conforme saldo diminui)
+      //
+      //   Mes 0:  saldo=120k, juros=120k*0.01=R$1.200, prestacao=10k+1.200=R$11.200
+      //   Mes 1:  saldo=110k, juros=110k*0.01=R$1.100, prestacao=10k+1.100=R$11.100
+      //   ...
+      //   Mes 11: saldo=10k,  juros=10k*0.01=R$100,    prestacao=10k+100=R$10.100
+      //
+      // Apos 12 meses: saldo = 120k - 12*10k = R$0
+      const plan = createPlan({
+        boxes: [
+          {
+            id: 'fin',
+            label: 'Casa',
+            target: 0,
+            monthlyAmount: [],
+            holdsFunds: false,
+            scheduledPayments: [],
+            financing: {
+              principal: 120_000,
+              annualRate: 0.12,
+              termMonths: 12,
+              system: 'sac',
+            },
+          },
+        ],
+      });
+
+      const result = runProjection(plan, 12);
+      const rate = 0.12 / 12;
+
+      expect(result[0].financingDetails['fin'].amortization).toBeCloseTo(10_000, 0);
+      expect(result[0].financingDetails['fin'].interest).toBeCloseTo(120_000 * rate, 2);
+      expect(result[0].financingDetails['fin'].phase).toBe('amortization');
+
+      // Last payment < first payment (SAC declining property)
+      expect(result[11].financingDetails['fin'].payment).toBeLessThan(
+        result[0].financingDetails['fin'].payment,
+      );
+
+      // After 12 months of 10k amortization each: outstanding = 0
+      expect(result[11].financingDetails['fin'].outstandingBalance).toBeCloseTo(0, 2);
+    });
+
+    it('should calculate PRICE payments with constant installments', () => {
+      // PRICE (Tabela Price) R$60.000 a 18% a.a. (1.5% a.m.) em 24 meses.
+      //
+      // Formula: PMT = P * [r * (1+r)^n] / [(1+r)^n - 1]
+      //   r = 0.18/12 = 0.015
+      //   (1.015)^24 = ~1.4295
+      //   PMT = 60.000 * [0.015 * 1.4295] / [0.4295]
+      //       = 60.000 * 0.02144 / 0.4295
+      //       = 60.000 * 0.04993
+      //       = ~R$2.996/mes (constante para todas as 24 parcelas)
+      //
+      // Internamente a cada mes:
+      //   juros = saldo * 0.015 (cai)
+      //   amortizacao = PMT - juros (cresce)
+      //   Mas o total (PMT) permanece fixo.
+      //
+      // Ao final de 24 meses: saldo = R$0
+      const plan = createPlan({
+        boxes: [
+          {
+            id: 'car',
+            label: 'Carro',
+            target: 0,
+            monthlyAmount: [],
+            holdsFunds: false,
+            scheduledPayments: [],
+            financing: {
+              principal: 60_000,
+              annualRate: 0.18,
+              termMonths: 24,
+              system: 'price',
+            },
+          },
+        ],
+      });
+
+      const result = runProjection(plan, 24);
+
+      const firstPayment = result[0].financingDetails['car'].payment;
+      for (let i = 1; i < 24; i++) {
+        expect(result[i].financingDetails['car'].payment).toBeCloseTo(firstPayment, 2);
+      }
+
+      expect(result[23].financingDetails['car'].outstandingBalance).toBeCloseTo(0, 2);
+    });
+
+    it('should handle construction phase with growing interest', () => {
+      // R$1.200.000 a 11% a.a. (0.917% a.m.), SAC com 420 meses, 16 meses de obra.
+      //
+      // Juros de obra: banco libera 95% do principal linearmente.
+      //   liberado_por_mes = (1.200.000 * 0.95) / 16 = R$71.250
+      //   acumulado(m) = 71.250 * (m+1)
+      //   juros(m) = acumulado(m) * 0.0091667
+      //
+      // Exemplos:
+      //   Mes 0:  acum=71.250,    juros=71.250*0.00917=R$653      (amort=R$0)
+      //   Mes 7:  acum=570.000,   juros=570k*0.00917=R$5.225      (amort=R$0)
+      //   Mes 15: acum=1.140.000, juros=1.140k*0.00917=R$10.450   (amort=R$0)
+      //
+      // Mes 16: obra termina, SAC comeca sobre saldo total R$1.200.000.
+      //   amort = 1.200.000 / 420 = R$2.857,14
+      //   juros = 1.200.000 * 0.00917 = R$11.000
+      //   prestacao = R$13.857
+      const plan = createPlan({
+        premises: {
+          salaryChangePoints: [{ month: 0, amount: 50_000 }],
+          costOfLivingChangePoints: [{ month: 0, amount: 20_000 }],
+        },
+        boxes: [
+          {
+            id: 'obra',
+            label: 'Financiamento Obra',
+            target: 0,
+            monthlyAmount: [],
+            holdsFunds: false,
+            scheduledPayments: [],
+            financing: {
+              principal: 1_200_000,
+              annualRate: 0.11,
+              termMonths: 420,
+              system: 'sac',
+              constructionMonths: 16,
+            },
+          },
+        ],
+      });
+
+      const result = runProjection(plan, 18);
+
+      for (let i = 0; i < 16; i++) {
+        expect(result[i].financingDetails['obra'].phase).toBe('construction');
+        expect(result[i].financingDetails['obra'].amortization).toBe(0);
+      }
+
+      // Interest grows linearly with released amount
+      expect(result[15].financingDetails['obra'].interest).toBeGreaterThan(
+        result[0].financingDetails['obra'].interest,
+      );
+
+      // Month 16: amortization starts. SAC amort = 1.2M / 420 = ~2,857.
+      expect(result[16].financingDetails['obra'].phase).toBe('amortization');
+      expect(result[16].financingDetails['obra'].amortization).toBeGreaterThan(0);
+    });
+
+    it('should deduct financing payments from cash (affects surplus)', () => {
+      // SAC R$12.000 a 12% a.a. (1% a.m.) em 12 meses.
+      //
+      // Mes 0:
+      //   amort = 12.000 / 12 = R$1.000
+      //   juros = 12.000 * 0.01 = R$120
+      //   prestacao = 1.000 + 120 = R$1.120
+      //
+      // Fluxo mensal (premissas do createPlan: salario=10k, custo=6k):
+      //   surplus = salario - custo_de_vida - prestacao
+      //           = 10.000 - 6.000 - 1.120 = R$2.880
+      const plan = createPlan({
+        boxes: [
+          {
+            id: 'fin',
+            label: 'Casa',
+            target: 0,
+            monthlyAmount: [],
+            holdsFunds: false,
+            scheduledPayments: [],
+            financing: {
+              principal: 12_000,
+              annualRate: 0.12,
+              termMonths: 12,
+              system: 'sac',
+            },
+          },
+        ],
+      });
+
+      const result = runProjection(plan, 1);
+      const payment = result[0].financingDetails['fin'].payment;
+
+      expect(result[0].surplus).toBeCloseTo(10_000 - 6_000 - payment, 2);
+    });
+
+    it('should track balance as amortization progress (not total paid)', () => {
+      // SAC R$120.000 a 12% a.a. (1% a.m.) em 12 meses.
+      //
+      // Mes 0:
+      //   amort = R$10.000, juros = R$1.200, prestacao = R$11.200
+      //   R$11.200 sai do caixa (boxOutflows), mas apenas R$10.000 vira "progresso".
+      //
+      // Box balance (boxes['fin']) = principal - outstanding = 120k - 110k = R$10.000
+      //   Isso reflete amortizacao acumulada, NAO total pago.
+      //   Juros sao custo puro, nao constroem patrimonio.
+      //
+      // totalCommitted = soma dos balances de boxes holdsFunds:false = R$10.000
+      const plan = createPlan({
+        boxes: [
+          {
+            id: 'fin',
+            label: 'Casa',
+            target: 0,
+            monthlyAmount: [],
+            holdsFunds: false,
+            scheduledPayments: [],
+            financing: {
+              principal: 120_000,
+              annualRate: 0.12,
+              termMonths: 12,
+              system: 'sac',
+            },
+          },
+        ],
+      });
+
+      const result = runProjection(plan, 1);
+
+      expect(result[0].boxes['fin']).toBeCloseTo(10_000, 0);
+      expect(result[0].totalCommitted).toBeCloseTo(10_000, 0);
+    });
+
+    it('should handle extra amortization from cash', () => {
+      // SAC R$120.000 a 12% a.a. (1% a.m.) em 12 meses.
+      // scheduledPayment de R$50.000 no mes 1 (sem sourceBoxId => sai do caixa).
+      //
+      // Mes 0 (normal):
+      //   amort = 120.000/12 = R$10.000
+      //   juros = 120.000*0.01 = R$1.200
+      //   saldo apos = R$110.000
+      //
+      // Mes 1 (extra de R$50.000):
+      //   Extra aplicado antes: saldo = 110.000 - 50.000 = R$60.000
+      //   SAC recalculado: amort = 60.000/11 = R$5.454,55
+      //   juros = 60.000*0.01 = R$600
+      //   saldo apos = 60.000 - 5.454 = R$54.545,45
+      //   boxOutflows = 50.000 (extra) + 6.054 (prestacao) = R$56.054
+      //
+      // Mes 2: SAC sobre R$54.545 com 10 parcelas restantes
+      //   amort = 54.545/10 = R$5.454, juros = 545 => prestacao ~R$6.000
+      //   Muito menor que mes 0 (R$11.200)
+      const plan = createPlan({
+        boxes: [
+          {
+            id: 'fin',
+            label: 'Casa',
+            target: 0,
+            monthlyAmount: [],
+            holdsFunds: false,
+            scheduledPayments: [
+              { month: 1, amount: 50_000, label: 'Amortizacao extra' },
+            ],
+            financing: {
+              principal: 120_000,
+              annualRate: 0.12,
+              termMonths: 12,
+              system: 'sac',
+            },
+          },
+        ],
+      });
+
+      const result = runProjection(plan, 3);
+
+      expect(result[0].financingDetails['fin'].outstandingBalance).toBeCloseTo(110_000, 0);
+
+      // After extra amort of 50k + regular amort: outstanding < 60k
+      expect(result[1].financingDetails['fin'].outstandingBalance).toBeLessThan(60_000);
+
+      // Lower outstanding => lower interest => lower total payment
+      expect(result[2].financingDetails['fin'].payment).toBeLessThan(
+        result[0].financingDetails['fin'].payment,
+      );
+    });
+
+    it('should handle extra amortization from source box', () => {
+      // sourceBoxId: transferencia direta box-a-box, sem passar pelo caixa.
+      //
+      // Reserva deposita R$5.000/mes. No mes 2 (antes do deposito do mes):
+      //   saldo reserva = 5k(m0) + 5k(m1) = R$10.000
+      //   + deposito do mes 2: R$15.000
+      //   - transferencia de R$10.000 (sourceBoxId) => reserva = R$5.000
+      //
+      // Efeito no financiamento: extra amort de R$10.000 aplicado ao saldo devedor.
+      // Efeito no caixa: NENHUM. A transferencia e direta (box -> financing).
+      //   Caixa do mes 2 = caixa_mes1 + surplus_mes2 (sem descontar a transferencia)
+      const plan = createPlan({
+        boxes: [
+          {
+            id: 'reserva',
+            label: 'Reserva',
+            target: 0,
+            monthlyAmount: [{ month: 0, amount: 5000 }],
+            holdsFunds: true,
+            scheduledPayments: [],
+          },
+          {
+            id: 'fin',
+            label: 'Casa',
+            target: 0,
+            monthlyAmount: [],
+            holdsFunds: false,
+            scheduledPayments: [
+              {
+                month: 2,
+                amount: 10_000,
+                label: 'Entrada da reserva',
+                sourceBoxId: 'reserva',
+              },
+            ],
+            financing: {
+              principal: 120_000,
+              annualRate: 0.12,
+              termMonths: 12,
+              system: 'sac',
+            },
+          },
+        ],
+      });
+
+      const result = runProjection(plan, 4);
+
+      // Month 0-1: reserva = 5k + 5k = 10k
+      expect(result[1].boxes['reserva']).toBeCloseTo(10_000, 0);
+
+      // Month 2: reserva = 15k - 10k(transfer) = 5k
+      expect(result[2].boxes['reserva']).toBeCloseTo(5_000, 0);
+      // Cash unaffected by sourceBoxId transfer (no cash outflow for this)
+      const cashWithoutTransfer = result[1].cash + result[2].surplus;
+      expect(result[2].cash).toBeCloseTo(cashWithoutTransfer, 0);
+    });
+
+    it('should produce same result regardless of box order when using sourceBoxId', () => {
+      // Testa independencia de ordem do motor de 2 passes.
+      //
+      // Setup: reserva deposita R$5.000/mes. No mes 1, scheduledPayment de R$8.000
+      // com sourceBoxId='reserva' no financing box.
+      //
+      // Estado no mes 1:
+      //   Reserva pre-deposito = R$5.000 (do mes 0)
+      //   Reserva pos-deposito = R$10.000 (apos deposito do mes 1)
+      //
+      // Se o motor processasse em 1 passo (bug anterior):
+      //   Ordem [reserva, fin]: reserva deposita 5k => 10k, deducao = min(8k, 10k) = 8k => 2k
+      //   Ordem [fin, reserva]: deducao = min(8k, 5k) = 5k => 0k, depois deposita 5k => 5k
+      //   RESULTADO DIFERENTE! (2k vs 5k)
+      //
+      // Com motor de 2 passes (fix):
+      //   Passo 1: processa todas as boxes regulares (depositos)
+      //   Passo 2: processa todas as boxes de financiamento (deducoes)
+      //   Ambas as ordens: reserva = 10k apos deposito, deducao = 8k => reserva = 2k
+      const reserva = {
+        id: 'reserva',
+        label: 'Reserva',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 5000 }],
+        holdsFunds: true,
+        scheduledPayments: [],
+      };
+
+      const fin = {
+        id: 'fin',
+        label: 'Casa',
+        target: 0,
+        monthlyAmount: [],
+        holdsFunds: false,
+        scheduledPayments: [
+          {
+            month: 1,
+            amount: 8_000,
+            label: 'Entrada',
+            sourceBoxId: 'reserva',
+          },
+        ],
+        financing: {
+          principal: 120_000,
+          annualRate: 0.12,
+          termMonths: 12,
+          system: 'sac' as const,
+        },
+      };
+
+      const planA = createPlan({ boxes: [reserva, fin] });
+      const planB = createPlan({ boxes: [fin, reserva] });
+
+      const resultA = runProjection(planA, 3);
+      const resultB = runProjection(planB, 3);
+
+      // Both orderings should produce identical results at month 1
+      expect(resultA[1].boxes['reserva']).toBeCloseTo(
+        resultB[1].boxes['reserva'],
+        2,
+      );
+      expect(
+        resultA[1].financingDetails['fin'].outstandingBalance,
+      ).toBeCloseTo(
+        resultB[1].financingDetails['fin'].outstandingBalance,
+        2,
+      );
+      expect(resultA[1].cash).toBeCloseTo(resultB[1].cash, 2);
+    });
+
+    it('should include financing box in totalCommitted, not totalWealth', () => {
+      // Semantica de totalWealth vs totalCommitted:
+      //   totalWealth = caixa + soma(boxes com holdsFunds:true)
+      //   totalCommitted = soma(boxes com holdsFunds:false)
+      //
+      // SAC R$12.000 a 12% a.a. em 12 meses (financing box, holdsFunds:false).
+      //   Mes 0: amort = 12.000/12 = R$1.000
+      //   balance = principal - outstanding = 12k - 11k = R$1.000
+      //
+      // totalCommitted = R$1.000 (progresso da amortizacao)
+      // totalWealth = caixa apenas (nao ha boxes holdsFunds:true neste plano)
+      //   caixa = salario(10k) - custo(6k) - prestacao(1.120) = R$2.880
+      const plan = createPlan({
+        boxes: [
+          {
+            id: 'fin',
+            label: 'Casa',
+            target: 0,
+            monthlyAmount: [],
+            holdsFunds: false,
+            scheduledPayments: [],
+            financing: {
+              principal: 12_000,
+              annualRate: 0.12,
+              termMonths: 12,
+              system: 'sac',
+            },
+          },
+        ],
+      });
+
+      const result = runProjection(plan, 1);
+
+      expect(result[0].totalCommitted).toBeCloseTo(1_000, 0);
+      expect(result[0].totalWealth).toBeCloseTo(result[0].cash, 0);
+    });
+  });
 });

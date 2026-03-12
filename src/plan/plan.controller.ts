@@ -44,11 +44,21 @@ export class PlanController {
         monthlyAmount: { month: number; amount: number }[];
         holdsFunds: boolean;
         yieldRate?: number;
+        financing?: {
+          principal: number;
+          annualRate: number;
+          termMonths: number;
+          system: 'sac' | 'price';
+          constructionMonths?: number;
+          gracePeriodMonths?: number;
+          releasePercent?: number;
+        };
         scheduledPayments: {
           month: number;
           amount: number;
           label: string;
           additionalToMonthly?: boolean;
+          sourceBoxId?: string;
         }[];
       }[];
       milestones?: {
@@ -78,6 +88,7 @@ export class PlanController {
         monthlyAmount: b.monthlyAmount ?? [],
         holdsFunds: b.holdsFunds ?? true,
         yieldRate: b.yieldRate,
+        financing: b.financing,
         scheduledPayments: b.scheduledPayments ?? [],
       })),
       milestones: data.milestones,
