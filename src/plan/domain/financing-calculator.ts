@@ -6,9 +6,12 @@ export interface FinancingState {
 }
 
 export function initFinancingState(financing: BoxFinancing): FinancingState {
+  const constructionMonths = financing.constructionMonths ?? 0;
+  const graceMonths = financing.gracePeriodMonths ?? 0;
   return {
     outstandingBalance: financing.principal,
-    remainingTermMonths: financing.termMonths,
+    remainingTermMonths:
+      financing.termMonths - constructionMonths - graceMonths,
   };
 }
 
@@ -28,7 +31,7 @@ export function getPriceInstallment(
   remainingTermMonths: number,
 ): { amortization: number; interest: number; total: number } {
   const factor = Math.pow(1 + monthlyRate, remainingTermMonths);
-  const total = outstandingBalance * (monthlyRate * factor) / (factor - 1);
+  const total = (outstandingBalance * (monthlyRate * factor)) / (factor - 1);
   const interest = outstandingBalance * monthlyRate;
   const amortization = total - interest;
   return { amortization, interest, total };
@@ -41,7 +44,8 @@ export function getConstructionInterest(
   totalConstructionMonths: number,
   releasePercent: number = 0.95,
 ): number {
-  const releasedPerMonth = (principal * releasePercent) / totalConstructionMonths;
+  const releasedPerMonth =
+    (principal * releasePercent) / totalConstructionMonths;
   const accumulatedReleased = releasedPerMonth * (constructionMonth + 1);
   return accumulatedReleased * monthlyRate;
 }
@@ -68,18 +72,18 @@ export function computeFinancingMonth(
 ): { detail: FinancingMonthDetail; nextState: FinancingState } {
   const monthlyRate = financing.annualRate / 12;
   const constructionMonths = financing.constructionMonths ?? 0;
-  const graceMonths = financing.gracePeriodMonths ?? 0;
 
-  let { outstandingBalance, remainingTermMonths } = state;
+  let { outstandingBalance } = state;
+  const { remainingTermMonths } = state;
+  const phase = getPhase(financing, month, outstandingBalance);
 
-  // Apply extra amortization before computing the regular payment
-  if (extraAmortization > 0) {
+  // Extra amortization is ignored during construction (banks don't accept it
+  // while funds are still being released to the builder).
+  if (extraAmortization > 0 && phase !== 'construction') {
     outstandingBalance = Math.max(0, outstandingBalance - extraAmortization);
   }
 
-  const phase = getPhase(financing, month, outstandingBalance);
-
-  if (phase === 'paid_off') {
+  if (phase === 'paid_off' || outstandingBalance <= 0) {
     return {
       detail: {
         payment: 0,
@@ -143,7 +147,11 @@ export function computeFinancingMonth(
   const installment =
     financing.system === 'sac'
       ? getSacInstallment(outstandingBalance, monthlyRate, remainingTermMonths)
-      : getPriceInstallment(outstandingBalance, monthlyRate, remainingTermMonths);
+      : getPriceInstallment(
+          outstandingBalance,
+          monthlyRate,
+          remainingTermMonths,
+        );
 
   const newOutstanding = Math.max(
     0,

@@ -313,7 +313,8 @@ describe('financing-calculator', () => {
     });
 
     describe('construction phase', () => {
-      // R$1.200.000 a 11% a.a. (0.917% a.m.), prazo 420 meses, 16 meses de obra.
+      // R$1.200.000 a 11% a.a. (0.917% a.m.), prazo contratual 420 meses, 16 meses de obra.
+      // Prazo efetivo de amortizacao = 420 - 16 = 404 meses.
       //
       // Durante a obra (meses 0-15):
       //   - Nao ha amortizacao, saldo permanece R$1.200.000.
@@ -323,7 +324,7 @@ describe('financing-calculator', () => {
       //
       // Apos a obra (mes 16+):
       //   - Amortizacao SAC comeca sobre o saldo total de R$1.200.000.
-      //   - amort = 1.200.000 / 420 = R$2.857,14/mes
+      //   - amort = 1.200.000 / 404 = R$2.970,30/mes
       const withConstruction: BoxFinancing = {
         principal: 1_200_000,
         annualRate: 0.11,
@@ -354,10 +355,10 @@ describe('financing-calculator', () => {
         //   Mes 0:  juros = 71.250 * 0.00917 = R$653
         //   Mes 15: juros = 71.250 * 16 * 0.00917 = 1.140.000 * 0.00917 = R$10.450
         //
-        // Mes 16: primeira parcela de amortizacao.
-        //   amort = 1.200.000 / 420 = R$2.857,14
+        // Mes 16: primeira parcela de amortizacao (prazo efetivo = 404 meses).
+        //   amort = 1.200.000 / 404 = R$2.970,30
         //   juros = 1.200.000 * 0.00917 = R$11.000
-        //   prestacao = 2.857 + 11.000 = R$13.857
+        //   prestacao = 2.970 + 11.000 = R$13.970
         let state = initFinancingState(withConstruction);
         for (let i = 0; i < 16; i++) {
           const { detail, nextState } = computeFinancingMonth(
@@ -382,7 +383,8 @@ describe('financing-calculator', () => {
     });
 
     describe('grace period', () => {
-      // R$50.000 a 6,5% a.a. (~0.5417% a.m.), prazo 168 meses, 18 meses de carencia.
+      // R$50.000 a 6,5% a.a. (~0.5417% a.m.), prazo contratual 168 meses, 18 meses de carencia.
+      // Prazo efetivo de amortizacao = 168 - 18 = 150 meses.
       //
       // Durante carencia (meses 0-17):
       //   - Juros sobre o saldo total (sem amortizacao).
@@ -390,7 +392,7 @@ describe('financing-calculator', () => {
       //   - Saldo permanece R$50.000.
       //
       // Apos carencia (mes 18+):
-      //   - Amortizacao SAC comeca: amort = 50.000 / 168 = R$297,62/mes
+      //   - Amortizacao SAC comeca: amort = 50.000 / 150 = R$333,33/mes
       const withGrace: BoxFinancing = {
         principal: 50_000,
         annualRate: 0.065,
@@ -416,10 +418,10 @@ describe('financing-calculator', () => {
 
       it('should transition to amortization after grace', () => {
         // Meses 0-17: todos em carencia (juros = R$270,83, saldo = R$50.000).
-        // Mes 18: primeira parcela de amortizacao SAC.
-        //   amort = 50.000 / 168 = R$297,62
+        // Mes 18: primeira parcela de amortizacao SAC (prazo efetivo = 150 meses).
+        //   amort = 50.000 / 150 = R$333,33
         //   juros = 50.000 * 0.005417 = R$270,83
-        //   prestacao = 297,62 + 270,83 = R$568,45
+        //   prestacao = 333,33 + 270,83 = R$604,17
         let state = initFinancingState(withGrace);
         for (let i = 0; i < 18; i++) {
           const { nextState } = computeFinancingMonth(withGrace, state, i, 0);
@@ -432,7 +434,8 @@ describe('financing-calculator', () => {
     });
 
     describe('construction + grace', () => {
-      // R$1.200.000 a 11% a.a., prazo 420 meses, 16 meses de obra + 6 meses de carencia.
+      // R$1.200.000 a 11% a.a., prazo contratual 420 meses, 16 meses de obra + 6 meses de carencia.
+      // Prazo efetivo de amortizacao = 420 - 16 - 6 = 398 meses.
       //
       // Maquina de estados de fases (derivada do indice do mes):
       //   Meses  0-15: construction (juros de obra, liberacao linear)
@@ -442,7 +445,7 @@ describe('financing-calculator', () => {
       // Transicao de juros:
       //   Ultimo mes obra (15): juros = 1.140.000 * 0.00917 = R$10.450
       //   Primeiro mes carencia (16): juros = 1.200.000 * 0.00917 = R$11.000
-      //   Primeiro mes amort (22): amort = 1.200.000/420 = R$2.857 + juros = R$11.000
+      //   Primeiro mes amort (22): amort = 1.200.000/398 = R$3.015 + juros = R$11.000
       const withBoth: BoxFinancing = {
         principal: 1_200_000,
         annualRate: 0.11,
@@ -534,7 +537,7 @@ describe('financing-calculator', () => {
         // SAC R$120.000 a 1% a.m. em 12 meses.
         // Extra de R$200.000 no mes 0:
         //   saldo = 120.000 - 200.000 = clamped a R$0 (Math.max(0, ...))
-        //   getPhase() retorna 'paid_off' pois saldo <= 0
+        //   Apos aplicar extra, saldo <= 0 => paid_off
         //   prestacao = R$0, amort = R$0, juros = R$0
         const state = initFinancingState(sacFinancing);
         const { detail } = computeFinancingMonth(
@@ -545,6 +548,133 @@ describe('financing-calculator', () => {
         );
         expect(detail.phase).toBe('paid_off');
         expect(detail.payment).toBe(0);
+      });
+
+      it('should ignore extra amortization during construction phase', () => {
+        // R$1.200.000 a 11% a.a., 420 meses, 16 meses de obra.
+        // Bancos nao aceitam amortizacao extra durante a obra.
+        //
+        // Mes 5 (obra) com extra de R$100.000:
+        //   Extra e ignorado — saldo permanece R$1.200.000.
+        //   Juros de obra calculados normalmente sobre o valor liberado.
+        const withConstruction: BoxFinancing = {
+          principal: 1_200_000,
+          annualRate: 0.11,
+          termMonths: 420,
+          system: 'sac',
+          constructionMonths: 16,
+        };
+
+        const state = initFinancingState(withConstruction);
+        const { detail: withExtra } = computeFinancingMonth(
+          withConstruction,
+          state,
+          5,
+          100_000,
+        );
+        const { detail: withoutExtra } = computeFinancingMonth(
+          withConstruction,
+          state,
+          5,
+          0,
+        );
+
+        expect(withExtra.phase).toBe('construction');
+        expect(withExtra.outstandingBalance).toBe(1_200_000);
+        expect(withExtra.interest).toBeCloseTo(withoutExtra.interest, 2);
+        expect(withExtra.payment).toBeCloseTo(withoutExtra.payment, 2);
+      });
+
+      it('should allow extra amortization during grace phase', () => {
+        // R$50.000 a 6,5% a.a., 168 meses, 18 meses de carencia.
+        // Bancos aceitam amortizacao extra durante carencia.
+        //
+        // Mes 5 (carencia) com extra de R$10.000:
+        //   saldo = 50.000 - 10.000 = R$40.000
+        //   juros = 40.000 * (0.065/12) = R$216,67
+        const withGrace: BoxFinancing = {
+          principal: 50_000,
+          annualRate: 0.065,
+          termMonths: 168,
+          system: 'sac',
+          gracePeriodMonths: 18,
+        };
+
+        const state = initFinancingState(withGrace);
+        const { detail } = computeFinancingMonth(withGrace, state, 5, 10_000);
+
+        expect(detail.phase).toBe('grace');
+        expect(detail.outstandingBalance).toBe(40_000);
+        expect(detail.interest).toBeCloseTo(40_000 * (0.065 / 12), 2);
+      });
+    });
+
+    describe('termMonths semantics', () => {
+      it('should subtract construction months from amortization term', () => {
+        // Prazo contratual 420 meses, 16 meses de obra.
+        // Prazo efetivo de amortizacao = 420 - 16 = 404 meses.
+        // SAC: amort = 1.200.000 / 404 = R$2.970,30
+        const withConstruction: BoxFinancing = {
+          principal: 1_200_000,
+          annualRate: 0.11,
+          termMonths: 420,
+          system: 'sac',
+          constructionMonths: 16,
+        };
+
+        let state = initFinancingState(withConstruction);
+        expect(state.remainingTermMonths).toBe(404);
+
+        // Advance past construction
+        for (let i = 0; i < 16; i++) {
+          const { nextState } = computeFinancingMonth(
+            withConstruction,
+            state,
+            i,
+            0,
+          );
+          state = nextState;
+        }
+
+        const { detail } = computeFinancingMonth(
+          withConstruction,
+          state,
+          16,
+          0,
+        );
+        expect(detail.amortization).toBeCloseTo(1_200_000 / 404, 0);
+      });
+
+      it('should subtract construction + grace months from amortization term', () => {
+        // Prazo contratual 420 meses, 16 obra + 6 carencia.
+        // Prazo efetivo de amortizacao = 420 - 16 - 6 = 398 meses.
+        // SAC: amort = 1.200.000 / 398 = R$3.015,08
+        const withBoth: BoxFinancing = {
+          principal: 1_200_000,
+          annualRate: 0.11,
+          termMonths: 420,
+          system: 'sac',
+          constructionMonths: 16,
+          gracePeriodMonths: 6,
+        };
+
+        let state = initFinancingState(withBoth);
+        expect(state.remainingTermMonths).toBe(398);
+
+        // Advance past construction + grace
+        for (let i = 0; i < 22; i++) {
+          const { nextState } = computeFinancingMonth(withBoth, state, i, 0);
+          state = nextState;
+        }
+
+        const { detail } = computeFinancingMonth(withBoth, state, 22, 0);
+        expect(detail.amortization).toBeCloseTo(1_200_000 / 398, 0);
+      });
+
+      it('should use full termMonths when no construction or grace', () => {
+        // Sem obra nem carencia: prazo efetivo = termMonths = 12.
+        const state = initFinancingState(sacFinancing);
+        expect(state.remainingTermMonths).toBe(12);
       });
     });
   });
