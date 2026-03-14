@@ -897,7 +897,7 @@ describe('runProjection', () => {
 
     it('should handle extra amortization from cash', () => {
       // SAC R$120.000 a 12% a.a. (1% a.m.) em 12 meses.
-      // scheduledPayment de R$50.000 no mes 1 (sem sourceBoxId => sai do caixa).
+      // type: 'in' movement de R$50.000 no mes 1 (sai do caixa como extra amortization).
       //
       // Mes 0 (normal):
       //   amort = 120.000/12 = R$10.000
@@ -1006,7 +1006,7 @@ describe('runProjection', () => {
 
       // Month 2: reserva = 15k - 10k(transfer) = 5k
       expect(result[2].boxes['reserva']).toBeCloseTo(5_000, 0);
-      // Cash unaffected by sourceBoxId transfer (no cash outflow for this)
+      // Cash unaffected by type: 'out' with destinationBoxId transfer (no cash outflow for this)
       const cashWithoutTransfer = result[1].cash + result[2].surplus;
       expect(result[2].cash).toBeCloseTo(cashWithoutTransfer, 0);
     });
@@ -1110,6 +1110,213 @@ describe('runProjection', () => {
 
       expect(result[0].totalCommitted).toBeCloseTo(1_000, 0);
       expect(result[0].totalWealth).toBeCloseTo(result[0].cash, 0);
+    });
+  });
+
+  describe('scheduled movements - type out', () => {
+    it('should return withdrawn amount to cash when out movement has no destinationBoxId', () => {
+      const result = runProjection(
+        createPlan({
+          boxes: [
+            {
+              id: 'reserva',
+              label: 'Reserva',
+              target: 50000,
+              monthlyAmount: [{ month: 0, amount: 4000 }],
+              holdsFunds: true,
+              initialBalance: 10000,
+              scheduledMovements: [
+                { label: 'Saque', month: 2, amount: 5000, type: 'out' },
+              ],
+            },
+          ],
+        }),
+        4,
+      );
+
+      // Month 0: balance = 10000 + 4000 = 14000
+      // Month 1: balance = 14000 + 4000 = 18000
+      // Month 2: balance = 18000 + 4000 - 5000 = 17000
+      // Surplus without withdrawal = 10000 - 6000 - 4000 = 0
+      // Surplus with withdrawal = 10000 - 6000 - 4000 + 5000 = 5000
+      // Cash: 0 + 0 + 5000 = 5000
+      expect(result[2].boxes['reserva']).toBe(17000);
+      expect(result[2].cash).toBe(5000);
+      expect(result[2].scheduledMovements).toContainEqual(
+        expect.objectContaining({ boxId: 'reserva', amount: 5000, type: 'out' }),
+      );
+    });
+
+    it('should transfer withdrawn amount to destination regular box', () => {
+      const result = runProjection(
+        createPlan({
+          boxes: [
+            {
+              id: 'reserva',
+              label: 'Reserva',
+              target: 0,
+              monthlyAmount: [{ month: 0, amount: 2000 }],
+              holdsFunds: true,
+              initialBalance: 10000,
+              scheduledMovements: [
+                { label: 'Transferência', month: 1, amount: 3000, type: 'out', destinationBoxId: 'casamento' },
+              ],
+            },
+            {
+              id: 'casamento',
+              label: 'Casamento',
+              target: 0,
+              monthlyAmount: [{ month: 0, amount: 1000 }],
+              holdsFunds: true,
+              scheduledMovements: [],
+            },
+          ],
+        }),
+        3,
+      );
+
+      // Month 0: reserva = 10000 + 2000 = 12000, casamento = 1000
+      // surplus = 10000 - 6000 - 2000 - 1000 = 1000
+      // Month 1: reserva = 12000 + 2000 - 3000 = 11000, casamento = 1000 + 1000 + 3000 = 5000
+      // surplus = 10000 - 6000 - 2000 - 1000 = 1000 (transfer doesn't affect cash)
+      expect(result[1].boxes['reserva']).toBe(11000);
+      expect(result[1].boxes['casamento']).toBe(5000);
+      // Cash flow unaffected by box-to-box transfer (surplus is same both months)
+      expect(result[1].surplus).toBe(result[0].surplus);
+    });
+
+    it('should cap withdrawal at available balance when amount exceeds it', () => {
+      const result = runProjection(
+        createPlan({
+          boxes: [
+            {
+              id: 'reserva',
+              label: 'Reserva',
+              target: 0,
+              monthlyAmount: [{ month: 0, amount: 2000 }],
+              holdsFunds: true,
+              initialBalance: 1000,
+              scheduledMovements: [
+                { label: 'Saque grande', month: 0, amount: 50000, type: 'out' },
+              ],
+            },
+          ],
+        }),
+        2,
+      );
+
+      // Month 0: deposit 2000 (balance = 1000 + 2000 = 3000), then withdrawal capped at 3000
+      expect(result[0].boxes['reserva']).toBe(0);
+      // Cash = surplus(10000 - 6000 - 2000 + 3000) = 5000
+      expect(result[0].cash).toBe(5000);
+      expect(result[0].scheduledMovements[0].amount).toBe(3000); // effective amount, not 50000
+    });
+
+    it('should accumulate withdrawal to financing box as extra amortization', () => {
+      const result = runProjection(
+        createPlan({
+          boxes: [
+            {
+              id: 'reserva',
+              label: 'Reserva',
+              target: 0,
+              monthlyAmount: [{ month: 0, amount: 5000 }],
+              holdsFunds: true,
+              initialBalance: 10000,
+              scheduledMovements: [
+                { label: 'Amortização extra', month: 2, amount: 8000, type: 'out', destinationBoxId: 'financiamento' },
+              ],
+            },
+            {
+              id: 'financiamento',
+              label: 'Financiamento',
+              target: 0,
+              holdsFunds: false,
+              monthlyAmount: [],
+              scheduledMovements: [],
+              financing: {
+                principal: 500000,
+                annualRate: 0.12,
+                termMonths: 360,
+                system: 'sac' as const,
+              },
+            },
+          ],
+        }),
+        4,
+      );
+
+      // Month 2: reserva deposits 5000 (balance = 20000 + 5000 = 25000)
+      // then withdrawal of 8000 → reserva = 17000
+      // 8000 goes as extra amortization to financing
+      expect(result[2].boxes['reserva']).toBeCloseTo(17000, -2);
+      // Financing outstanding balance should reflect extra amortization of 8000
+      // The extra amort is applied first, then SAC recalculates regular amort on the reduced balance.
+      // So the total reduction = 8000 (extra) + regular amort (recalculated on post-extra balance).
+      const withoutExtra = result[1].financingDetails['financiamento'].outstandingBalance;
+      const withExtra = result[2].financingDetails['financiamento'].outstandingBalance;
+      // Reduction must be greater than 8000 (extra alone) because regular amort also applies
+      expect(withoutExtra - withExtra).toBeGreaterThan(8000);
+      // And the extra amortization should make month 2 outstanding notably lower
+      // than it would be with just regular amortization (~1388/mo for 500k/360)
+      const regularOnlyReduction = result[0].financingDetails['financiamento'].amortization;
+      expect(withoutExtra - withExtra).toBeGreaterThan(regularOnlyReduction + 7000);
+    });
+
+    it('should resume monthly contributions after withdrawal drops balance below target', () => {
+      const result = runProjection(
+        createPlan({
+          boxes: [
+            {
+              id: 'reserva',
+              label: 'Reserva',
+              target: 20000,
+              monthlyAmount: [{ month: 0, amount: 4000 }],
+              holdsFunds: true,
+              initialBalance: 15000,
+              scheduledMovements: [
+                { label: 'Saque', month: 1, amount: 10000, type: 'out' },
+              ],
+            },
+          ],
+        }),
+        4,
+      );
+
+      // Month 0: 15000 + 4000 = 19000
+      // Month 1: 19000 + min(4000, 1000) = 20000 (capped at target), then -10000 = 10000
+      // Month 2: 10000 + 4000 = 14000 (monthly resumes, below target)
+      // Month 3: 14000 + 4000 = 18000
+      expect(result[1].boxes['reserva']).toBe(10000);
+      expect(result[2].boxes['reserva']).toBe(14000);
+      expect(result[3].boxes['reserva']).toBe(18000);
+    });
+
+    it('should allow in movements to exceed target', () => {
+      const result = runProjection(
+        createPlan({
+          boxes: [
+            {
+              id: 'reserva',
+              label: 'Reserva',
+              target: 10000,
+              monthlyAmount: [{ month: 0, amount: 4000 }],
+              holdsFunds: true,
+              scheduledMovements: [
+                { label: 'Aporte extra', month: 2, amount: 15000, type: 'in' },
+              ],
+            },
+          ],
+        }),
+        4,
+      );
+
+      // Month 0: 4000, Month 1: 8000
+      // Month 2: scheduled in replaces monthly (additionalToMonthly default false) → 15000
+      // balance = 8000 + 15000 = 23000 (exceeds target 10000 — allowed)
+      expect(result[2].boxes['reserva']).toBe(23000);
+      // Month 3: target already exceeded, monthly = 0 (capped)
+      expect(result[3].boxes['reserva']).toBe(23000);
     });
   });
 });
