@@ -10,8 +10,11 @@ function getBoxOutflow(
   box: Box,
   month: number,
   currentBalance: number,
-): { outflow: number; scheduledMovements: { amount: number; label: string }[] } {
-  const paymentsThisMonth = box.scheduledMovements.filter(
+): {
+  outflow: number;
+  scheduledMovements: { amount: number; label: string }[];
+} {
+  const paymentsThisMonth = (box.scheduledMovements ?? []).filter(
     (p) => p.month === month && p.type === 'in',
   );
 
@@ -68,7 +71,9 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
 
   for (let i = 0; i < totalMonths; i++) {
     const start = new Date(plan.startDate);
-    const date = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1));
+    const date = new Date(
+      Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1),
+    );
 
     const income = getActiveValue(plan.premises.salaryChangePoints, i);
     const costOfLiving = getActiveValue(
@@ -127,7 +132,7 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
       }
 
       // Process 'out' movements for this box
-      const outsThisMonth = box.scheduledMovements.filter(
+      const outsThisMonth = (box.scheduledMovements ?? []).filter(
         (p) => p.month === i && p.type === 'out',
       );
 
@@ -175,7 +180,7 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
       const financingMonth = i - financingStart;
 
       // Process 'in' movements on financing box as extra amortization from cash
-      const financingInsThisMonth = box.scheduledMovements.filter(
+      const financingInsThisMonth = (box.scheduledMovements ?? []).filter(
         (p) => p.month === i && p.type === 'in',
       );
 
