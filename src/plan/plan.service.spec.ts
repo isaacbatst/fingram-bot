@@ -19,7 +19,7 @@ describe('PlanService', () => {
       target: 10000,
       monthlyAmount: [{ month: 0, amount: 2000 }],
       holdsFunds: true,
-      scheduledPayments: [],
+      scheduledMovements: [],
     },
     {
       id: 'car',
@@ -27,7 +27,7 @@ describe('PlanService', () => {
       target: 20000,
       monthlyAmount: [{ month: 0, amount: 1000 }],
       holdsFunds: false,
-      scheduledPayments: [],
+      scheduledMovements: [],
     },
   ];
 
@@ -144,7 +144,7 @@ describe('PlanService', () => {
             target: 1000,
             monthlyAmount: [{ month: 0, amount: 100 }],
             holdsFunds: true,
-            scheduledPayments: [],
+            scheduledMovements: [],
           },
         ],
       });
@@ -165,7 +165,7 @@ describe('PlanService', () => {
             target: -100,
             monthlyAmount: [{ month: 0, amount: 100 }],
             holdsFunds: true,
-            scheduledPayments: [],
+            scheduledMovements: [],
           },
         ],
       });
@@ -173,7 +173,7 @@ describe('PlanService', () => {
       expect(error).toBe('Target da box não pode ser negativo');
     });
 
-    it('should reject scheduled payment with zero amount', async () => {
+    it('should reject scheduled movement with zero amount', async () => {
       const [error] = await service.create({
         vaultId: 'vault-1',
         name: 'Plan',
@@ -186,15 +186,19 @@ describe('PlanService', () => {
             target: 1000,
             monthlyAmount: [{ month: 0, amount: 100 }],
             holdsFunds: true,
-            scheduledPayments: [{ month: 6, amount: 0, label: 'Bonus' }],
+            scheduledMovements: [
+              { month: 6, amount: 0, label: 'Bonus', type: 'in' },
+            ],
           },
         ],
       });
 
-      expect(error).toBe('Valor do pagamento agendado deve ser maior que zero');
+      expect(error).toBe(
+        'Valor da movimentação agendada deve ser maior que zero (box: Box)',
+      );
     });
 
-    it('should reject scheduled payment with empty label', async () => {
+    it('should reject scheduled movement with empty label', async () => {
       const [error] = await service.create({
         vaultId: 'vault-1',
         name: 'Plan',
@@ -207,12 +211,16 @@ describe('PlanService', () => {
             target: 1000,
             monthlyAmount: [{ month: 0, amount: 100 }],
             holdsFunds: true,
-            scheduledPayments: [{ month: 6, amount: 500, label: '' }],
+            scheduledMovements: [
+              { month: 6, amount: 500, label: '', type: 'in' },
+            ],
           },
         ],
       });
 
-      expect(error).toBe('Label do pagamento agendado é obrigatória');
+      expect(error).toBe(
+        `Label da movimentação agendada é obrigatória (box: Box)`,
+      );
     });
 
     it('should create plan with empty boxes', async () => {

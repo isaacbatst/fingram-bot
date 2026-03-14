@@ -85,21 +85,38 @@ export class PlanService {
           return left('Mês do change point não pode ser negativo');
         }
       }
-      for (const sp of box.scheduledPayments) {
-        if (sp.amount <= 0) {
-          return left('Valor do pagamento agendado deve ser maior que zero');
+      for (const sm of box.scheduledMovements ?? []) {
+        if (sm.amount <= 0) {
+          return left(
+            `Valor da movimentação agendada deve ser maior que zero (box: ${box.label})`,
+          );
         }
-        if (sp.month < 0) {
-          return left('Mês do pagamento agendado não pode ser negativo');
+        if (sm.month < 0) {
+          return left(
+            `Mês da movimentação agendada não pode ser negativo (box: ${box.label})`,
+          );
         }
-        if (!sp.label?.trim()) {
-          return left('Label do pagamento agendado é obrigatória');
+        if (!sm.label?.trim()) {
+          return left(
+            `Label da movimentação agendada é obrigatória (box: ${box.label})`,
+          );
         }
-        if (
-          sp.sourceBoxId &&
-          !input.boxes.some((b) => b.id === sp.sourceBoxId)
-        ) {
-          return left('sourceBoxId referencia uma box que não existe no plano');
+        if (sm.type !== 'in' && sm.type !== 'out') {
+          return left(
+            `Tipo da movimentação agendada deve ser 'in' ou 'out' (box: ${box.label})`,
+          );
+        }
+        if (sm.type === 'out' && sm.destinationBoxId) {
+          if (!input.boxes.some((b) => b.id === sm.destinationBoxId)) {
+            return left(
+              `destinationBoxId referencia uma box que não existe no plano (box: ${box.label})`,
+            );
+          }
+        }
+        if (sm.type === 'out' && !box.holdsFunds) {
+          return left(
+            `Movimentações de saída só são válidas em boxes com holdsFunds: true (box: ${box.label})`,
+          );
         }
       }
 

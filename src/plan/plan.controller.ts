@@ -55,12 +55,13 @@ export class PlanController {
           releasePercent?: number;
           startMonth?: number;
         };
-        scheduledPayments: {
+        scheduledMovements: {
           month: number;
           amount: number;
           label: string;
+          type: 'in' | 'out';
+          destinationBoxId?: string;
           additionalToMonthly?: boolean;
-          sourceBoxId?: string;
         }[];
       }[];
       milestones?: {
@@ -92,7 +93,7 @@ export class PlanController {
         yieldRate: b.yieldRate,
         initialBalance: b.initialBalance,
         financing: b.financing,
-        scheduledPayments: b.scheduledPayments ?? [],
+        scheduledMovements: b.scheduledMovements ?? [],
       })),
       milestones: data.milestones,
     });
