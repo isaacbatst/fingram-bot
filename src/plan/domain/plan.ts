@@ -8,12 +8,13 @@ export interface Premises {
   costOfLivingChangePoints: ChangePoint[];
 }
 
-export interface BoxScheduledPayment {
+export interface BoxScheduledMovement {
   month: number;
   amount: number;
   label: string;
+  type: 'in' | 'out';
+  destinationBoxId?: string;
   additionalToMonthly?: boolean;
-  sourceBoxId?: string;
 }
 
 export interface BoxFinancing {
@@ -49,7 +50,7 @@ export interface Box {
   holdsFunds: boolean;
   yieldRate?: number;
   financing?: BoxFinancing;
-  scheduledPayments: BoxScheduledPayment[];
+  scheduledMovements: BoxScheduledMovement[];
   initialBalance?: number;
 }
 
@@ -77,7 +78,13 @@ export interface MonthData {
   boxPayments: Record<string, number>;
   boxYields: Record<string, number>;
   totalYield: number;
-  scheduledPayments: { boxId: string; amount: number; label: string }[];
+  scheduledMovements: {
+    boxId: string;
+    amount: number;
+    label: string;
+    type: 'in' | 'out';
+    destinationBoxId?: string;
+  }[];
   totalWealth: number;
   totalCommitted: number;
   financingDetails: Record<string, FinancingMonthDetail>;

@@ -10,9 +10,9 @@ function getBoxOutflow(
   box: Box,
   month: number,
   currentBalance: number,
-): { outflow: number; scheduledPayments: { amount: number; label: string }[] } {
-  const paymentsThisMonth = box.scheduledPayments.filter(
-    (p) => p.month === month,
+): { outflow: number; scheduledMovements: { amount: number; label: string }[] } {
+  const paymentsThisMonth = box.scheduledMovements.filter(
+    (p) => p.month === month && p.type === 'in',
   );
 
   if (paymentsThisMonth.length > 0) {
@@ -29,7 +29,7 @@ function getBoxOutflow(
 
     return {
       outflow,
-      scheduledPayments: paymentsThisMonth.map((p) => ({
+      scheduledMovements: paymentsThisMonth.map((p) => ({
         amount: p.amount,
         label: p.label,
       })),
@@ -37,7 +37,7 @@ function getBoxOutflow(
   }
 
   if (box.target > 0 && currentBalance >= box.target) {
-    return { outflow: 0, scheduledPayments: [] };
+    return { outflow: 0, scheduledMovements: [] };
   }
 
   let outflow = getActiveValue(box.monthlyAmount, month);
@@ -47,7 +47,7 @@ function getBoxOutflow(
     outflow = Math.min(outflow, remaining);
   }
 
-  return { outflow, scheduledPayments: [] };
+  return { outflow, scheduledMovements: [] };
 }
 
 export function runProjection(plan: Plan, months?: number): MonthData[] {
@@ -80,18 +80,21 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
     const boxPayments: Record<string, number> = {};
     const boxYields: Record<string, number> = {};
     const financingDetails: Record<string, FinancingMonthDetail> = {};
-    const monthScheduledPayments: {
+    const monthScheduledMovements: {
       boxId: string;
       amount: number;
       label: string;
+      type: 'in' | 'out';
+      destinationBoxId?: string;
     }[] = [];
+    const extraAmortizations: Record<string, number> = {};
 
     // Pass 1: Process regular boxes (deposits + yields) so balances are
-    // up-to-date before financing boxes reference them via sourceBoxId.
+    // up-to-date before financing boxes reference them.
     for (const box of plan.boxes) {
       if (box.financing) continue;
 
-      const { outflow, scheduledPayments } = getBoxOutflow(
+      const { outflow, scheduledMovements: inMovements } = getBoxOutflow(
         box,
         i,
         boxBalances[box.id],
@@ -114,11 +117,44 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
       }
       boxYields[box.id] = yieldEarned;
 
-      for (const sp of scheduledPayments) {
-        monthScheduledPayments.push({
+      for (const sp of inMovements) {
+        monthScheduledMovements.push({
           boxId: box.id,
           amount: sp.amount,
           label: sp.label,
+          type: 'in',
+        });
+      }
+
+      // Process 'out' movements for this box
+      const outsThisMonth = box.scheduledMovements.filter(
+        (p) => p.month === i && p.type === 'out',
+      );
+
+      for (const out of outsThisMonth) {
+        const available = boxBalances[box.id] ?? 0;
+        const deduction = Math.min(out.amount, available);
+        boxBalances[box.id] -= deduction;
+
+        if (out.destinationBoxId) {
+          const destBox = plan.boxes.find((b) => b.id === out.destinationBoxId);
+          if (destBox?.financing) {
+            extraAmortizations[out.destinationBoxId] =
+              (extraAmortizations[out.destinationBoxId] ?? 0) + deduction;
+          } else {
+            boxBalances[out.destinationBoxId] =
+              (boxBalances[out.destinationBoxId] ?? 0) + deduction;
+          }
+        } else {
+          boxOutflows -= deduction;
+        }
+
+        monthScheduledMovements.push({
+          boxId: box.id,
+          amount: deduction,
+          label: out.label,
+          type: 'out',
+          destinationBoxId: out.destinationBoxId,
         });
       }
     }
@@ -138,28 +174,20 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
 
       const financingMonth = i - financingStart;
 
-      const scheduledThisMonth = box.scheduledPayments.filter(
-        (p) => p.month === i,
+      // Process 'in' movements on financing box as extra amortization from cash
+      const financingInsThisMonth = box.scheduledMovements.filter(
+        (p) => p.month === i && p.type === 'in',
       );
 
-      // Process extra amortizations
-      let extraAmortization = 0;
-      for (const sp of scheduledThisMonth) {
-        if (sp.sourceBoxId) {
-          // Deduct from source box (direct transfer, not from cash)
-          const available = boxBalances[sp.sourceBoxId] ?? 0;
-          const deduction = Math.min(sp.amount, available);
-          boxBalances[sp.sourceBoxId] -= deduction;
-          extraAmortization += deduction;
-        } else {
-          // Deduct from cash via boxOutflows
-          extraAmortization += sp.amount;
-          boxOutflows += sp.amount;
-        }
-        monthScheduledPayments.push({
+      let extraAmortization = extraAmortizations[box.id] ?? 0;
+      for (const sp of financingInsThisMonth) {
+        extraAmortization += sp.amount;
+        boxOutflows += sp.amount;
+        monthScheduledMovements.push({
           boxId: box.id,
           amount: sp.amount,
           label: sp.label,
+          type: 'in',
         });
       }
 
@@ -208,7 +236,7 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
       boxPayments,
       boxYields: { ...boxYields },
       totalYield: Object.values(boxYields).reduce((sum, v) => sum + v, 0),
-      scheduledPayments: monthScheduledPayments,
+      scheduledMovements: monthScheduledMovements,
       totalWealth,
       totalCommitted,
       financingDetails,

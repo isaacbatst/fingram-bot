@@ -20,7 +20,7 @@ function createPlan(
         target: 10000,
         monthlyAmount: [{ month: 0, amount: 4000 }],
         holdsFunds: true,
-        scheduledPayments: [],
+        scheduledMovements: [],
       },
     ],
     ...overrides,
@@ -38,7 +38,7 @@ describe('runProjection', () => {
           monthlyAmount: [{ month: 0, amount: 4000 }],
           holdsFunds: true,
           initialBalance: 2500,
-          scheduledPayments: [],
+          scheduledMovements: [],
         },
       ],
     });
@@ -125,7 +125,7 @@ describe('runProjection', () => {
           target: 5000,
           monthlyAmount: [{ month: 0, amount: 4000 }],
           holdsFunds: true,
-          scheduledPayments: [],
+          scheduledMovements: [],
         },
       ],
     });
@@ -149,7 +149,7 @@ describe('runProjection', () => {
           target: 50000,
           monthlyAmount: [],
           holdsFunds: false,
-          scheduledPayments: [{ month: 2, amount: 10000, label: 'Entrada' }],
+          scheduledMovements: [{ month: 2, amount: 10000, label: 'Entrada', type: 'in' }],
         },
       ],
     });
@@ -171,8 +171,8 @@ describe('runProjection', () => {
           target: 100000,
           monthlyAmount: [{ month: 0, amount: 2000 }],
           holdsFunds: false,
-          scheduledPayments: [
-            { month: 1, amount: 10000, label: 'Entrada 1/4' },
+          scheduledMovements: [
+            { month: 1, amount: 10000, label: 'Entrada 1/4', type: 'in' },
           ],
         },
       ],
@@ -181,8 +181,8 @@ describe('runProjection', () => {
 
     expect(result[0].boxPayments['terreno']).toBe(2000);
     expect(result[1].boxPayments['terreno']).toBe(10000);
-    expect(result[1].scheduledPayments).toEqual([
-      { boxId: 'terreno', amount: 10000, label: 'Entrada 1/4' },
+    expect(result[1].scheduledMovements).toEqual([
+      { boxId: 'terreno', amount: 10000, label: 'Entrada 1/4', type: 'in' },
     ]);
     expect(result[2].boxPayments['terreno']).toBe(2000);
   });
@@ -196,11 +196,12 @@ describe('runProjection', () => {
           target: 0,
           monthlyAmount: [{ month: 0, amount: 2000 }],
           holdsFunds: false,
-          scheduledPayments: [
+          scheduledMovements: [
             {
               month: 1,
               amount: 10000,
               label: 'Extra',
+              type: 'in',
               additionalToMonthly: true,
             },
           ],
@@ -221,9 +222,9 @@ describe('runProjection', () => {
           target: 0,
           monthlyAmount: [{ month: 0, amount: 1000 }],
           holdsFunds: false,
-          scheduledPayments: [
-            { month: 2, amount: 5000, label: 'Part A' },
-            { month: 2, amount: 3000, label: 'Part B' },
+          scheduledMovements: [
+            { month: 2, amount: 5000, label: 'Part A', type: 'in' },
+            { month: 2, amount: 3000, label: 'Part B', type: 'in' },
           ],
         },
       ],
@@ -231,7 +232,7 @@ describe('runProjection', () => {
     const result = runProjection(plan, 3);
 
     expect(result[2].boxPayments['terreno']).toBe(8000);
-    expect(result[2].scheduledPayments).toHaveLength(2);
+    expect(result[2].scheduledMovements).toHaveLength(2);
   });
 
   it('should NOT cap scheduled payments at target', () => {
@@ -243,8 +244,8 @@ describe('runProjection', () => {
           target: 5000,
           monthlyAmount: [{ month: 0, amount: 1000 }],
           holdsFunds: true,
-          scheduledPayments: [
-            { month: 3, amount: 10000, label: 'Big payment' },
+          scheduledMovements: [
+            { month: 3, amount: 10000, label: 'Big payment', type: 'in' },
           ],
         },
       ],
@@ -266,7 +267,7 @@ describe('runProjection', () => {
           target: 2000,
           monthlyAmount: [{ month: 0, amount: 1000 }],
           holdsFunds: false,
-          scheduledPayments: [{ month: 3, amount: 5000, label: 'Lump sum' }],
+          scheduledMovements: [{ month: 3, amount: 5000, label: 'Lump sum', type: 'in' }],
         },
       ],
     });
@@ -281,8 +282,8 @@ describe('runProjection', () => {
     expect(result[2].boxPayments['box']).toBe(0);
     expect(result[3].boxPayments['box']).toBe(5000);
     expect(result[3].boxes['box']).toBe(7000);
-    expect(result[3].scheduledPayments).toEqual([
-      { boxId: 'box', amount: 5000, label: 'Lump sum' },
+    expect(result[3].scheduledMovements).toEqual([
+      { boxId: 'box', amount: 5000, label: 'Lump sum', type: 'in' },
     ]);
     expect(result[4].boxPayments['box']).toBe(0);
   });
@@ -316,7 +317,7 @@ describe('runProjection', () => {
           target: 0,
           monthlyAmount: [{ month: 0, amount: 3000 }],
           holdsFunds: true,
-          scheduledPayments: [],
+          scheduledMovements: [],
         },
         {
           id: 'terreno',
@@ -324,7 +325,7 @@ describe('runProjection', () => {
           target: 0,
           monthlyAmount: [{ month: 0, amount: 2000 }],
           holdsFunds: false,
-          scheduledPayments: [],
+          scheduledMovements: [],
         },
       ],
     });
@@ -374,7 +375,7 @@ describe('runProjection', () => {
             { month: 10, amount: 2741 },
           ],
           holdsFunds: false,
-          scheduledPayments: [],
+          scheduledMovements: [],
         },
       ],
     });
@@ -409,7 +410,7 @@ describe('runProjection', () => {
           target: 0,
           monthlyAmount: [{ month: 0, amount: 800 }],
           holdsFunds: true,
-          scheduledPayments: [],
+          scheduledMovements: [],
         },
       ],
     });
@@ -433,11 +434,11 @@ describe('runProjection', () => {
           target: 530000,
           monthlyAmount: [{ month: 0, amount: 1893 }],
           holdsFunds: false,
-          scheduledPayments: [
-            { month: 0, amount: 10000, label: 'Entrada 1/4' },
-            { month: 1, amount: 10000, label: 'Entrada 2/4' },
-            { month: 2, amount: 10000, label: 'Entrada 3/4' },
-            { month: 3, amount: 23000, label: 'Entrada 4/4' },
+          scheduledMovements: [
+            { month: 0, amount: 10000, label: 'Entrada 1/4', type: 'in' },
+            { month: 1, amount: 10000, label: 'Entrada 2/4', type: 'in' },
+            { month: 2, amount: 10000, label: 'Entrada 3/4', type: 'in' },
+            { month: 3, amount: 23000, label: 'Entrada 4/4', type: 'in' },
           ],
         },
         {
@@ -446,7 +447,7 @@ describe('runProjection', () => {
           target: 0,
           monthlyAmount: [{ month: 0, amount: 800 }],
           holdsFunds: true,
-          scheduledPayments: [],
+          scheduledMovements: [],
         },
       ],
     });
@@ -480,7 +481,7 @@ describe('runProjection', () => {
             monthlyAmount: [{ month: 0, amount: 1000 }],
             holdsFunds: true,
             yieldRate: 0.12,
-            scheduledPayments: [],
+            scheduledMovements: [],
           },
         ],
       });
@@ -505,7 +506,7 @@ describe('runProjection', () => {
             monthlyAmount: [{ month: 0, amount: 1000 }],
             holdsFunds: true,
             yieldRate: 0.12,
-            scheduledPayments: [],
+            scheduledMovements: [],
           },
         ],
       });
@@ -531,7 +532,7 @@ describe('runProjection', () => {
             monthlyAmount: [{ month: 0, amount: 1000 }],
             holdsFunds: true,
             yieldRate: 0.12,
-            scheduledPayments: [],
+            scheduledMovements: [],
           },
         ],
       });
@@ -554,7 +555,7 @@ describe('runProjection', () => {
             monthlyAmount: [{ month: 0, amount: 2000 }],
             holdsFunds: false,
             yieldRate: 0.12,
-            scheduledPayments: [],
+            scheduledMovements: [],
           },
         ],
       });
@@ -582,7 +583,7 @@ describe('runProjection', () => {
             monthlyAmount: [{ month: 0, amount: 1000 }],
             holdsFunds: true,
             yieldRate: 0,
-            scheduledPayments: [],
+            scheduledMovements: [],
           },
         ],
       });
@@ -606,7 +607,7 @@ describe('runProjection', () => {
             monthlyAmount: [{ month: 0, amount: 3000 }],
             holdsFunds: true,
             yieldRate: 0.12,
-            scheduledPayments: [],
+            scheduledMovements: [],
           },
           {
             id: 'acoes',
@@ -615,7 +616,7 @@ describe('runProjection', () => {
             monthlyAmount: [{ month: 0, amount: 2000 }],
             holdsFunds: true,
             yieldRate: 0.06,
-            scheduledPayments: [],
+            scheduledMovements: [],
           },
         ],
       });
@@ -640,7 +641,7 @@ describe('runProjection', () => {
             monthlyAmount: [{ month: 0, amount: 1000 }],
             holdsFunds: true,
             yieldRate: 0.12,
-            scheduledPayments: [],
+            scheduledMovements: [],
           },
         ],
       });
@@ -673,7 +674,7 @@ describe('runProjection', () => {
             target: 0,
             monthlyAmount: [],
             holdsFunds: false,
-            scheduledPayments: [],
+            scheduledMovements: [],
             financing: {
               principal: 120_000,
               annualRate: 0.12,
@@ -734,7 +735,7 @@ describe('runProjection', () => {
             target: 0,
             monthlyAmount: [],
             holdsFunds: false,
-            scheduledPayments: [],
+            scheduledMovements: [],
             financing: {
               principal: 60_000,
               annualRate: 0.18,
@@ -790,7 +791,7 @@ describe('runProjection', () => {
             target: 0,
             monthlyAmount: [],
             holdsFunds: false,
-            scheduledPayments: [],
+            scheduledMovements: [],
             financing: {
               principal: 1_200_000,
               annualRate: 0.11,
@@ -840,7 +841,7 @@ describe('runProjection', () => {
             target: 0,
             monthlyAmount: [],
             holdsFunds: false,
-            scheduledPayments: [],
+            scheduledMovements: [],
             financing: {
               principal: 12_000,
               annualRate: 0.12,
@@ -877,7 +878,7 @@ describe('runProjection', () => {
             target: 0,
             monthlyAmount: [],
             holdsFunds: false,
-            scheduledPayments: [],
+            scheduledMovements: [],
             financing: {
               principal: 120_000,
               annualRate: 0.12,
@@ -921,8 +922,8 @@ describe('runProjection', () => {
             target: 0,
             monthlyAmount: [],
             holdsFunds: false,
-            scheduledPayments: [
-              { month: 1, amount: 50_000, label: 'Amortizacao extra' },
+            scheduledMovements: [
+              { month: 1, amount: 50_000, label: 'Amortizacao extra', type: 'in' },
             ],
             financing: {
               principal: 120_000,
@@ -953,12 +954,12 @@ describe('runProjection', () => {
     });
 
     it('should handle extra amortization from source box', () => {
-      // sourceBoxId: transferencia direta box-a-box, sem passar pelo caixa.
+      // type: 'out' com destinationBoxId: transferencia direta box-a-box, sem passar pelo caixa.
       //
       // Reserva deposita R$5.000/mes. No mes 2 (antes do deposito do mes):
       //   saldo reserva = 5k(m0) + 5k(m1) = R$10.000
       //   + deposito do mes 2: R$15.000
-      //   - transferencia de R$10.000 (sourceBoxId) => reserva = R$5.000
+      //   - transferencia de R$10.000 (type: 'out') => reserva = R$5.000
       //
       // Efeito no financiamento: extra amort de R$10.000 aplicado ao saldo devedor.
       // Efeito no caixa: NENHUM. A transferencia e direta (box -> financing).
@@ -971,7 +972,15 @@ describe('runProjection', () => {
             target: 0,
             monthlyAmount: [{ month: 0, amount: 5000 }],
             holdsFunds: true,
-            scheduledPayments: [],
+            scheduledMovements: [
+              {
+                month: 2,
+                amount: 10_000,
+                label: 'Entrada da reserva',
+                type: 'out',
+                destinationBoxId: 'fin',
+              },
+            ],
           },
           {
             id: 'fin',
@@ -979,14 +988,7 @@ describe('runProjection', () => {
             target: 0,
             monthlyAmount: [],
             holdsFunds: false,
-            scheduledPayments: [
-              {
-                month: 2,
-                amount: 10_000,
-                label: 'Entrada da reserva',
-                sourceBoxId: 'reserva',
-              },
-            ],
+            scheduledMovements: [],
             financing: {
               principal: 120_000,
               annualRate: 0.12,
@@ -1009,24 +1011,19 @@ describe('runProjection', () => {
       expect(result[2].cash).toBeCloseTo(cashWithoutTransfer, 0);
     });
 
-    it('should produce same result regardless of box order when using sourceBoxId', () => {
+    it('should produce same result regardless of box order when using out movements to financing', () => {
       // Testa independencia de ordem do motor de 2 passes.
       //
-      // Setup: reserva deposita R$5.000/mes. No mes 1, scheduledPayment de R$8.000
-      // com sourceBoxId='reserva' no financing box.
+      // Setup: reserva deposita R$5.000/mes. No mes 1, movimento type: 'out' de R$8.000
+      // na reserva com destinationBoxId='fin'.
       //
       // Estado no mes 1:
       //   Reserva pre-deposito = R$5.000 (do mes 0)
       //   Reserva pos-deposito = R$10.000 (apos deposito do mes 1)
       //
-      // Se o motor processasse em 1 passo (bug anterior):
-      //   Ordem [reserva, fin]: reserva deposita 5k => 10k, deducao = min(8k, 10k) = 8k => 2k
-      //   Ordem [fin, reserva]: deducao = min(8k, 5k) = 5k => 0k, depois deposita 5k => 5k
-      //   RESULTADO DIFERENTE! (2k vs 5k)
-      //
-      // Com motor de 2 passes (fix):
-      //   Passo 1: processa todas as boxes regulares (depositos)
-      //   Passo 2: processa todas as boxes de financiamento (deducoes)
+      // Com motor de 2 passes:
+      //   Passo 1: processa todas as boxes regulares (depositos + out movements)
+      //   Passo 2: processa todas as boxes de financiamento (extra amortizations acumuladas)
       //   Ambas as ordens: reserva = 10k apos deposito, deducao = 8k => reserva = 2k
       const reserva = {
         id: 'reserva',
@@ -1034,7 +1031,15 @@ describe('runProjection', () => {
         target: 0,
         monthlyAmount: [{ month: 0, amount: 5000 }],
         holdsFunds: true,
-        scheduledPayments: [],
+        scheduledMovements: [
+          {
+            month: 1,
+            amount: 8_000,
+            label: 'Entrada',
+            type: 'out' as const,
+            destinationBoxId: 'fin',
+          },
+        ],
       };
 
       const fin = {
@@ -1043,14 +1048,7 @@ describe('runProjection', () => {
         target: 0,
         monthlyAmount: [],
         holdsFunds: false,
-        scheduledPayments: [
-          {
-            month: 1,
-            amount: 8_000,
-            label: 'Entrada',
-            sourceBoxId: 'reserva',
-          },
-        ],
+        scheduledMovements: [],
         financing: {
           principal: 120_000,
           annualRate: 0.12,
@@ -1097,7 +1095,7 @@ describe('runProjection', () => {
             target: 0,
             monthlyAmount: [],
             holdsFunds: false,
-            scheduledPayments: [],
+            scheduledMovements: [],
             financing: {
               principal: 12_000,
               annualRate: 0.12,
