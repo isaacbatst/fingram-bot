@@ -24,6 +24,7 @@ export interface BoxFinancing {
   constructionMonths?: number;
   gracePeriodMonths?: number;
   releasePercent?: number;
+  startMonth?: number;
 }
 
 export type FinancingPhase =
@@ -49,6 +50,7 @@ export interface Box {
   yieldRate?: number;
   financing?: BoxFinancing;
   scheduledPayments: BoxScheduledPayment[];
+  initialBalance?: number;
 }
 
 export type MilestoneType =

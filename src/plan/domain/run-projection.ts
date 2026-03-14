@@ -57,7 +57,7 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
   const financingStates: Record<string, FinancingState> = {};
 
   for (const box of plan.boxes) {
-    boxBalances[box.id] = 0;
+    boxBalances[box.id] = box.initialBalance ?? 0;
     if (box.financing) {
       financingStates[box.id] = initFinancingState(box.financing);
     }
@@ -67,8 +67,8 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
   const result: MonthData[] = [];
 
   for (let i = 0; i < totalMonths; i++) {
-    const date = new Date(plan.startDate);
-    date.setMonth(date.getMonth() + i);
+    const start = new Date(plan.startDate);
+    const date = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1));
 
     const income = getActiveValue(plan.premises.salaryChangePoints, i);
     const costOfLiving = getActiveValue(
@@ -127,6 +127,17 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
     for (const box of plan.boxes) {
       if (!box.financing) continue;
 
+      const financingStart = box.financing.startMonth ?? 0;
+
+      // Before financing starts, no payments
+      if (i < financingStart) {
+        boxPayments[box.id] = 0;
+        boxYields[box.id] = 0;
+        continue;
+      }
+
+      const financingMonth = i - financingStart;
+
       const scheduledThisMonth = box.scheduledPayments.filter(
         (p) => p.month === i,
       );
@@ -155,7 +166,7 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
       const { detail, nextState } = computeFinancingMonth(
         box.financing,
         financingStates[box.id],
-        i,
+        financingMonth,
         extraAmortization,
       );
 
@@ -167,8 +178,7 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
       boxPayments[box.id] = detail.payment;
 
       // Balance tracks amortization progress (not total paid)
-      boxBalances[box.id] =
-        box.financing.principal - detail.outstandingBalance;
+      boxBalances[box.id] = box.financing.principal - detail.outstandingBalance;
 
       // No yield on financing boxes
       boxYields[box.id] = 0;
@@ -188,7 +198,7 @@ export function runProjection(plan: Plan, months?: number): MonthData[] {
     }
 
     result.push({
-      month: i + 1,
+      month: i,
       date,
       income,
       costOfLiving,

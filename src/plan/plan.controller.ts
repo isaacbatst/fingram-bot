@@ -44,6 +44,7 @@ export class PlanController {
         monthlyAmount: { month: number; amount: number }[];
         holdsFunds: boolean;
         yieldRate?: number;
+        initialBalance?: number;
         financing?: {
           principal: number;
           annualRate: number;
@@ -52,6 +53,7 @@ export class PlanController {
           constructionMonths?: number;
           gracePeriodMonths?: number;
           releasePercent?: number;
+          startMonth?: number;
         };
         scheduledPayments: {
           month: number;
@@ -88,6 +90,7 @@ export class PlanController {
         monthlyAmount: b.monthlyAmount ?? [],
         holdsFunds: b.holdsFunds ?? true,
         yieldRate: b.yieldRate,
+        initialBalance: b.initialBalance,
         financing: b.financing,
         scheduledPayments: b.scheduledPayments ?? [],
       })),

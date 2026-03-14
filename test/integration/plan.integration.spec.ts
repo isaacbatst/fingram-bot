@@ -123,17 +123,17 @@ describe('Plan API (integration)', () => {
       const months = projRes.body;
       expect(months).toHaveLength(12);
 
-      // Month 1: deposit 1000 at 12% annual → yield = 1000 * 0.01 = 10
-      const month1 = months[0];
-      const boxId = Object.keys(month1.boxes)[0];
-      expect(month1.boxYields[boxId]).toBeCloseTo(10, 1);
-      expect(month1.boxes[boxId]).toBeCloseTo(1010, 0);
-      expect(month1.totalYield).toBeCloseTo(10, 1);
+      // Month 0: deposit 1000 at 12% annual → yield = 1000 * 0.01 = 10
+      const month0 = months[0];
+      const boxId = Object.keys(month0.boxes)[0];
+      expect(month0.boxYields[boxId]).toBeCloseTo(10, 1);
+      expect(month0.boxes[boxId]).toBeCloseTo(1010, 0);
+      expect(month0.totalYield).toBeCloseTo(10, 1);
 
-      // Month 12: compound effect → balance > 12000
-      const month12 = months[11];
-      expect(month12.boxes[boxId]).toBeGreaterThan(12000);
-      expect(month12.totalYield).toBeGreaterThan(0);
+      // Month 11: compound effect → balance > 12000
+      const month11 = months[11];
+      expect(month11.boxes[boxId]).toBeGreaterThan(12000);
+      expect(month11.totalYield).toBeGreaterThan(0);
     });
 
     it('should return projection without yield when yieldRate is absent', async () => {
@@ -214,9 +214,12 @@ describe('Plan API (integration)', () => {
       const months = projRes.body;
       const boxId = Object.keys(months[0].boxes)[0];
 
-      // Month 1: SAC amortization
+      // Month 0: SAC amortization
       expect(months[0].financingDetails[boxId].phase).toBe('amortization');
-      expect(months[0].financingDetails[boxId].amortization).toBeCloseTo(10_000, 0);
+      expect(months[0].financingDetails[boxId].amortization).toBeCloseTo(
+        10_000,
+        0,
+      );
       expect(months[0].financingDetails[boxId].interest).toBeGreaterThan(0);
 
       // Payments should decline (SAC)
@@ -224,10 +227,13 @@ describe('Plan API (integration)', () => {
         months[0].financingDetails[boxId].payment,
       );
 
-      // Month 12: should be fully paid
-      expect(months[11].financingDetails[boxId].outstandingBalance).toBeCloseTo(0, 0);
+      // Month 11: should be fully paid
+      expect(months[11].financingDetails[boxId].outstandingBalance).toBeCloseTo(
+        0,
+        0,
+      );
 
-      // Month 13: paid_off
+      // Month 12: paid_off
       expect(months[12].financingDetails[boxId].phase).toBe('paid_off');
     });
 
@@ -270,10 +276,16 @@ describe('Plan API (integration)', () => {
 
       // PRICE: constant payments
       const firstPayment = months[0].financingDetails[boxId].payment;
-      expect(months[12].financingDetails[boxId].payment).toBeCloseTo(firstPayment, 0);
+      expect(months[12].financingDetails[boxId].payment).toBeCloseTo(
+        firstPayment,
+        0,
+      );
 
       // Fully paid at end
-      expect(months[23].financingDetails[boxId].outstandingBalance).toBeCloseTo(0, 0);
+      expect(months[23].financingDetails[boxId].outstandingBalance).toBeCloseTo(
+        0,
+        0,
+      );
     });
 
     it('should reject financing on holdsFunds: true box', async () => {
@@ -351,7 +363,9 @@ describe('Plan API (integration)', () => {
 
       // Amortization: month 16+
       expect(months[16].financingDetails[boxId].phase).toBe('amortization');
-      expect(months[16].financingDetails[boxId].amortization).toBeGreaterThan(0);
+      expect(months[16].financingDetails[boxId].amortization).toBeGreaterThan(
+        0,
+      );
     });
   });
 });

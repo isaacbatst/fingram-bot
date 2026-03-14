@@ -28,6 +28,26 @@ function createPlan(
 }
 
 describe('runProjection', () => {
+  it('should use initialBalance as starting point for calculations', () => {
+    const plan = createPlan({
+      boxes: [
+        {
+          id: 'reserva',
+          label: 'Reserva',
+          target: 10000,
+          monthlyAmount: [{ month: 0, amount: 4000 }],
+          holdsFunds: true,
+          initialBalance: 2500,
+          scheduledPayments: [],
+        },
+      ],
+    });
+    const result = runProjection(plan, 1);
+
+    // Month 0: 2500 initial + 4000 deposit = 6500
+    expect(result[0].boxes['reserva']).toBe(6500);
+  });
+
   it('should calculate basic surplus correctly', () => {
     const plan = createPlan();
     const result = runProjection(plan, 1);
@@ -46,12 +66,12 @@ describe('runProjection', () => {
     });
     const result = runProjection(plan, 3);
 
-    expect(result[0].month).toBe(1);
-    expect(result[0].date.getMonth()).toBe(2);
-    expect(result[1].month).toBe(2);
-    expect(result[1].date.getMonth()).toBe(3);
-    expect(result[2].month).toBe(3);
-    expect(result[2].date.getMonth()).toBe(4);
+    expect(result[0].month).toBe(0);
+    expect(result[0].date.getUTCMonth()).toBe(2); // March
+    expect(result[1].month).toBe(1);
+    expect(result[1].date.getUTCMonth()).toBe(3); // April
+    expect(result[2].month).toBe(2);
+    expect(result[2].date.getUTCMonth()).toBe(4); // May
   });
 
   it('should handle salary change points', () => {
@@ -667,8 +687,14 @@ describe('runProjection', () => {
       const result = runProjection(plan, 12);
       const rate = 0.12 / 12;
 
-      expect(result[0].financingDetails['fin'].amortization).toBeCloseTo(10_000, 0);
-      expect(result[0].financingDetails['fin'].interest).toBeCloseTo(120_000 * rate, 2);
+      expect(result[0].financingDetails['fin'].amortization).toBeCloseTo(
+        10_000,
+        0,
+      );
+      expect(result[0].financingDetails['fin'].interest).toBeCloseTo(
+        120_000 * rate,
+        2,
+      );
       expect(result[0].financingDetails['fin'].phase).toBe('amortization');
 
       // Last payment < first payment (SAC declining property)
@@ -677,7 +703,10 @@ describe('runProjection', () => {
       );
 
       // After 12 months of 10k amortization each: outstanding = 0
-      expect(result[11].financingDetails['fin'].outstandingBalance).toBeCloseTo(0, 2);
+      expect(result[11].financingDetails['fin'].outstandingBalance).toBeCloseTo(
+        0,
+        2,
+      );
     });
 
     it('should calculate PRICE payments with constant installments', () => {
@@ -720,10 +749,16 @@ describe('runProjection', () => {
 
       const firstPayment = result[0].financingDetails['car'].payment;
       for (let i = 1; i < 24; i++) {
-        expect(result[i].financingDetails['car'].payment).toBeCloseTo(firstPayment, 2);
+        expect(result[i].financingDetails['car'].payment).toBeCloseTo(
+          firstPayment,
+          2,
+        );
       }
 
-      expect(result[23].financingDetails['car'].outstandingBalance).toBeCloseTo(0, 2);
+      expect(result[23].financingDetails['car'].outstandingBalance).toBeCloseTo(
+        0,
+        2,
+      );
     });
 
     it('should handle construction phase with growing interest', () => {
@@ -781,7 +816,9 @@ describe('runProjection', () => {
 
       // Month 16: amortization starts. SAC amort = 1.2M / 420 = ~2,857.
       expect(result[16].financingDetails['obra'].phase).toBe('amortization');
-      expect(result[16].financingDetails['obra'].amortization).toBeGreaterThan(0);
+      expect(result[16].financingDetails['obra'].amortization).toBeGreaterThan(
+        0,
+      );
     });
 
     it('should deduct financing payments from cash (affects surplus)', () => {
@@ -899,10 +936,15 @@ describe('runProjection', () => {
 
       const result = runProjection(plan, 3);
 
-      expect(result[0].financingDetails['fin'].outstandingBalance).toBeCloseTo(110_000, 0);
+      expect(result[0].financingDetails['fin'].outstandingBalance).toBeCloseTo(
+        110_000,
+        0,
+      );
 
       // After extra amort of 50k + regular amort: outstanding < 60k
-      expect(result[1].financingDetails['fin'].outstandingBalance).toBeLessThan(60_000);
+      expect(result[1].financingDetails['fin'].outstandingBalance).toBeLessThan(
+        60_000,
+      );
 
       // Lower outstanding => lower interest => lower total payment
       expect(result[2].financingDetails['fin'].payment).toBeLessThan(
@@ -1028,9 +1070,7 @@ describe('runProjection', () => {
         resultB[1].boxes['reserva'],
         2,
       );
-      expect(
-        resultA[1].financingDetails['fin'].outstandingBalance,
-      ).toBeCloseTo(
+      expect(resultA[1].financingDetails['fin'].outstandingBalance).toBeCloseTo(
         resultB[1].financingDetails['fin'].outstandingBalance,
         2,
       );

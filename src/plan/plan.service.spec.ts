@@ -281,6 +281,7 @@ describe('PlanService', () => {
 
       expect(error).toBeNull();
       expect(projection).toHaveLength(12);
+      expect(projection![0].month).toBe(0);
       expect(projection![0].income).toBe(10000);
       expect(projection![0].costOfLiving).toBe(6000);
       expect(projection![0].surplus).toBe(1000);
