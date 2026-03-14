@@ -81,9 +81,7 @@ export type DrizzleDatabase =
   exports: [DRIZZLE_DATABASE, DRIZZLE_IS_NEON],
 })
 export class DrizzleModule implements OnModuleDestroy {
-  constructor(
-    @Inject(DRIZZLE_POOL) private readonly pool: Pool | null,
-  ) {}
+  constructor(@Inject(DRIZZLE_POOL) private readonly pool: Pool | null) {}
 
   async onModuleDestroy() {
     await this.pool?.end();
