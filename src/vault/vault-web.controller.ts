@@ -331,6 +331,8 @@ export class VaultWebController {
         throw new UnauthorizedException(message);
       case VaultErrorType.VAULT_NOT_FOUND:
         throw new NotFoundException(message);
+      case VaultErrorType.BAD_REQUEST:
+        throw new BadRequestException(message);
       case VaultErrorType.INTERNAL_ERROR:
       default:
         throw new InternalServerErrorException(message);

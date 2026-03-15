@@ -750,4 +750,183 @@ describe('Plan API (integration)', () => {
       expect(res.status).toBeGreaterThanOrEqual(400);
     });
   });
+
+  describe('Transaction tagging (ISA-99)', () => {
+    /** Helper: create a plan with one Pagamento and one Reserva allocation */
+    async function createPlanWithAllocations(token: string) {
+      const res = await request(app.getHttpServer())
+        .post('/plans')
+        .set('Cookie', `vault_access_token=${token}`)
+        .send({
+          name: 'Test Plan',
+          startDate: new Date().toISOString(),
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 10000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 5000 }],
+          },
+          allocations: [
+            {
+              label: 'Terreno',
+              target: 100000,
+              monthlyAmount: [{ month: 0, amount: 2000 }],
+              holdsFunds: false,
+              scheduledMovements: [],
+            },
+            {
+              label: 'Reserva',
+              target: 50000,
+              monthlyAmount: [{ month: 0, amount: 1000 }],
+              holdsFunds: true,
+              scheduledMovements: [],
+            },
+          ],
+        })
+        .expect(201);
+
+      const pagamentoAllocation = res.body.allocations.find(
+        (a: any) => !a.holdsFunds,
+      );
+      const reservaAllocation = res.body.allocations.find(
+        (a: any) => a.holdsFunds,
+      );
+
+      return {
+        planId: res.body.id as string,
+        pagamentoAllocationId: pagamentoAllocation.id as string,
+        reservaAllocationId: reservaAllocation.id as string,
+      };
+    }
+
+    it('should create transaction with Pagamento allocationId', async () => {
+      const { pagamentoAllocationId } =
+        await createPlanWithAllocations(vaultToken);
+
+      const txRes = await request(app.getHttpServer())
+        .post('/vault/create-transaction')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          amount: 2000,
+          type: 'expense',
+          description: 'Parcela terreno',
+          allocationId: pagamentoAllocationId,
+        })
+        .expect(201);
+
+      expect(txRes.body.transaction.allocationId).toBe(pagamentoAllocationId);
+    });
+
+    it('should reject transaction with Reserva (holdsFunds) allocationId', async () => {
+      const { reservaAllocationId } =
+        await createPlanWithAllocations(vaultToken);
+
+      await request(app.getHttpServer())
+        .post('/vault/create-transaction')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          amount: 1000,
+          type: 'expense',
+          description: 'Depósito reserva',
+          allocationId: reservaAllocationId,
+        })
+        .expect(400);
+    });
+
+    it('should reject transaction with allocationId from another vault', async () => {
+      // Create a second vault and a plan in it
+      const vault2 = await createTestVault(db);
+      const { pagamentoAllocationId: otherVaultAllocationId } =
+        await createPlanWithAllocations(vault2.token);
+
+      // Try to use vault2's allocationId from vault1's token
+      await request(app.getHttpServer())
+        .post('/vault/create-transaction')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          amount: 2000,
+          type: 'expense',
+          description: 'Cross-vault attempt',
+          allocationId: otherVaultAllocationId,
+        })
+        .expect(400);
+    });
+
+    it('should edit transaction to add allocationId', async () => {
+      const { pagamentoAllocationId } =
+        await createPlanWithAllocations(vaultToken);
+
+      // Create transaction without allocationId
+      const txRes = await request(app.getHttpServer())
+        .post('/vault/create-transaction')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          amount: 2000,
+          type: 'expense',
+          description: 'Sem alocação inicial',
+        })
+        .expect(201);
+
+      const txCode = txRes.body.transaction.code;
+      expect(txRes.body.transaction.allocationId).toBeFalsy();
+
+      // Edit to add allocationId
+      const editRes = await request(app.getHttpServer())
+        .post('/vault/edit-transaction')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          transactionCode: txCode,
+          newAllocationId: pagamentoAllocationId,
+        })
+        .expect(201);
+
+      expect(editRes.body.transaction.allocationId).toBe(pagamentoAllocationId);
+    });
+
+    it('should edit transaction to remove allocationId', async () => {
+      const { pagamentoAllocationId } =
+        await createPlanWithAllocations(vaultToken);
+
+      // Create transaction with allocationId
+      const txRes = await request(app.getHttpServer())
+        .post('/vault/create-transaction')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          amount: 2000,
+          type: 'expense',
+          description: 'Com alocação',
+          allocationId: pagamentoAllocationId,
+        })
+        .expect(201);
+
+      const txCode = txRes.body.transaction.code;
+      expect(txRes.body.transaction.allocationId).toBe(pagamentoAllocationId);
+
+      // Edit to remove allocationId
+      const editRes = await request(app.getHttpServer())
+        .post('/vault/edit-transaction')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          transactionCode: txCode,
+          newAllocationId: null,
+        })
+        .expect(201);
+
+      expect(editRes.body.transaction.allocationId).toBeNull();
+    });
+
+    it('GET /plans/allocations?type=payment returns only Pagamento allocations', async () => {
+      await createPlanWithAllocations(vaultToken);
+
+      const res = await request(app.getHttpServer())
+        .get('/plans/allocations?type=payment')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThan(0);
+      // All returned allocations must be Pagamento (holdsFunds === false)
+      for (const alloc of res.body) {
+        expect(alloc.holdsFunds).toBe(false);
+      }
+    });
+  });
 });

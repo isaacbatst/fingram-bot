@@ -11,6 +11,7 @@ import { VaultService } from './vault.service';
 export enum VaultErrorType {
   UNAUTHORIZED = 'UNAUTHORIZED',
   VAULT_NOT_FOUND = 'VAULT_NOT_FOUND',
+  BAD_REQUEST = 'BAD_REQUEST',
   INTERNAL_ERROR = 'INTERNAL_ERROR',
 }
 
@@ -310,8 +311,13 @@ export class VaultWebService {
       });
 
       if (error !== null) {
+        const isValidationError =
+          error === 'Só alocações Pagamento podem ser vinculadas a transações' ||
+          error === 'Alocação não pertence a este vault';
         return left({
-          type: VaultErrorType.VAULT_NOT_FOUND,
+          type: isValidationError
+            ? VaultErrorType.BAD_REQUEST
+            : VaultErrorType.VAULT_NOT_FOUND,
           message: error,
         });
       }
@@ -370,8 +376,13 @@ export class VaultWebService {
       });
 
       if (error !== null) {
+        const isValidationError =
+          error === 'Só alocações Pagamento podem ser vinculadas a transações' ||
+          error === 'Alocação não pertence a este vault';
         return left({
-          type: VaultErrorType.VAULT_NOT_FOUND,
+          type: isValidationError
+            ? VaultErrorType.BAD_REQUEST
+            : VaultErrorType.VAULT_NOT_FOUND,
           message: error,
         });
       }
