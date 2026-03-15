@@ -14,6 +14,7 @@ describe('Vault', () => {
         vaultId: vault.id,
         boxId: '',
         transferId: null,
+        allocationId: null,
         amount: 100,
         isCommitted: false,
         description: 'any',
@@ -33,6 +34,7 @@ describe('Vault', () => {
         vaultId: vault.id,
         boxId: '',
         transferId: null,
+        allocationId: null,
         amount: 50,
         isCommitted: false,
         description: 'any',
@@ -56,6 +58,7 @@ describe('Vault', () => {
         vaultId: vault.id,
         boxId: '',
         transferId: null,
+        allocationId: null,
         amount: 100,
         isCommitted: false,
         description: 'any',
@@ -82,6 +85,7 @@ describe('Vault', () => {
         vaultId: vault.id,
         boxId: '',
         transferId: null,
+        allocationId: null,
         isCommitted: false,
         description: 'any',
         createdAt: new Date(),
@@ -109,6 +113,7 @@ describe('Vault', () => {
         vaultId: vault.id,
         boxId: '',
         transferId: null,
+        allocationId: null,
         amount: 100,
         isCommitted: false,
         categoryId: category1.id,
@@ -125,6 +130,7 @@ describe('Vault', () => {
         vaultId: vault.id,
         boxId: '',
         transferId: null,
+        allocationId: null,
         isCommitted: false,
         categoryId: category1.id,
         createdAt: new Date('2022-05-20'),
@@ -139,6 +145,7 @@ describe('Vault', () => {
         vaultId: vault.id,
         boxId: '',
         transferId: null,
+        allocationId: null,
         amount: 50,
         isCommitted: false,
         categoryId: category2.id,
@@ -154,6 +161,7 @@ describe('Vault', () => {
         vaultId: vault.id,
         boxId: '',
         transferId: null,
+        allocationId: null,
         amount: 200,
         isCommitted: false,
         categoryId: category2.id,
@@ -246,6 +254,7 @@ describe('Vault - Boxes', () => {
         vaultId: vault.id,
         boxId: box.id,
         transferId: null,
+        allocationId: null,
         amount: 100,
         isCommitted: true,
         createdAt: new Date(),
@@ -284,6 +293,7 @@ describe('Vault - Boxes', () => {
         vaultId: vault.id,
         boxId: box.id,
         transferId: null,
+        allocationId: null,
         amount: 500,
         isCommitted: true,
         createdAt: new Date(),
@@ -300,6 +310,7 @@ describe('Vault - Boxes', () => {
         vaultId: vault.id,
         boxId: box.id,
         transferId: null,
+        allocationId: null,
         amount: 200,
         isCommitted: true,
         createdAt: new Date(),
@@ -317,6 +328,7 @@ describe('Vault - Boxes', () => {
         vaultId: vault.id,
         boxId: box.id,
         transferId: null,
+        allocationId: null,
         amount: 1000,
         isCommitted: false,
         createdAt: new Date(),
@@ -344,6 +356,7 @@ describe('Vault - Boxes', () => {
         vaultId: vault.id,
         boxId: boxA.id,
         transferId: null,
+        allocationId: null,
         amount: 1000,
         isCommitted: true,
         createdAt: new Date(),
@@ -388,6 +401,7 @@ describe('Vault - Boxes', () => {
         vaultId: vault.id,
         boxId: boxA.id,
         transferId: null,
+        allocationId: null,
         amount: 1000,
         isCommitted: true,
         createdAt: new Date(),
@@ -453,6 +467,7 @@ describe('Vault - Boxes', () => {
         type: 'expense',
         date: new Date('2026-03-15'),
         transferId: null,
+        allocationId: null,
       }),
     );
 
@@ -470,6 +485,7 @@ describe('Vault - Boxes', () => {
         type: 'expense',
         date: new Date('2026-03-15'),
         transferId: 'tf-1',
+        allocationId: null,
       }),
     );
 
@@ -495,6 +511,7 @@ describe('Vault - Boxes', () => {
         type: 'expense',
         date: new Date('2026-03-15'),
         transferId: null,
+        allocationId: null,
       }),
     );
 
@@ -511,6 +528,7 @@ describe('Vault - Boxes', () => {
         type: 'expense',
         date: new Date('2026-03-15'),
         transferId: 'tf-1',
+        allocationId: null,
       }),
     );
 
@@ -535,6 +553,7 @@ describe('Vault - Boxes', () => {
         type: 'income',
         date: new Date('2026-03-15'),
         transferId: null,
+        allocationId: null,
       }),
     );
 
@@ -551,6 +570,7 @@ describe('Vault - Boxes', () => {
         type: 'income',
         date: new Date('2026-03-15'),
         transferId: 'tf-1',
+        allocationId: null,
       }),
     );
 

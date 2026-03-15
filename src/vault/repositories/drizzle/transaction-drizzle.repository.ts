@@ -92,6 +92,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
         categoryName: vaultCategory.name,
         categoryCode: vaultCategory.code,
         categoryDescription: vaultCategory.description,
+        allocationId: transaction.allocationId,
       })
       .from(transaction)
       .leftJoin(vaultCategory, eq(transaction.categoryId, vaultCategory.id))
@@ -129,6 +130,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
             description: row.categoryDescription ?? '',
           }
         : null,
+      allocationId: row.allocationId ?? null,
     }));
 
     // Count total (same joins and conditions as data query)

@@ -75,6 +75,7 @@ export class VaultDrizzleRepository extends VaultRepository {
           date: t.date,
           boxId: t.boxId || null,
           transferId: t.transferId ?? null,
+          allocationId: t.allocationId ?? null,
         }),
       );
     }
@@ -104,6 +105,7 @@ export class VaultDrizzleRepository extends VaultRepository {
             committed: t.isCommitted,
             boxId: t.boxId || null,
             transferId: t.transferId ?? null,
+            allocationId: t.allocationId ?? null,
           })
           .where(eq(transaction.id, t.id)),
       );
@@ -256,6 +258,7 @@ export class VaultDrizzleRepository extends VaultRepository {
           categoryId: t.categoryId,
           type: t.type as 'expense' | 'income',
           date: t.date ?? t.createdAt,
+          allocationId: t.allocationId ?? null,
         }),
       );
     }

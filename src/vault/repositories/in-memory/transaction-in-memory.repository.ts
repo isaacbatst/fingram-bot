@@ -126,6 +126,7 @@ export class TransactionInMemoryRepository extends TransactionRepository {
               description: category.description,
             }
           : null,
+        allocationId: transaction.allocationId ?? null,
       };
     });
 

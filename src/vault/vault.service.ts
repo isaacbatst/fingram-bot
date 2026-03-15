@@ -16,6 +16,7 @@ import { Vault } from './domain/vault';
 import { TransactionDTO } from './dto/transaction.dto,';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { TransactionCreatedEvent } from './events/transaction-created.event';
+import { PlanQueryService } from '@/plan/shared/plan-query.service';
 
 @Injectable()
 export class VaultService {
@@ -28,6 +29,7 @@ export class VaultService {
     private boxRepository: BoxRepository,
     private aiService: AiService,
     private eventEmitter: EventEmitter2,
+    private planQueryService: PlanQueryService,
   ) {}
 
   async createVault() {
@@ -256,6 +258,7 @@ export class VaultService {
       date: Date;
       shouldCommit?: boolean;
       type: 'expense' | 'income';
+      allocationId?: string;
     };
     platform?: 'web' | 'telegram-bot';
   }): Promise<Either<string, { transaction: TransactionDTO; vault: Vault }>> {
@@ -265,6 +268,22 @@ export class VaultService {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
       return left(`Dados não encontrados`);
     }
+
+    // Validate allocationId if provided
+    if (input.transaction.allocationId) {
+      const allocation = await this.planQueryService.findAllocationById(
+        input.transaction.allocationId,
+      );
+      if (!allocation) return left('Alocação não encontrada');
+      if (allocation.holdsFunds)
+        return left(
+          'Só alocações Pagamento podem ser vinculadas a transações',
+        );
+      const plan = await this.planQueryService.findPlanById(allocation.planId);
+      if (!plan || plan.vaultId !== input.vaultId)
+        return left('Alocação não pertence a este vault');
+    }
+
     console.log('categoryId', input.transaction.categoryId);
     const category = input.transaction.categoryId
       ? await this.categoryRepository.findById(input.transaction.categoryId)
@@ -278,6 +297,7 @@ export class VaultService {
       boxId: input.transaction.boxId,
       type: input.transaction.type,
       vaultId: vault.id,
+      allocationId: input.transaction.allocationId,
     });
     vault.addTransaction(transaction);
     if (input.transaction.shouldCommit) {
@@ -317,6 +337,7 @@ export class VaultService {
     date?: Date;
     type?: 'income' | 'expense';
     boxId?: string;
+    allocationId?: string | null;
   }) {
     this.logger.log(`Editing transaction in vault: ${JSON.stringify(input)}`);
     const vault = await this.vaultRepository.findById(input.vaultId);
@@ -356,6 +377,28 @@ export class VaultService {
     if (input.date) updatedData.date = input.date;
     if (input.type) updatedData.type = input.type;
     if (typeof input.boxId === 'string') updatedData.boxId = input.boxId;
+
+    // Validate and set allocationId if provided (null means remove, undefined means don't change)
+    if (input.allocationId !== undefined) {
+      if (input.allocationId === null) {
+        (updatedData as any).allocationId = null;
+      } else {
+        const allocation = await this.planQueryService.findAllocationById(
+          input.allocationId,
+        );
+        if (!allocation) return left('Alocação não encontrada');
+        if (allocation.holdsFunds)
+          return left(
+            'Só alocações Pagamento podem ser vinculadas a transações',
+          );
+        const plan = await this.planQueryService.findPlanById(
+          allocation.planId,
+        );
+        if (!plan || plan.vaultId !== input.vaultId)
+          return left('Alocação não pertence a este vault');
+        (updatedData as any).allocationId = input.allocationId;
+      }
+    }
 
     const [err, transaction] = vault.editTransaction(
       input.transactionCode,

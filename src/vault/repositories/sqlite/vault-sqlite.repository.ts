@@ -139,6 +139,7 @@ export class VaultSqliteRepository extends VaultRepository {
           categoryId: t.category_id,
           type: t.type,
           date: new Date(t.date),
+          allocationId: (t as any).allocation_id ?? null,
         }),
       );
     }
@@ -204,6 +205,7 @@ export class VaultSqliteRepository extends VaultRepository {
           categoryId: t.category_id,
           type: t.type,
           date: new Date(t.date),
+          allocationId: (t as any).allocation_id ?? null,
         }),
       );
     }

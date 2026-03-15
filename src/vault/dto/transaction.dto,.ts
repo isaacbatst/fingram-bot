@@ -17,4 +17,5 @@ export interface TransactionDTO {
     code: string;
     description?: string;
   } | null;
+  allocationId?: string | null;
 }

@@ -49,8 +49,42 @@ describe('Transaction', () => {
       categoryId: null,
       type: 'expense',
       date: new Date(),
+      allocationId: null,
     });
     expect(tx.boxId).toBe('box-1');
     expect(tx.transferId).toBe('transfer-abc');
+  });
+
+  it('should create a transaction with allocationId', () => {
+    const tx = Transaction.create({
+      amount: 200,
+      vaultId: 'vault-1',
+      date: new Date(),
+      type: 'expense',
+      allocationId: 'alloc-1',
+    });
+    expect(tx.allocationId).toBe('alloc-1');
+  });
+
+  it('should default allocationId to null if not provided', () => {
+    const tx = Transaction.create({
+      amount: 100,
+      vaultId: 'vault-1',
+      date: new Date(),
+      type: 'expense',
+    });
+    expect(tx.allocationId).toBeNull();
+  });
+
+  it('should include allocationId in toDTO', () => {
+    const tx = Transaction.create({
+      amount: 100,
+      vaultId: 'vault-1',
+      date: new Date(),
+      type: 'expense',
+      allocationId: 'alloc-42',
+    });
+    const dto = tx.toDTO(null);
+    expect(dto.allocationId).toBe('alloc-42');
   });
 });

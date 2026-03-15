@@ -15,16 +15,32 @@ import { VaultAccessTokenGuard } from '@/vault/vault-access-token.guard';
 import { VaultSession } from '@/vault/vault-session.decorator';
 import { MilestoneType } from './domain/plan';
 import { PlanService } from './plan.service';
+import { PlanQueryService } from './shared/plan-query.service';
 
 @Controller('plans')
 @UseGuards(VaultAccessTokenGuard)
 export class PlanController {
-  constructor(private readonly planService: PlanService) {}
+  constructor(
+    private readonly planService: PlanService,
+    private readonly planQuery: PlanQueryService,
+  ) {}
 
   @Get()
   async list(@VaultSession() vaultId: string) {
     const plans = await this.planService.getByVaultId(vaultId);
     return plans.map((p) => p.toJSON());
+  }
+
+  @Get('allocations')
+  async listAllocations(
+    @VaultSession() vaultId: string,
+    @Query('type') type?: string,
+  ) {
+    const allocations =
+      type === 'payment'
+        ? await this.planQuery.listPaymentAllocations(vaultId)
+        : await this.planQuery.getAllocationsByVaultId(vaultId);
+    return allocations;
   }
 
   @Post()

@@ -279,6 +279,7 @@ export class VaultWebService {
       boxId?: string;
       date: Date;
       type: 'income' | 'expense';
+      allocationId?: string;
     },
   ): Promise<
     Either<
@@ -303,6 +304,7 @@ export class VaultWebService {
           date: data.date,
           type: data.type,
           shouldCommit: true, // Auto-commit new transactions
+          allocationId: data.allocationId,
         },
         platform: 'web',
       });
@@ -340,6 +342,7 @@ export class VaultWebService {
       newDescription?: string;
       newType?: 'income' | 'expense';
       newBoxId?: string;
+      newAllocationId?: string | null;
     },
   ): Promise<
     Either<
@@ -363,6 +366,7 @@ export class VaultWebService {
         description: data.newDescription,
         type: data.newType,
         boxId: data.newBoxId,
+        allocationId: data.newAllocationId,
       });
 
       if (error !== null) {

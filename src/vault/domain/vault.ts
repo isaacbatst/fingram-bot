@@ -177,6 +177,7 @@ export class Vault {
       date?: Date;
       type?: 'income' | 'expense';
       boxId?: string;
+      allocationId?: string | null;
     },
   ): Either<string, Transaction> {
     const transaction = this.findTransactionByCode(code);
@@ -200,6 +201,10 @@ export class Vault {
     }
     if (options.date !== undefined) {
       transaction.date = options.date;
+    }
+
+    if (options.allocationId !== undefined) {
+      transaction.allocationId = options.allocationId;
     }
 
     if (options.type !== undefined) {

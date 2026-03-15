@@ -99,6 +99,7 @@ export class VaultWebController {
       boxId?: string;
       date?: string; // formato ISO (YYYY-MM-DD)
       type: 'income' | 'expense';
+      allocationId?: string;
     },
   ) {
     if (!data.amount || data.amount <= 0) {
@@ -117,6 +118,7 @@ export class VaultWebController {
     const parsedData = {
       ...data,
       date: data.date ? new Date(data.date) : new Date(),
+      allocationId: data.allocationId,
     };
 
     const [error, result] = await this.vaultWebService.createTransaction(
@@ -144,6 +146,7 @@ export class VaultWebController {
       newDescription?: string;
       newType?: 'income' | 'expense';
       newBoxId?: string;
+      newAllocationId?: string | null;
     },
   ) {
     if (!data.transactionCode) {
@@ -160,6 +163,7 @@ export class VaultWebController {
     const parsedData = {
       ...data,
       newDate: data.newDate ? new Date(data.newDate) : undefined,
+      newAllocationId: data.newAllocationId,
     };
 
     const [error, result] = await this.vaultWebService.editTransaction(
