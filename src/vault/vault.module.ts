@@ -4,6 +4,8 @@ import { RepositoriesModule } from '../shared/persistence/repositories.module';
 import { VaultInMemoryRepositoriesModule } from './repositories/in-memory/in-memory-repositories.module';
 import { VaultSqliteRepositoriesModule } from './repositories/sqlite/sqlite-repositories.module';
 import { VaultDrizzleRepositoriesModule } from './repositories/drizzle/drizzle-repositories.module';
+import { VaultQueryModule } from './shared/vault-query.module';
+import { PlanQueryModule } from '@/plan/shared/plan-query.module';
 import { VaultAuthModule } from './vault-auth.module';
 import { VaultWebController } from './vault-web.controller';
 import { VaultWebService } from './vault-web.service';
@@ -22,6 +24,8 @@ export class VaultModule {
           'in-memory': VaultInMemoryRepositoriesModule,
           drizzle: VaultDrizzleRepositoriesModule,
         }),
+        VaultQueryModule.register(),
+        PlanQueryModule.register(),
         ChatModule.register(),
         VaultAuthModule.register(),
       ],

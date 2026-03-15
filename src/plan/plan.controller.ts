@@ -42,6 +42,32 @@ export class PlanController {
         label: string;
         type: MilestoneType;
       }[];
+      allocations?: {
+        label: string;
+        target: number;
+        monthlyAmount: { month: number; amount: number }[];
+        holdsFunds: boolean;
+        yieldRate?: number;
+        financing?: {
+          principal: number;
+          annualRate: number;
+          termMonths: number;
+          system: 'sac' | 'price';
+          constructionMonths?: number;
+          gracePeriodMonths?: number;
+          releasePercent?: number;
+          startMonth?: number;
+        };
+        scheduledMovements: {
+          month: number;
+          amount: number;
+          label: string;
+          type: 'in' | 'out';
+          destinationBoxId?: string;
+          additionalToMonthly?: boolean;
+        }[];
+        initialBalance?: number;
+      }[];
     },
   ) {
     if (!data.startDate) {
@@ -52,30 +78,37 @@ export class PlanController {
       throw new BadRequestException('Premissas são obrigatórias');
     }
 
-    const [error, plan] = await this.planService.create({
+    const [error, result] = await this.planService.create({
       vaultId,
       name: data.name,
       startDate: new Date(data.startDate),
       premises: data.premises,
       milestones: data.milestones,
+      allocations: data.allocations,
     });
 
     if (error !== null) {
       throw new BadRequestException(error);
     }
 
-    return plan.toJSON();
+    return {
+      ...result.plan.toJSON(),
+      allocations: result.allocations,
+    };
   }
 
   @Get(':id')
   async getById(@VaultSession() vaultId: string, @Param('id') id: string) {
-    const [error, plan] = await this.planService.getById(id, vaultId);
+    const [error, result] = await this.planService.getById(id, vaultId);
 
     if (error !== null) {
       throw new NotFoundException(error);
     }
 
-    return plan.toJSON();
+    return {
+      ...result.plan.toJSON(),
+      allocations: result.allocations,
+    };
   }
 
   @Delete(':id')

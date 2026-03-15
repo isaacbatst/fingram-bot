@@ -1,11 +1,16 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PlanService } from './plan.service';
 import { PlanInMemoryRepository } from './repositories/in-memory/plan-in-memory.repository';
+import { AllocationInMemoryRepository } from './shared/repositories/in-memory/allocation-in-memory.repository';
+import { PlanQueryService } from './shared/plan-query.service';
+import { VaultQueryService } from '@/vault/shared/vault-query.service';
 import { Premises } from './domain/plan';
 
 describe('PlanService', () => {
   let service: PlanService;
-  let repository: PlanInMemoryRepository;
+  let planRepository: PlanInMemoryRepository;
+  let allocationRepository: AllocationInMemoryRepository;
+  let planQueryService: PlanQueryService;
 
   const defaultPremises: Premises = {
     salaryChangePoints: [{ month: 0, amount: 10000 }],
@@ -13,13 +18,22 @@ describe('PlanService', () => {
   };
 
   beforeEach(() => {
-    repository = new PlanInMemoryRepository();
-    service = new PlanService(repository);
+    planRepository = new PlanInMemoryRepository();
+    allocationRepository = new AllocationInMemoryRepository();
+    planQueryService = new PlanQueryService(planRepository, allocationRepository);
+    // VaultQueryService requires BoxRepository — mock with null since plan tests don't use it
+    const vaultQueryService = {} as VaultQueryService;
+    service = new PlanService(
+      planRepository,
+      allocationRepository,
+      planQueryService,
+      vaultQueryService,
+    );
   });
 
   describe('create', () => {
     it('should create a plan in draft status', async () => {
-      const [error, plan] = await service.create({
+      const [error, result] = await service.create({
         vaultId: 'vault-1',
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
@@ -27,23 +41,24 @@ describe('PlanService', () => {
       });
 
       expect(error).toBeNull();
-      expect(plan!.name).toBe('My Plan');
-      expect(plan!.status).toBe('draft');
-      expect(plan!.vaultId).toBe('vault-1');
-      expect(plan!.premises).toEqual(defaultPremises);
+      expect(result!.plan.name).toBe('My Plan');
+      expect(result!.plan.status).toBe('draft');
+      expect(result!.plan.vaultId).toBe('vault-1');
+      expect(result!.plan.premises).toEqual(defaultPremises);
+      expect(result!.allocations).toHaveLength(0);
     });
 
     it('should persist the plan in the repository', async () => {
-      const [, plan] = await service.create({
+      const [, result] = await service.create({
         vaultId: 'vault-1',
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
       });
 
-      const found = await repository.findById(plan!.id);
+      const found = await planRepository.findById(result!.plan.id);
       expect(found).not.toBeNull();
-      expect(found!.id).toBe(plan!.id);
+      expect(found!.id).toBe(result!.plan.id);
     });
 
     it('should reject empty name', async () => {
@@ -105,8 +120,31 @@ describe('PlanService', () => {
       );
     });
 
+    it('should create plan with allocations', async () => {
+      const [error, result] = await service.create({
+        vaultId: 'vault-1',
+        name: 'Plan with Allocations',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+        allocations: [
+          {
+            label: 'Emergency Fund',
+            target: 30000,
+            monthlyAmount: [{ month: 0, amount: 1000 }],
+            holdsFunds: true,
+            scheduledMovements: [],
+          },
+        ],
+      });
+
+      expect(error).toBeNull();
+      expect(result!.allocations).toHaveLength(1);
+      expect(result!.allocations[0].label).toBe('Emergency Fund');
+      expect(result!.allocations[0].planId).toBe(result!.plan.id);
+    });
+
     it('should create plan with no allocations (just premises)', async () => {
-      const [error, plan] = await service.create({
+      const [error, result] = await service.create({
         vaultId: 'vault-1',
         name: 'Minimal Plan',
         startDate: new Date('2026-01-01'),
@@ -114,22 +152,36 @@ describe('PlanService', () => {
       });
 
       expect(error).toBeNull();
-      expect(plan).not.toBeNull();
+      expect(result).not.toBeNull();
+      expect(result!.allocations).toHaveLength(0);
     });
   });
 
   describe('getById', () => {
-    it('should return plan by id when vault matches', async () => {
-      const [, plan] = await service.create({
+    it('should return plan with allocations when vault matches', async () => {
+      const [, createResult] = await service.create({
         vaultId: 'vault-1',
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
+        allocations: [
+          {
+            label: 'Savings',
+            target: 10000,
+            monthlyAmount: [{ month: 0, amount: 500 }],
+            holdsFunds: true,
+            scheduledMovements: [],
+          },
+        ],
       });
 
-      const [error, found] = await service.getById(plan!.id, 'vault-1');
+      const [error, result] = await service.getById(
+        createResult!.plan.id,
+        'vault-1',
+      );
       expect(error).toBeNull();
-      expect(found!.id).toBe(plan!.id);
+      expect(result!.plan.id).toBe(createResult!.plan.id);
+      expect(result!.allocations).toHaveLength(1);
     });
 
     it('should return error when plan not found', async () => {
@@ -138,21 +190,21 @@ describe('PlanService', () => {
     });
 
     it('should return error when vault does not match', async () => {
-      const [, plan] = await service.create({
+      const [, createResult] = await service.create({
         vaultId: 'vault-1',
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
       });
 
-      const [error] = await service.getById(plan!.id, 'vault-2');
+      const [error] = await service.getById(createResult!.plan.id, 'vault-2');
       expect(error).toBe('Plano não encontrado');
     });
   });
 
   describe('getProjection', () => {
     it('should return projection for a plan', async () => {
-      const [, plan] = await service.create({
+      const [, createResult] = await service.create({
         vaultId: 'vault-1',
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
@@ -160,7 +212,7 @@ describe('PlanService', () => {
       });
 
       const [error, projection] = await service.getProjection(
-        plan!.id,
+        createResult!.plan.id,
         'vault-1',
         12,
       );
@@ -174,32 +226,67 @@ describe('PlanService', () => {
       expect(projection![0].surplus).toBe(4000);
     });
 
+    it('should include allocations in projection', async () => {
+      const [, createResult] = await service.create({
+        vaultId: 'vault-1',
+        name: 'My Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+        allocations: [
+          {
+            label: 'Emergency Fund',
+            target: 30000,
+            monthlyAmount: [{ month: 0, amount: 1000 }],
+            holdsFunds: true,
+            scheduledMovements: [],
+          },
+        ],
+      });
+
+      const [error, projection] = await service.getProjection(
+        createResult!.plan.id,
+        'vault-1',
+        12,
+      );
+
+      expect(error).toBeNull();
+      expect(projection).toHaveLength(12);
+      // surplus = income - costOfLiving - allocationOutflows = 10000 - 6000 - 1000 = 3000
+      expect(projection![0].surplus).toBe(3000);
+    });
+
     it('should return error when plan not found', async () => {
       const [error] = await service.getProjection('nonexistent', 'vault-1');
       expect(error).toBe('Plano não encontrado');
     });
 
     it('should return error when vault does not match', async () => {
-      const [, plan] = await service.create({
+      const [, createResult] = await service.create({
         vaultId: 'vault-1',
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
       });
 
-      const [error] = await service.getProjection(plan!.id, 'vault-2');
+      const [error] = await service.getProjection(
+        createResult!.plan.id,
+        'vault-2',
+      );
       expect(error).toBe('Plano não encontrado');
     });
 
     it('should default to 120 months', async () => {
-      const [, plan] = await service.create({
+      const [, createResult] = await service.create({
         vaultId: 'vault-1',
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
       });
 
-      const [, projection] = await service.getProjection(plan!.id, 'vault-1');
+      const [, projection] = await service.getProjection(
+        createResult!.plan.id,
+        'vault-1',
+      );
 
       expect(projection).toHaveLength(120);
     });
@@ -207,33 +294,33 @@ describe('PlanService', () => {
 
   describe('delete', () => {
     it('should delete a plan when vault matches', async () => {
-      const [, plan] = await service.create({
+      const [, createResult] = await service.create({
         vaultId: 'vault-1',
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
       });
 
-      const [error] = await service.delete(plan!.id, 'vault-1');
+      const [error] = await service.delete(createResult!.plan.id, 'vault-1');
       expect(error).toBeNull();
 
-      const found = await repository.findById(plan!.id);
+      const found = await planRepository.findById(createResult!.plan.id);
       expect(found).toBeNull();
     });
 
     it('should return error when vault does not match', async () => {
-      const [, plan] = await service.create({
+      const [, createResult] = await service.create({
         vaultId: 'vault-1',
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
       });
 
-      const [error] = await service.delete(plan!.id, 'vault-2');
+      const [error] = await service.delete(createResult!.plan.id, 'vault-2');
       expect(error).toBe('Plano não encontrado');
 
       // Plan should still exist
-      const found = await repository.findById(plan!.id);
+      const found = await planRepository.findById(createResult!.plan.id);
       expect(found).not.toBeNull();
     });
   });

@@ -1,39 +1,61 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Either, left, right } from '@/vault/domain/either';
 import { Plan, Milestone, MonthData, Premises } from './domain/plan';
+import { Allocation } from './shared/domain/allocation';
 import { runProjection } from './domain/run-projection';
 import { PlanRepository } from './repositories/plan.repository';
+import { AllocationRepository } from './shared/repositories/allocation.repository';
+import { PlanQueryService } from './shared/plan-query.service';
+import { VaultQueryService } from '@/vault/shared/vault-query.service';
+import { ChangePoint } from './domain/change-point';
+import {
+  AllocationFinancing,
+  AllocationScheduledMovement,
+} from './shared/domain/allocation';
+
+interface CreateAllocationInput {
+  label: string;
+  target: number;
+  monthlyAmount: ChangePoint[];
+  holdsFunds: boolean;
+  yieldRate?: number;
+  financing?: AllocationFinancing;
+  scheduledMovements: AllocationScheduledMovement[];
+  initialBalance?: number;
+}
 
 @Injectable()
 export class PlanService {
   private readonly logger = new Logger(PlanService.name);
 
-  constructor(private readonly planRepository: PlanRepository) {}
+  constructor(
+    private readonly planRepository: PlanRepository,
+    private readonly allocationRepo: AllocationRepository,
+    private readonly planQuery: PlanQueryService,
+    private readonly vaultQuery: VaultQueryService,
+  ) {}
 
   async create(input: {
     vaultId: string;
     name: string;
     startDate: Date;
     premises: Premises;
+    allocations?: CreateAllocationInput[];
     milestones?: Milestone[];
-  }): Promise<Either<string, Plan>> {
+  }): Promise<Either<string, { plan: Plan; allocations: Allocation[] }>> {
     this.logger.log(`Creating plan for vault: ${input.vaultId}`);
 
     if (!input.name?.trim()) {
       return left('Nome do plano é obrigatório');
     }
 
-    if (
-      !input.premises.salaryChangePoints ||
-      input.premises.salaryChangePoints.length === 0
-    ) {
-      return left('Premissas devem ter pelo menos um change point de salário');
+    if (!input.premises.salaryChangePoints?.length) {
+      return left(
+        'Premissas devem ter pelo menos um change point de salário',
+      );
     }
 
-    if (
-      !input.premises.costOfLivingChangePoints ||
-      input.premises.costOfLivingChangePoints.length === 0
-    ) {
+    if (!input.premises.costOfLivingChangePoints?.length) {
       return left(
         'Premissas devem ter pelo menos um change point de custo de vida',
       );
@@ -41,7 +63,9 @@ export class PlanService {
 
     for (const cp of input.premises.salaryChangePoints) {
       if (cp.amount < 0) {
-        return left('Valor do change point de salário não pode ser negativo');
+        return left(
+          'Valor do change point de salário não pode ser negativo',
+        );
       }
       if (cp.month < 0) {
         return left('Mês do change point não pode ser negativo');
@@ -67,21 +91,27 @@ export class PlanService {
       milestones: input.milestones,
     });
 
+    const allocations = (input.allocations ?? []).map((a) =>
+      Allocation.create({ ...a, planId: plan.id }),
+    );
+
     await this.planRepository.create(plan);
+    if (allocations.length > 0) {
+      await this.allocationRepo.createMany(allocations);
+    }
+
     this.logger.log(`Plan created with id: ${plan.id}`);
-    return right(plan);
+    return right({ plan, allocations });
   }
 
-  async getById(id: string, vaultId: string): Promise<Either<string, Plan>> {
-    this.logger.log(`Getting plan: ${id}`);
-    const plan = await this.planRepository.findById(id);
-    if (!plan) {
-      return left('Plano não encontrado');
-    }
-    if (plan.vaultId !== vaultId) {
-      return left('Plano não encontrado');
-    }
-    return right(plan);
+  async getById(
+    id: string,
+    vaultId: string,
+  ): Promise<Either<string, { plan: Plan; allocations: Allocation[] }>> {
+    const plan = await this.planQuery.findPlanById(id);
+    if (!plan || plan.vaultId !== vaultId) return left('Plano não encontrado');
+    const allocations = await this.planQuery.listAllocationsByPlanId(id);
+    return right({ plan, allocations });
   }
 
   async getProjection(
@@ -89,30 +119,22 @@ export class PlanService {
     vaultId: string,
     months: number = 120,
   ): Promise<Either<string, MonthData[]>> {
-    this.logger.log(`Getting projection for plan: ${id}, months: ${months}`);
-    const plan = await this.planRepository.findById(id);
-    if (!plan) {
-      return left('Plano não encontrado');
-    }
-    if (plan.vaultId !== vaultId) {
-      return left('Plano não encontrado');
-    }
-    // TODO: Task 7 will rewire this to load allocations from AllocationRepository
-    const projection = runProjection(plan.premises, [], plan.startDate, months);
-    return right(projection);
+    const plan = await this.planQuery.findPlanById(id);
+    if (!plan || plan.vaultId !== vaultId) return left('Plano não encontrado');
+    const allocations = await this.planQuery.listAllocationsByPlanId(id);
+    return right(
+      runProjection(plan.premises, allocations, plan.startDate, months),
+    );
   }
 
   async delete(id: string, vaultId: string): Promise<Either<string, true>> {
-    this.logger.log(`Deleting plan: ${id}`);
-    const plan = await this.planRepository.findById(id);
-    if (!plan || plan.vaultId !== vaultId) {
-      return left('Plano não encontrado');
-    }
+    const plan = await this.planQuery.findPlanById(id);
+    if (!plan || plan.vaultId !== vaultId) return left('Plano não encontrado');
     await this.planRepository.delete(id);
     return right(true);
   }
 
   async getByVaultId(vaultId: string): Promise<Plan[]> {
-    return this.planRepository.findByVaultId(vaultId);
+    return this.planQuery.listPlansByVaultId(vaultId);
   }
 }

@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
-import { RepositoriesModule } from '@/shared/persistence/repositories.module';
-import { PlanDrizzleRepositoriesModule } from './repositories/drizzle/drizzle-repositories.module';
-import { PlanInMemoryRepositoriesModule } from './repositories/in-memory/in-memory-repositories.module';
+import { PlanQueryModule } from './shared/plan-query.module';
+import { VaultQueryModule } from '@/vault/shared/vault-query.module';
 import { PlanController } from './plan.controller';
 import { PlanService } from './plan.service';
 import { VaultAuthModule } from '@/vault/vault-auth.module';
@@ -12,11 +11,8 @@ export class PlanModule {
     return {
       module: PlanModule,
       imports: [
-        RepositoriesModule.forFeature({
-          sqlite: PlanInMemoryRepositoriesModule,
-          'in-memory': PlanInMemoryRepositoriesModule,
-          drizzle: PlanDrizzleRepositoriesModule,
-        }),
+        PlanQueryModule.register(),
+        VaultQueryModule.register(),
         VaultAuthModule.register(),
       ],
       controllers: [PlanController],

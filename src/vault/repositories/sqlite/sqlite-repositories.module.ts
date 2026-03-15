@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
 import { CategoryRepository } from '../category.repository';
 import { CategorySqliteRepository } from './category-sqlite.repository';
-import { TransactionRepository } from '../transaction.repository';
-import { TransactionSqliteRepository } from './transaction-sqlite.repository';
 import { VaultRepository } from '../vault.repository';
 import { VaultSqliteRepository } from './vault-sqlite.repository';
 import { ActionRepository } from '../action.repository';
@@ -17,10 +15,6 @@ import { PersistenceModule } from '@/shared/persistence/persistence.module';
       useClass: CategorySqliteRepository,
     },
     {
-      provide: TransactionRepository,
-      useClass: TransactionSqliteRepository,
-    },
-    {
       provide: VaultRepository,
       useClass: VaultSqliteRepository,
     },
@@ -31,7 +25,6 @@ import { PersistenceModule } from '@/shared/persistence/persistence.module';
   ],
   exports: [
     CategoryRepository,
-    TransactionRepository,
     VaultRepository,
     ActionRepository,
   ],
