@@ -35,6 +35,7 @@ npm run test:integration  # Integration tests (testcontainers + real PostgreSQL)
 - **Types:** `src/plan/domain/plan.ts` — Box, MonthData, Plan interfaces
 - **Engine:** `src/plan/domain/run-projection.ts` — pure function `runProjection(plan, months)`
 - **Box model:** Unified with `holdsFunds`, `target`, `monthlyAmount` (change points), `scheduledPayments`, optional `yieldRate`
+- **Spec:** `../docs/product/spec-plan.md` (modelo conceitual) e `../docs/product/spec-integration.md` (binding, projeção híbrida)
 
 ## Testing
 
