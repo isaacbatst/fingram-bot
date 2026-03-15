@@ -137,4 +137,33 @@ export class PlanService {
   async getByVaultId(vaultId: string): Promise<Plan[]> {
     return this.planQuery.listPlansByVaultId(vaultId);
   }
+
+  async bindAllocationToEstrato(
+    allocationId: string,
+    estratoId: string | null,
+    vaultId: string,
+  ): Promise<Either<string, Allocation>> {
+    const allocation = await this.planQuery.findAllocationById(allocationId);
+    if (!allocation) return left('Alocação não encontrada');
+
+    const plan = await this.planQuery.findPlanById(allocation.planId);
+    if (!plan || plan.vaultId !== vaultId) return left('Alocação não pertence a este vault');
+
+    if (estratoId === null) {
+      allocation.unbindEstrato();
+      await this.allocationRepo.update(allocation);
+      return right(allocation);
+    }
+
+    const box = await this.vaultQuery.findBoxById(estratoId);
+    if (!box) return left('Estrato não encontrado');
+    if (box.vaultId !== vaultId) return left('Estrato não pertence a este vault');
+    if (box.type !== 'saving') return left('Só estratos do tipo saving podem ser vinculados');
+
+    const [bindError] = allocation.bindToEstrato(estratoId);
+    if (bindError) return left(bindError);
+
+    await this.allocationRepo.update(allocation);
+    return right(allocation);
+  }
 }

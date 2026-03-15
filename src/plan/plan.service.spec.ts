@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PlanService } from './plan.service';
 import { PlanInMemoryRepository } from './repositories/in-memory/plan-in-memory.repository';
 import { AllocationInMemoryRepository } from './shared/repositories/in-memory/allocation-in-memory.repository';
@@ -11,6 +11,9 @@ describe('PlanService', () => {
   let planRepository: PlanInMemoryRepository;
   let allocationRepository: AllocationInMemoryRepository;
   let planQueryService: PlanQueryService;
+  let vaultQueryService: VaultQueryService;
+
+  const testVaultId = 'vault-1';
 
   const defaultPremises: Premises = {
     salaryChangePoints: [{ month: 0, amount: 10000 }],
@@ -21,8 +24,17 @@ describe('PlanService', () => {
     planRepository = new PlanInMemoryRepository();
     allocationRepository = new AllocationInMemoryRepository();
     planQueryService = new PlanQueryService(planRepository, allocationRepository);
-    // VaultQueryService requires BoxRepository — mock with null since plan tests don't use it
-    const vaultQueryService = {} as VaultQueryService;
+    vaultQueryService = {
+      findBoxById: vi.fn().mockResolvedValue({
+        id: 'box-1',
+        name: 'Emergência',
+        type: 'saving',
+        balance: 0,
+        goalAmount: 50000,
+        vaultId: testVaultId,
+      }),
+      listSavingBoxes: vi.fn().mockResolvedValue([]),
+    } as unknown as VaultQueryService;
     service = new PlanService(
       planRepository,
       allocationRepository,
@@ -356,6 +368,119 @@ describe('PlanService', () => {
     it('should return empty array when no plans exist', async () => {
       const plans = await service.getByVaultId('vault-nonexistent');
       expect(plans).toHaveLength(0);
+    });
+  });
+
+  describe('bindAllocationToEstrato', () => {
+    async function createPlanWithAllocation(holdsFunds: boolean) {
+      const [, result] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+        allocations: [
+          {
+            label: 'Test Allocation',
+            target: 10000,
+            monthlyAmount: [{ month: 0, amount: 500 }],
+            holdsFunds,
+            scheduledMovements: [],
+          },
+        ],
+      });
+      return result!;
+    }
+
+    it('should bind Reserva allocation to saving box — success, estratoId updated', async () => {
+      const { allocations } = await createPlanWithAllocation(true);
+      const allocation = allocations[0];
+
+      const [error, updated] = await service.bindAllocationToEstrato(
+        allocation.id,
+        'box-1',
+        testVaultId,
+      );
+
+      expect(error).toBeNull();
+      expect(updated!.estratoId).toBe('box-1');
+    });
+
+    it('should return error when binding Pagamento allocation', async () => {
+      const { allocations } = await createPlanWithAllocation(false);
+      const allocation = allocations[0];
+
+      const [error] = await service.bindAllocationToEstrato(
+        allocation.id,
+        'box-1',
+        testVaultId,
+      );
+
+      expect(error).toBe('Só alocações Reserva podem vincular a estrato');
+    });
+
+    it('should unbind (estratoId: null) — success, estratoId cleared', async () => {
+      const { allocations } = await createPlanWithAllocation(true);
+      const allocation = allocations[0];
+
+      // First bind
+      await service.bindAllocationToEstrato(allocation.id, 'box-1', testVaultId);
+
+      // Then unbind
+      const [error, updated] = await service.bindAllocationToEstrato(
+        allocation.id,
+        null,
+        testVaultId,
+      );
+
+      expect(error).toBeNull();
+      expect(updated!.estratoId).toBeNull();
+    });
+
+    it('should return error when allocation not found', async () => {
+      const [error] = await service.bindAllocationToEstrato(
+        'nonexistent-allocation',
+        'box-1',
+        testVaultId,
+      );
+
+      expect(error).toBe('Alocação não encontrada');
+    });
+
+    it('should return error when box not found', async () => {
+      vi.mocked(vaultQueryService.findBoxById).mockResolvedValueOnce(null);
+
+      const { allocations } = await createPlanWithAllocation(true);
+      const allocation = allocations[0];
+
+      const [error] = await service.bindAllocationToEstrato(
+        allocation.id,
+        'nonexistent-box',
+        testVaultId,
+      );
+
+      expect(error).toBe('Estrato não encontrado');
+    });
+
+    it('should return error when box type is spending', async () => {
+      vi.mocked(vaultQueryService.findBoxById).mockResolvedValueOnce({
+        id: 'box-2',
+        name: 'Gastos',
+        type: 'spending',
+        balance: 0,
+        goalAmount: 0,
+        vaultId: testVaultId,
+      });
+
+      const { allocations } = await createPlanWithAllocation(true);
+      const allocation = allocations[0];
+
+      const [error] = await service.bindAllocationToEstrato(
+        allocation.id,
+        'box-2',
+        testVaultId,
+      );
+
+      expect(error).toBe('Só estratos do tipo saving podem ser vinculados');
     });
   });
 });

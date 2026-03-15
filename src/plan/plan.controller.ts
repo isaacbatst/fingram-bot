@@ -6,6 +6,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -120,6 +121,22 @@ export class PlanController {
     }
 
     return { success: true };
+  }
+
+  @Patch(':planId/allocations/:allocationId')
+  async bindAllocation(
+    @VaultSession() vaultId: string,
+    @Param('planId') planId: string,
+    @Param('allocationId') allocationId: string,
+    @Body() body: { estratoId: string | null },
+  ) {
+    const [error, allocation] = await this.planService.bindAllocationToEstrato(
+      allocationId,
+      body.estratoId,
+      vaultId,
+    );
+    if (error) throw new BadRequestException(error);
+    return allocation;
   }
 
   @Get(':id/projection')
