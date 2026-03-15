@@ -17,6 +17,7 @@ import { VaultAccessTokenGuard } from './vault-access-token.guard';
 import { VaultSession } from './vault-session.decorator';
 import { VaultErrorType, VaultWebService } from './vault-web.service';
 import { VaultService } from './vault.service';
+import { PlanQueryService } from '@/plan/shared/plan-query.service';
 
 @Controller('vault')
 export class VaultWebController {
@@ -24,6 +25,7 @@ export class VaultWebController {
   constructor(
     private readonly vaultWebService: VaultWebService,
     private readonly vaultService: VaultService,
+    private readonly planQueryService: PlanQueryService,
   ) {}
 
   @UseGuards(VaultAccessTokenGuard)
@@ -130,7 +132,18 @@ export class VaultWebController {
       this.handleError(error.type, error.message);
     }
 
-    return result;
+    // If expense and no allocationId was explicitly set, check for suggestions
+    let suggestion = null;
+    if (data.type === 'expense' && !data.allocationId) {
+      suggestion =
+        await this.planQueryService.findMatchingScheduledMovement(
+          vaultId,
+          data.amount,
+          new Date(),
+        );
+    }
+
+    return { ...result, suggestion };
   }
 
   @UseGuards(VaultAccessTokenGuard)
@@ -323,6 +336,25 @@ export class VaultWebController {
       token,
       message: 'Link de compartilhamento gerado com sucesso!',
     };
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
+  @Get('suggest-allocation')
+  async suggestAllocation(
+    @VaultSession() vaultId: string,
+    @Query('amount') amountStr: string,
+  ) {
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0) return { suggestion: null };
+
+    const suggestion =
+      await this.planQueryService.findMatchingScheduledMovement(
+        vaultId,
+        amount,
+        new Date(),
+      );
+
+    return { suggestion };
   }
 
   private handleError(error: VaultErrorType, message: string): never {

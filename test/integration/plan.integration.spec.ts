@@ -1198,4 +1198,166 @@ describe('Plan API (integration)', () => {
       expect(months[1].income).toBe(10000);
     });
   });
+
+  describe('Allocation suggestion (ISA-102)', () => {
+    /**
+     * Helper: create a plan with a Pagamento allocation that has a scheduled
+     * movement in the current plan month (month 0 from now).
+     */
+    async function createPlanWithScheduledMovement(
+      token: string,
+      opts: {
+        scheduledMovements?: any[];
+        monthlyAmount?: any[];
+        holdsFunds?: boolean;
+      } = {},
+    ) {
+      const now = new Date();
+      // Use day 15 to avoid UTC-to-local timezone shifts changing the month
+      const startDate = new Date(
+        Date.UTC(now.getFullYear(), now.getMonth(), 15),
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/plans')
+        .set('Cookie', `vault_access_token=${token}`)
+        .send({
+          name: 'Suggestion Plan',
+          startDate: startDate.toISOString(),
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 10000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 5000 }],
+          },
+          allocations: [
+            {
+              label: 'Terreno',
+              target: 100000,
+              monthlyAmount: opts.monthlyAmount ?? [
+                { month: 0, amount: 2000 },
+              ],
+              holdsFunds: opts.holdsFunds ?? false,
+              scheduledMovements: opts.scheduledMovements ?? [
+                {
+                  month: 0,
+                  amount: 5000,
+                  label: 'Entrada terreno',
+                  type: 'in',
+                },
+              ],
+            },
+          ],
+        })
+        .expect(201);
+
+      return {
+        planId: res.body.id as string,
+        allocationId: res.body.allocations[0].id as string,
+      };
+    }
+
+    it('GET /vault/suggest-allocation returns match for scheduled movement', async () => {
+      await createPlanWithScheduledMovement(vaultToken);
+
+      const res = await request(app.getHttpServer())
+        .get('/vault/suggest-allocation?amount=5000')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      expect(res.body.suggestion).not.toBeNull();
+      expect(res.body.suggestion.allocationLabel).toBe('Terreno');
+      expect(res.body.suggestion.scheduledMovement.amount).toBe(5000);
+      expect(res.body.suggestion.divergenceAmount).toBe(0);
+    });
+
+    it('GET /vault/suggest-allocation returns null when no match', async () => {
+      await createPlanWithScheduledMovement(vaultToken);
+
+      // Amount completely off
+      const res = await request(app.getHttpServer())
+        .get('/vault/suggest-allocation?amount=99999')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      expect(res.body.suggestion).toBeNull();
+    });
+
+    it('GET /vault/suggest-allocation returns null for invalid amount', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/vault/suggest-allocation?amount=abc')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      expect(res.body.suggestion).toBeNull();
+    });
+
+    it('POST /vault/create-transaction returns suggestion when amount matches', async () => {
+      await createPlanWithScheduledMovement(vaultToken);
+
+      const res = await request(app.getHttpServer())
+        .post('/vault/create-transaction')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          amount: 5000,
+          type: 'expense',
+          description: 'Pagamento terreno',
+        })
+        .expect(201);
+
+      expect(res.body.suggestion).not.toBeNull();
+      expect(res.body.suggestion.allocationLabel).toBe('Terreno');
+      expect(res.body.suggestion.scheduledMovement.amount).toBe(5000);
+    });
+
+    it('POST /vault/create-transaction does not return suggestion when allocationId is set', async () => {
+      const { allocationId } =
+        await createPlanWithScheduledMovement(vaultToken);
+
+      const res = await request(app.getHttpServer())
+        .post('/vault/create-transaction')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          amount: 5000,
+          type: 'expense',
+          description: 'Pagamento terreno',
+          allocationId,
+        })
+        .expect(201);
+
+      expect(res.body.suggestion).toBeNull();
+    });
+
+    it('POST /vault/create-transaction does not return suggestion for income', async () => {
+      await createPlanWithScheduledMovement(vaultToken);
+
+      const res = await request(app.getHttpServer())
+        .post('/vault/create-transaction')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          amount: 5000,
+          type: 'income',
+          description: 'Salário',
+        })
+        .expect(201);
+
+      expect(res.body.suggestion).toBeNull();
+    });
+
+    it('GET /vault/suggest-allocation matches monthly amount', async () => {
+      await createPlanWithScheduledMovement(vaultToken, {
+        scheduledMovements: [],
+        monthlyAmount: [{ month: 0, amount: 3000 }],
+      });
+
+      const res = await request(app.getHttpServer())
+        .get('/vault/suggest-allocation?amount=3000')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      expect(res.body.suggestion).not.toBeNull();
+      expect(res.body.suggestion.scheduledMovement.label).toBe(
+        'Parcela mensal',
+      );
+      expect(res.body.suggestion.scheduledMovement.amount).toBe(3000);
+    });
+  });
 });
