@@ -19,7 +19,7 @@ export class VaultQueryModule {
         }),
       ],
       providers: [VaultQueryService],
-      exports: [VaultQueryService, BoxRepository, TransactionRepository],
+      exports: [VaultQueryService, RepositoriesModule],
     };
   }
 }

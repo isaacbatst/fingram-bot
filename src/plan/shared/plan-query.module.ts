@@ -19,7 +19,7 @@ export class PlanQueryModule {
         }),
       ],
       providers: [PlanQueryService],
-      exports: [PlanQueryService, PlanRepository, AllocationRepository],
+      exports: [PlanQueryService, RepositoriesModule],
     };
   }
 }
