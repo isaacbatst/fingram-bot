@@ -3,6 +3,7 @@ import { PlanRepository } from '@/plan/repositories/plan.repository';
 import { AllocationRepository } from './repositories/allocation.repository';
 import { Plan } from '@/plan/domain/plan';
 import { Allocation } from './domain/allocation';
+import { getActiveValue } from '@/plan/domain/change-point';
 
 @Injectable()
 export class PlanQueryService {
@@ -34,5 +35,25 @@ export class PlanQueryService {
 
   async getAllocationsByVaultId(vaultId: string): Promise<Allocation[]> {
     return this.allocationRepo.findByVaultId(vaultId);
+  }
+
+  async getActiveCostOfLivingCeiling(
+    vaultId: string,
+    currentDate: Date,
+  ): Promise<number | null> {
+    const plans = await this.planRepo.findByVaultId(vaultId);
+    const activePlan = plans.find((p) => p.status === 'active') ?? plans[0];
+    if (!activePlan) return null;
+
+    const startDate = activePlan.startDate;
+    const monthsDiff =
+      (currentDate.getFullYear() - startDate.getFullYear()) * 12 +
+      (currentDate.getMonth() - startDate.getMonth());
+    const planMonth = Math.max(0, monthsDiff);
+
+    return getActiveValue(
+      activePlan.premises.costOfLivingChangePoints,
+      planMonth,
+    );
   }
 }

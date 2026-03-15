@@ -929,4 +929,137 @@ describe('Plan API (integration)', () => {
       }
     });
   });
+
+  describe('GET /vault/budget-ceiling', () => {
+    it('should return ceiling=null when no plan exists', async () => {
+      const res = await request(app.getHttpServer())
+        .get('/vault/budget-ceiling')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      expect(res.body.ceiling).toBeNull();
+      expect(res.body.allocated).toBe(0);
+      expect(res.body.buffer).toBeNull();
+      expect(res.body.overBudget).toBe(false);
+    });
+
+    it('should return ceiling with allocated=0 when plan exists but no budgets', async () => {
+      // Create a plan
+      await request(app.getHttpServer())
+        .post('/plans')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          name: 'Budget Ceiling Plan',
+          startDate: new Date().toISOString(),
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 10000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+          },
+          allocations: [],
+        })
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get('/vault/budget-ceiling')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      expect(res.body.ceiling).toBe(6000);
+      expect(res.body.allocated).toBe(0);
+      expect(res.body.buffer).toBe(6000);
+      expect(res.body.overBudget).toBe(false);
+    });
+
+    it('should return correct ceiling, allocated, and buffer with budgets', async () => {
+      // Create a plan
+      await request(app.getHttpServer())
+        .post('/plans')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          name: 'Budget Ceiling Plan',
+          startDate: new Date().toISOString(),
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 10000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+          },
+          allocations: [],
+        })
+        .expect(201);
+
+      // Get categories to set budgets
+      const catRes = await request(app.getHttpServer())
+        .get('/vault/categories')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      const categories = catRes.body;
+      // Set budgets for first two categories
+      const budgets = categories.slice(0, 2).map((c: any, i: number) => ({
+        categoryCode: c.code,
+        amount: (i + 1) * 1000, // 1000 and 2000
+      }));
+
+      await request(app.getHttpServer())
+        .post('/vault/set-budgets')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({ budgets })
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get('/vault/budget-ceiling')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      expect(res.body.ceiling).toBe(6000);
+      expect(res.body.allocated).toBe(3000);
+      expect(res.body.buffer).toBe(3000);
+      expect(res.body.overBudget).toBe(false);
+    });
+
+    it('should return overBudget=true when allocated exceeds ceiling', async () => {
+      // Create a plan with low ceiling
+      await request(app.getHttpServer())
+        .post('/plans')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          name: 'Low Ceiling Plan',
+          startDate: new Date().toISOString(),
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 10000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 2000 }],
+          },
+          allocations: [],
+        })
+        .expect(201);
+
+      // Get categories to set budgets
+      const catRes = await request(app.getHttpServer())
+        .get('/vault/categories')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      const categories = catRes.body;
+      // Set a budget that exceeds the ceiling
+      const budgets = categories.slice(0, 2).map((c: any, i: number) => ({
+        categoryCode: c.code,
+        amount: (i + 1) * 1500, // 1500 + 3000 = 4500 > 2000
+      }));
+
+      await request(app.getHttpServer())
+        .post('/vault/set-budgets')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({ budgets })
+        .expect(201);
+
+      const res = await request(app.getHttpServer())
+        .get('/vault/budget-ceiling')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      expect(res.body.ceiling).toBe(2000);
+      expect(res.body.allocated).toBe(4500);
+      expect(res.body.buffer).toBe(-2500);
+      expect(res.body.overBudget).toBe(true);
+    });
+  });
 });

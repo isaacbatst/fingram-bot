@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { ChatService } from '../bot/modules/chat/chat.service';
+import { PlanQueryService } from '@/plan/shared/plan-query.service';
 import { AccessTokenStore } from '../shared/cache/access-token-store';
 import { Either, left, right } from './domain/either';
 import { Paginated } from './domain/paginated';
@@ -26,6 +27,7 @@ export class VaultWebService {
   constructor(
     private readonly vaultService: VaultService,
     private readonly chatService: ChatService,
+    private readonly planQuery: PlanQueryService,
   ) {}
 
   async authenticate(accessToken: string): Promise<Either<VaultError, string>> {
@@ -709,5 +711,44 @@ export class VaultWebService {
         message: 'Erro interno ao deletar transferência',
       });
     }
+  }
+
+  async getBudgetCeiling(
+    vaultId: string,
+  ): Promise<
+    Either<
+      VaultError,
+      {
+        ceiling: number;
+        allocated: number;
+        buffer: number;
+        overBudget: boolean;
+      }
+    >
+  > {
+    const [vaultError, vault] = await this.vaultService.getVault({ vaultId });
+    if (vaultError !== null) {
+      return left({
+        type: VaultErrorType.VAULT_NOT_FOUND,
+        message: vaultError,
+      });
+    }
+
+    const ceiling = await this.planQuery.getActiveCostOfLivingCeiling(
+      vaultId,
+      new Date(),
+    );
+    if (ceiling === null) {
+      return left({
+        type: VaultErrorType.VAULT_NOT_FOUND,
+        message: 'Nenhum plano encontrado',
+      });
+    }
+
+    const allocated = vault.totalBudgetedAmount();
+    const buffer = ceiling - allocated;
+    const overBudget = allocated > ceiling;
+
+    return right({ ceiling, allocated, buffer, overBudget });
   }
 }

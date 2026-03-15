@@ -425,6 +425,16 @@ export class VaultWebController {
   }
 
   @UseGuards(VaultAccessTokenGuard)
+  @Get('budget-ceiling')
+  async getBudgetCeiling(@VaultSession() vaultId: string) {
+    const [error, result] = await this.vaultWebService.getBudgetCeiling(vaultId);
+    if (error) {
+      return { ceiling: null, allocated: 0, buffer: null, overBudget: false };
+    }
+    return result;
+  }
+
+  @UseGuards(VaultAccessTokenGuard)
   @Get('boxes')
   async getBoxes(@VaultSession() vaultId: string) {
     const [error, boxes] = await this.vaultWebService.getBoxes(vaultId);
