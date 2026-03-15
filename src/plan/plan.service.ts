@@ -83,6 +83,50 @@ export class PlanService {
       }
     }
 
+    for (const alloc of input.allocations ?? []) {
+      if (!alloc.label?.trim()) {
+        return left('Label da alocação é obrigatória');
+      }
+      if (alloc.target < 0) {
+        return left('Target da alocação não pode ser negativo');
+      }
+      if (alloc.yieldRate !== undefined && alloc.yieldRate < 0) {
+        return left('Taxa de rendimento não pode ser negativa');
+      }
+      if (alloc.yieldRate !== undefined && !alloc.holdsFunds) {
+        return left(
+          'Taxa de rendimento só pode ser definida para alocações que retêm fundos',
+        );
+      }
+      if (alloc.financing) {
+        if (alloc.holdsFunds) {
+          return left(
+            'Alocação com financiamento não pode reter fundos (holdsFunds deve ser false)',
+          );
+        }
+        if (alloc.financing.principal <= 0) {
+          return left('Principal do financiamento deve ser maior que zero');
+        }
+        if (alloc.financing.annualRate <= 0) {
+          return left(
+            'Taxa de juros do financiamento deve ser maior que zero',
+          );
+        }
+        if (
+          alloc.financing.termMonths <= 0 ||
+          !Number.isInteger(alloc.financing.termMonths)
+        ) {
+          return left('Prazo do financiamento deve ser um inteiro positivo');
+        }
+        if (
+          alloc.financing.system !== 'sac' &&
+          alloc.financing.system !== 'price'
+        ) {
+          return left('Sistema de amortização deve ser "sac" ou "price"');
+        }
+      }
+    }
+
     const plan = Plan.create({
       vaultId: input.vaultId,
       name: input.name.trim(),

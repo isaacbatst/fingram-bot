@@ -64,8 +64,39 @@ export async function truncateAll(
   testDb: NodePgDatabase<typeof schema>,
 ): Promise<void> {
   await testDb.execute(sql`
-    TRUNCATE plan, budget, transaction, box, vault_category, chat, vault, action CASCADE
+    TRUNCATE plan, budget, transaction, box, vault_category, chat, vault, action, allocation CASCADE
   `);
+}
+
+export async function createTestAllocation(
+  testDb: NodePgDatabase<typeof schema>,
+  params: {
+    planId: string;
+    label: string;
+    holdsFunds: boolean;
+    target?: number;
+    monthlyAmount?: any[];
+    scheduledMovements?: any[];
+    yieldRate?: number;
+    financing?: any;
+    initialBalance?: number;
+  },
+): Promise<{ id: string }> {
+  const id = crypto.randomUUID();
+  await testDb.insert(schema.allocation).values({
+    id,
+    planId: params.planId,
+    label: params.label,
+    holdsFunds: params.holdsFunds,
+    target: params.target ?? 0,
+    monthlyAmount: params.monthlyAmount ?? [],
+    scheduledMovements: params.scheduledMovements ?? [],
+    yieldRate: params.yieldRate ?? null,
+    financing: params.financing ?? null,
+    initialBalance: params.initialBalance ?? null,
+    createdAt: new Date(),
+  });
+  return { id };
 }
 
 export async function stopTestApp(): Promise<void> {
