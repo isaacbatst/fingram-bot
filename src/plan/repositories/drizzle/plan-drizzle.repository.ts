@@ -5,7 +5,7 @@ import {
   DrizzleDatabase,
 } from '@/shared/persistence/drizzle/drizzle.module';
 import { plan } from '@/shared/persistence/drizzle/schema';
-import { Plan, PlanStatus, Premises, Box, Milestone } from '../../domain/plan';
+import { Plan, PlanStatus, Premises, Milestone } from '../../domain/plan';
 import { PlanRepository } from '../plan.repository';
 
 @Injectable()
@@ -22,7 +22,6 @@ export class PlanDrizzleRepository extends PlanRepository {
       status: planEntity.status,
       startDate: planEntity.startDate,
       premises: planEntity.premises,
-      boxes: planEntity.boxes,
       milestones: planEntity.milestones,
       createdAt: planEntity.createdAt,
     });
@@ -50,7 +49,6 @@ export class PlanDrizzleRepository extends PlanRepository {
         status: planEntity.status,
         startDate: planEntity.startDate,
         premises: planEntity.premises,
-        boxes: planEntity.boxes,
         milestones: planEntity.milestones,
       })
       .where(eq(plan.id, planEntity.id));
@@ -67,7 +65,6 @@ export class PlanDrizzleRepository extends PlanRepository {
     status: string;
     startDate: Date;
     premises: unknown;
-    boxes: unknown;
     milestones: unknown;
     createdAt: Date;
   }): Plan {
@@ -78,7 +75,6 @@ export class PlanDrizzleRepository extends PlanRepository {
       status: row.status as PlanStatus,
       startDate: row.startDate,
       premises: row.premises as Premises,
-      boxes: (row.boxes as Box[]) ?? [],
       milestones: (row.milestones as Milestone[]) ?? [],
       createdAt: row.createdAt,
     });

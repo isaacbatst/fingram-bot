@@ -1,11 +1,12 @@
-import { BoxFinancing, FinancingMonthDetail, FinancingPhase } from './plan';
+import { AllocationFinancing } from '@/plan/shared/domain/allocation';
+import { FinancingMonthDetail, FinancingPhase } from './plan';
 
 export interface FinancingState {
   outstandingBalance: number;
   remainingTermMonths: number;
 }
 
-export function initFinancingState(financing: BoxFinancing): FinancingState {
+export function initFinancingState(financing: AllocationFinancing): FinancingState {
   const constructionMonths = financing.constructionMonths ?? 0;
   const graceMonths = financing.gracePeriodMonths ?? 0;
   return {
@@ -51,7 +52,7 @@ export function getConstructionInterest(
 }
 
 function getPhase(
-  financing: BoxFinancing,
+  financing: AllocationFinancing,
   month: number,
   outstandingBalance: number,
 ): FinancingPhase {
@@ -65,7 +66,7 @@ function getPhase(
 }
 
 export function computeFinancingMonth(
-  financing: BoxFinancing,
+  financing: AllocationFinancing,
   state: FinancingState,
   month: number,
   extraAmortization: number,

@@ -37,33 +37,6 @@ export class PlanController {
         salaryChangePoints: { month: number; amount: number }[];
         costOfLivingChangePoints: { month: number; amount: number }[];
       };
-      boxes: {
-        id?: string;
-        label: string;
-        target: number;
-        monthlyAmount: { month: number; amount: number }[];
-        holdsFunds: boolean;
-        yieldRate?: number;
-        initialBalance?: number;
-        financing?: {
-          principal: number;
-          annualRate: number;
-          termMonths: number;
-          system: 'sac' | 'price';
-          constructionMonths?: number;
-          gracePeriodMonths?: number;
-          releasePercent?: number;
-          startMonth?: number;
-        };
-        scheduledMovements: {
-          month: number;
-          amount: number;
-          label: string;
-          type: 'in' | 'out';
-          destinationBoxId?: string;
-          additionalToMonthly?: boolean;
-        }[];
-      }[];
       milestones?: {
         month: number;
         label: string;
@@ -84,17 +57,6 @@ export class PlanController {
       name: data.name,
       startDate: new Date(data.startDate),
       premises: data.premises,
-      boxes: (data.boxes ?? []).map((b) => ({
-        id: b.id || '',
-        label: b.label,
-        target: b.target,
-        monthlyAmount: b.monthlyAmount ?? [],
-        holdsFunds: b.holdsFunds ?? true,
-        yieldRate: b.yieldRate,
-        initialBalance: b.initialBalance,
-        financing: b.financing,
-        scheduledMovements: b.scheduledMovements ?? [],
-      })),
       milestones: data.milestones,
     });
 

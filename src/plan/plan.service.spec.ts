@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PlanService } from './plan.service';
 import { PlanInMemoryRepository } from './repositories/in-memory/plan-in-memory.repository';
-import { Box, Premises } from './domain/plan';
+import { Premises } from './domain/plan';
 
 describe('PlanService', () => {
   let service: PlanService;
@@ -11,25 +11,6 @@ describe('PlanService', () => {
     salaryChangePoints: [{ month: 0, amount: 10000 }],
     costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
   };
-
-  const defaultBoxes: Box[] = [
-    {
-      id: 'emergency',
-      label: 'Emergencia',
-      target: 10000,
-      monthlyAmount: [{ month: 0, amount: 2000 }],
-      holdsFunds: true,
-      scheduledMovements: [],
-    },
-    {
-      id: 'car',
-      label: 'Carro',
-      target: 20000,
-      monthlyAmount: [{ month: 0, amount: 1000 }],
-      holdsFunds: false,
-      scheduledMovements: [],
-    },
-  ];
 
   beforeEach(() => {
     repository = new PlanInMemoryRepository();
@@ -43,7 +24,6 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: defaultBoxes,
       });
 
       expect(error).toBeNull();
@@ -51,7 +31,6 @@ describe('PlanService', () => {
       expect(plan!.status).toBe('draft');
       expect(plan!.vaultId).toBe('vault-1');
       expect(plan!.premises).toEqual(defaultPremises);
-      expect(plan!.boxes).toHaveLength(2);
     });
 
     it('should persist the plan in the repository', async () => {
@@ -60,7 +39,6 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: defaultBoxes,
       });
 
       const found = await repository.findById(plan!.id);
@@ -74,7 +52,6 @@ describe('PlanService', () => {
         name: '  ',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: defaultBoxes,
       });
 
       expect(error).toBe('Nome do plano é obrigatório');
@@ -89,7 +66,6 @@ describe('PlanService', () => {
           salaryChangePoints: [],
           costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
         },
-        boxes: defaultBoxes,
       });
 
       expect(error).toBe(
@@ -106,7 +82,6 @@ describe('PlanService', () => {
           salaryChangePoints: [{ month: 0, amount: 10000 }],
           costOfLivingChangePoints: [],
         },
-        boxes: defaultBoxes,
       });
 
       expect(error).toBe(
@@ -123,7 +98,6 @@ describe('PlanService', () => {
           salaryChangePoints: [{ month: 0, amount: -1000 }],
           costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
         },
-        boxes: defaultBoxes,
       });
 
       expect(error).toBe(
@@ -131,109 +105,16 @@ describe('PlanService', () => {
       );
     });
 
-    it('should reject box with empty label', async () => {
-      const [error] = await service.create({
-        vaultId: 'vault-1',
-        name: 'Plan',
-        startDate: new Date('2026-01-01'),
-        premises: defaultPremises,
-        boxes: [
-          {
-            id: 'b1',
-            label: '  ',
-            target: 1000,
-            monthlyAmount: [{ month: 0, amount: 100 }],
-            holdsFunds: true,
-            scheduledMovements: [],
-          },
-        ],
-      });
-
-      expect(error).toBe('Label da box é obrigatória');
-    });
-
-    it('should reject box with negative target', async () => {
-      const [error] = await service.create({
-        vaultId: 'vault-1',
-        name: 'Plan',
-        startDate: new Date('2026-01-01'),
-        premises: defaultPremises,
-        boxes: [
-          {
-            id: 'b1',
-            label: 'Box',
-            target: -100,
-            monthlyAmount: [{ month: 0, amount: 100 }],
-            holdsFunds: true,
-            scheduledMovements: [],
-          },
-        ],
-      });
-
-      expect(error).toBe('Target da box não pode ser negativo');
-    });
-
-    it('should reject scheduled movement with zero amount', async () => {
-      const [error] = await service.create({
-        vaultId: 'vault-1',
-        name: 'Plan',
-        startDate: new Date('2026-01-01'),
-        premises: defaultPremises,
-        boxes: [
-          {
-            id: 'b1',
-            label: 'Box',
-            target: 1000,
-            monthlyAmount: [{ month: 0, amount: 100 }],
-            holdsFunds: true,
-            scheduledMovements: [
-              { month: 6, amount: 0, label: 'Bonus', type: 'in' },
-            ],
-          },
-        ],
-      });
-
-      expect(error).toBe(
-        'Valor da movimentação agendada deve ser maior que zero (box: Box)',
-      );
-    });
-
-    it('should reject scheduled movement with empty label', async () => {
-      const [error] = await service.create({
-        vaultId: 'vault-1',
-        name: 'Plan',
-        startDate: new Date('2026-01-01'),
-        premises: defaultPremises,
-        boxes: [
-          {
-            id: 'b1',
-            label: 'Box',
-            target: 1000,
-            monthlyAmount: [{ month: 0, amount: 100 }],
-            holdsFunds: true,
-            scheduledMovements: [
-              { month: 6, amount: 500, label: '', type: 'in' },
-            ],
-          },
-        ],
-      });
-
-      expect(error).toBe(
-        `Label da movimentação agendada é obrigatória (box: Box)`,
-      );
-    });
-
-    it('should create plan with empty boxes', async () => {
+    it('should create plan with no allocations (just premises)', async () => {
       const [error, plan] = await service.create({
         vaultId: 'vault-1',
         name: 'Minimal Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: [],
       });
 
       expect(error).toBeNull();
-      expect(plan!.boxes).toHaveLength(0);
+      expect(plan).not.toBeNull();
     });
   });
 
@@ -244,7 +125,6 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: defaultBoxes,
       });
 
       const [error, found] = await service.getById(plan!.id, 'vault-1');
@@ -263,7 +143,6 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: defaultBoxes,
       });
 
       const [error] = await service.getById(plan!.id, 'vault-2');
@@ -278,7 +157,6 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: defaultBoxes,
       });
 
       const [error, projection] = await service.getProjection(
@@ -292,7 +170,8 @@ describe('PlanService', () => {
       expect(projection![0].month).toBe(0);
       expect(projection![0].income).toBe(10000);
       expect(projection![0].costOfLiving).toBe(6000);
-      expect(projection![0].surplus).toBe(1000);
+      // With no allocations, surplus = income - costOfLiving = 4000
+      expect(projection![0].surplus).toBe(4000);
     });
 
     it('should return error when plan not found', async () => {
@@ -306,7 +185,6 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: defaultBoxes,
       });
 
       const [error] = await service.getProjection(plan!.id, 'vault-2');
@@ -319,7 +197,6 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: defaultBoxes,
       });
 
       const [, projection] = await service.getProjection(plan!.id, 'vault-1');
@@ -335,7 +212,6 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: defaultBoxes,
       });
 
       const [error] = await service.delete(plan!.id, 'vault-1');
@@ -351,7 +227,6 @@ describe('PlanService', () => {
         name: 'My Plan',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: defaultBoxes,
       });
 
       const [error] = await service.delete(plan!.id, 'vault-2');
@@ -370,7 +245,6 @@ describe('PlanService', () => {
         name: 'Plan A',
         startDate: new Date('2026-01-01'),
         premises: defaultPremises,
-        boxes: [],
       });
 
       await service.create({
@@ -378,7 +252,6 @@ describe('PlanService', () => {
         name: 'Plan B',
         startDate: new Date('2026-02-01'),
         premises: defaultPremises,
-        boxes: [],
       });
 
       await service.create({
@@ -386,7 +259,6 @@ describe('PlanService', () => {
         name: 'Plan C',
         startDate: new Date('2026-03-01'),
         premises: defaultPremises,
-        boxes: [],
       });
 
       const plans = await service.getByVaultId('vault-1');

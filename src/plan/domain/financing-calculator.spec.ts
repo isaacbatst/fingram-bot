@@ -6,7 +6,7 @@ import {
   computeFinancingMonth,
   initFinancingState,
 } from './financing-calculator';
-import { BoxFinancing } from './plan';
+import { AllocationFinancing } from '../shared/domain/allocation';
 
 describe('financing-calculator', () => {
   // Taxa anual: 11% a.a.
@@ -202,7 +202,7 @@ describe('financing-calculator', () => {
     //   Mes 2: juros = 100.000 * 0.01 = R$1.000,  prestacao = R$11.000
     //   ...
     //   Mes 11: juros = 10.000 * 0.01 = R$100,    prestacao = R$10.100
-    const sacFinancing: BoxFinancing = {
+    const sacFinancing: AllocationFinancing = {
       principal: 120_000,
       annualRate: 0.12,
       termMonths: 12,
@@ -215,7 +215,7 @@ describe('financing-calculator', () => {
     //       = 120.000 * 0.011268 / 0.12683
     //       = 120.000 * 0.088849
     //       = ~R$10.661,85/mes
-    const priceFinancing: BoxFinancing = {
+    const priceFinancing: AllocationFinancing = {
       principal: 120_000,
       annualRate: 0.12,
       termMonths: 12,
@@ -325,7 +325,7 @@ describe('financing-calculator', () => {
       // Apos a obra (mes 16+):
       //   - Amortizacao SAC comeca sobre o saldo total de R$1.200.000.
       //   - amort = 1.200.000 / 404 = R$2.970,30/mes
-      const withConstruction: BoxFinancing = {
+      const withConstruction: AllocationFinancing = {
         principal: 1_200_000,
         annualRate: 0.11,
         termMonths: 420,
@@ -393,7 +393,7 @@ describe('financing-calculator', () => {
       //
       // Apos carencia (mes 18+):
       //   - Amortizacao SAC comeca: amort = 50.000 / 150 = R$333,33/mes
-      const withGrace: BoxFinancing = {
+      const withGrace: AllocationFinancing = {
         principal: 50_000,
         annualRate: 0.065,
         termMonths: 168,
@@ -446,7 +446,7 @@ describe('financing-calculator', () => {
       //   Ultimo mes obra (15): juros = 1.140.000 * 0.00917 = R$10.450
       //   Primeiro mes carencia (16): juros = 1.200.000 * 0.00917 = R$11.000
       //   Primeiro mes amort (22): amort = 1.200.000/398 = R$3.015 + juros = R$11.000
-      const withBoth: BoxFinancing = {
+      const withBoth: AllocationFinancing = {
         principal: 1_200_000,
         annualRate: 0.11,
         termMonths: 420,
@@ -557,7 +557,7 @@ describe('financing-calculator', () => {
         // Mes 5 (obra) com extra de R$100.000:
         //   Extra e ignorado — saldo permanece R$1.200.000.
         //   Juros de obra calculados normalmente sobre o valor liberado.
-        const withConstruction: BoxFinancing = {
+        const withConstruction: AllocationFinancing = {
           principal: 1_200_000,
           annualRate: 0.11,
           termMonths: 420,
@@ -592,7 +592,7 @@ describe('financing-calculator', () => {
         // Mes 5 (carencia) com extra de R$10.000:
         //   saldo = 50.000 - 10.000 = R$40.000
         //   juros = 40.000 * (0.065/12) = R$216,67
-        const withGrace: BoxFinancing = {
+        const withGrace: AllocationFinancing = {
           principal: 50_000,
           annualRate: 0.065,
           termMonths: 168,
@@ -614,7 +614,7 @@ describe('financing-calculator', () => {
         // Prazo contratual 420 meses, 16 meses de obra.
         // Prazo efetivo de amortizacao = 420 - 16 = 404 meses.
         // SAC: amort = 1.200.000 / 404 = R$2.970,30
-        const withConstruction: BoxFinancing = {
+        const withConstruction: AllocationFinancing = {
           principal: 1_200_000,
           annualRate: 0.11,
           termMonths: 420,
@@ -649,7 +649,7 @@ describe('financing-calculator', () => {
         // Prazo contratual 420 meses, 16 obra + 6 carencia.
         // Prazo efetivo de amortizacao = 420 - 16 - 6 = 398 meses.
         // SAC: amort = 1.200.000 / 398 = R$3.015,08
-        const withBoth: BoxFinancing = {
+        const withBoth: AllocationFinancing = {
           principal: 1_200_000,
           annualRate: 0.11,
           termMonths: 420,

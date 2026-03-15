@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Either, left, right } from '@/vault/domain/either';
-import { Plan, Box, Milestone, MonthData, Premises } from './domain/plan';
+import { Plan, Milestone, MonthData, Premises } from './domain/plan';
 import { runProjection } from './domain/run-projection';
 import { PlanRepository } from './repositories/plan.repository';
 
@@ -15,7 +15,6 @@ export class PlanService {
     name: string;
     startDate: Date;
     premises: Premises;
-    boxes: Box[];
     milestones?: Milestone[];
   }): Promise<Either<string, Plan>> {
     this.logger.log(`Creating plan for vault: ${input.vaultId}`);
@@ -60,123 +59,11 @@ export class PlanService {
       }
     }
 
-    for (const box of input.boxes) {
-      if (!box.label?.trim()) {
-        return left('Label da box é obrigatória');
-      }
-      if (box.target < 0) {
-        return left('Target da box não pode ser negativo');
-      }
-      if (box.yieldRate !== undefined && box.yieldRate < 0) {
-        return left('Taxa de rendimento não pode ser negativa');
-      }
-      if (box.yieldRate !== undefined && !box.holdsFunds) {
-        return left(
-          'Taxa de rendimento só pode ser definida para boxes que retêm fundos',
-        );
-      }
-      for (const cp of box.monthlyAmount) {
-        if (cp.amount < 0) {
-          return left(
-            'Valor do change point de aporte mensal não pode ser negativo',
-          );
-        }
-        if (cp.month < 0) {
-          return left('Mês do change point não pode ser negativo');
-        }
-      }
-      for (const sm of box.scheduledMovements ?? []) {
-        if (sm.amount <= 0) {
-          return left(
-            `Valor da movimentação agendada deve ser maior que zero (box: ${box.label})`,
-          );
-        }
-        if (sm.month < 0) {
-          return left(
-            `Mês da movimentação agendada não pode ser negativo (box: ${box.label})`,
-          );
-        }
-        if (!sm.label?.trim()) {
-          return left(
-            `Label da movimentação agendada é obrigatória (box: ${box.label})`,
-          );
-        }
-        if (sm.type !== 'in' && sm.type !== 'out') {
-          return left(
-            `Tipo da movimentação agendada deve ser 'in' ou 'out' (box: ${box.label})`,
-          );
-        }
-        if (sm.type === 'out' && sm.destinationBoxId) {
-          if (!input.boxes.some((b) => b.id === sm.destinationBoxId)) {
-            return left(
-              `destinationBoxId referencia uma box que não existe no plano (box: ${box.label})`,
-            );
-          }
-        }
-        if (sm.type === 'out' && !box.holdsFunds) {
-          return left(
-            `Movimentações de saída só são válidas em boxes com holdsFunds: true (box: ${box.label})`,
-          );
-        }
-      }
-
-      if (box.financing) {
-        if (box.holdsFunds) {
-          return left(
-            'Box com financiamento não pode reter fundos (holdsFunds deve ser false)',
-          );
-        }
-        if (box.yieldRate !== undefined) {
-          return left('Box com financiamento não pode ter taxa de rendimento');
-        }
-        if (box.financing.principal <= 0) {
-          return left('Principal do financiamento deve ser maior que zero');
-        }
-        if (box.financing.annualRate <= 0) {
-          return left('Taxa de juros do financiamento deve ser maior que zero');
-        }
-        if (
-          box.financing.termMonths <= 0 ||
-          !Number.isInteger(box.financing.termMonths)
-        ) {
-          return left('Prazo do financiamento deve ser um inteiro positivo');
-        }
-        if (
-          box.financing.system !== 'sac' &&
-          box.financing.system !== 'price'
-        ) {
-          return left('Sistema de amortização deve ser "sac" ou "price"');
-        }
-        if (
-          box.financing.constructionMonths !== undefined &&
-          box.financing.constructionMonths < 0
-        ) {
-          return left('Meses de obra não podem ser negativos');
-        }
-        if (
-          box.financing.gracePeriodMonths !== undefined &&
-          box.financing.gracePeriodMonths < 0
-        ) {
-          return left('Meses de carência não podem ser negativos');
-        }
-        if (
-          box.financing.releasePercent !== undefined &&
-          (box.financing.releasePercent <= 0 ||
-            box.financing.releasePercent > 1)
-        ) {
-          return left(
-            'Percentual de liberação deve ser entre 0 (exclusivo) e 1 (inclusivo)',
-          );
-        }
-      }
-    }
-
     const plan = Plan.create({
       vaultId: input.vaultId,
       name: input.name.trim(),
       startDate: input.startDate,
       premises: input.premises,
-      boxes: input.boxes,
       milestones: input.milestones,
     });
 
@@ -210,7 +97,8 @@ export class PlanService {
     if (plan.vaultId !== vaultId) {
       return left('Plano não encontrado');
     }
-    const projection = runProjection(plan, months);
+    // TODO: Task 7 will rewire this to load allocations from AllocationRepository
+    const projection = runProjection(plan.premises, [], plan.startDate, months);
     return right(projection);
   }
 

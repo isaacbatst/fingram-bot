@@ -1,70 +1,92 @@
 import { describe, it, expect } from 'vitest';
-import { Plan } from './plan';
+import { Allocation } from '../shared/domain/allocation';
+import { Premises } from './plan';
 import { runProjection } from './run-projection';
 
-function createPlan(
-  overrides: Partial<Parameters<typeof Plan.create>[0]> = {},
-): Plan {
-  return Plan.create({
-    vaultId: 'vault-1',
-    name: 'Test Plan',
-    startDate: new Date('2026-01-01'),
-    premises: {
-      salaryChangePoints: [{ month: 0, amount: 10000 }],
-      costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
-    },
-    boxes: [
-      {
-        id: 'reserva',
-        label: 'Reserva',
-        target: 10000,
-        monthlyAmount: [{ month: 0, amount: 4000 }],
-        holdsFunds: true,
-        scheduledMovements: [],
-      },
-    ],
-    ...overrides,
+const defaultPremises: Premises = {
+  salaryChangePoints: [{ month: 0, amount: 10000 }],
+  costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+};
+
+const defaultStartDate = new Date('2026-01-01');
+
+function makeAllocation(
+  overrides: Partial<{
+    id: string;
+    label: string;
+    target: number;
+    monthlyAmount: { month: number; amount: number }[];
+    holdsFunds: boolean;
+    yieldRate: number;
+    financing: {
+      principal: number;
+      annualRate: number;
+      termMonths: number;
+      system: 'sac' | 'price';
+      constructionMonths?: number;
+      gracePeriodMonths?: number;
+      releasePercent?: number;
+      startMonth?: number;
+    };
+    scheduledMovements: {
+      month: number;
+      amount: number;
+      label: string;
+      type: 'in' | 'out';
+      destinationBoxId?: string;
+      additionalToMonthly?: boolean;
+    }[];
+    initialBalance: number;
+  }> = {},
+): Allocation {
+  return Allocation.restore({
+    id: overrides.id ?? 'reserva',
+    planId: 'plan-1',
+    label: overrides.label ?? 'Reserva',
+    target: overrides.target ?? 10000,
+    monthlyAmount: overrides.monthlyAmount ?? [{ month: 0, amount: 4000 }],
+    holdsFunds: overrides.holdsFunds ?? true,
+    yieldRate: overrides.yieldRate,
+    financing: overrides.financing,
+    scheduledMovements: overrides.scheduledMovements ?? [],
+    initialBalance: overrides.initialBalance,
+    estratoId: null,
+    createdAt: new Date(),
   });
 }
 
 describe('runProjection', () => {
   it('should use initialBalance as starting point for calculations', () => {
-    const plan = createPlan({
-      boxes: [
-        {
-          id: 'reserva',
-          label: 'Reserva',
-          target: 10000,
-          monthlyAmount: [{ month: 0, amount: 4000 }],
-          holdsFunds: true,
-          initialBalance: 2500,
-          scheduledMovements: [],
-        },
-      ],
-    });
-    const result = runProjection(plan, 1);
+    const allocations = [
+      makeAllocation({
+        id: 'reserva',
+        target: 10000,
+        monthlyAmount: [{ month: 0, amount: 4000 }],
+        holdsFunds: true,
+        initialBalance: 2500,
+      }),
+    ];
+    const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
 
     // Month 0: 2500 initial + 4000 deposit = 6500
-    expect(result[0].boxes['reserva']).toBe(6500);
+    expect(result[0].allocations['reserva']).toBe(6500);
   });
 
   it('should calculate basic surplus correctly', () => {
-    const plan = createPlan();
-    const result = runProjection(plan, 1);
+    const allocations = [makeAllocation()];
+    const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
 
     expect(result).toHaveLength(1);
     expect(result[0].income).toBe(10000);
     expect(result[0].costOfLiving).toBe(6000);
     expect(result[0].surplus).toBe(0);
     expect(result[0].cash).toBe(0);
-    expect(result[0].boxes['reserva']).toBe(4000);
+    expect(result[0].allocations['reserva']).toBe(4000);
   });
 
   it('should return correct month numbers and dates', () => {
-    const plan = createPlan({
-      startDate: new Date(2026, 2, 1),
-    });
-    const result = runProjection(plan, 3);
+    const startDate = new Date(2026, 2, 1);
+    const result = runProjection(defaultPremises, [makeAllocation()], startDate, 3);
 
     expect(result[0].month).toBe(0);
     expect(result[0].date.getUTCMonth()).toBe(2); // March
@@ -75,17 +97,14 @@ describe('runProjection', () => {
   });
 
   it('should handle salary change points', () => {
-    const plan = createPlan({
-      premises: {
-        salaryChangePoints: [
-          { month: 0, amount: 10000 },
-          { month: 3, amount: 15000 },
-        ],
-        costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
-      },
-      boxes: [],
-    });
-    const result = runProjection(plan, 5);
+    const premises: Premises = {
+      salaryChangePoints: [
+        { month: 0, amount: 10000 },
+        { month: 3, amount: 15000 },
+      ],
+      costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+    };
+    const result = runProjection(premises, [], defaultStartDate, 5);
 
     expect(result[0].income).toBe(10000);
     expect(result[2].income).toBe(10000);
@@ -94,17 +113,14 @@ describe('runProjection', () => {
   });
 
   it('should handle cost of living change points', () => {
-    const plan = createPlan({
-      premises: {
-        salaryChangePoints: [{ month: 0, amount: 10000 }],
-        costOfLivingChangePoints: [
-          { month: 0, amount: 6000 },
-          { month: 2, amount: 5000 },
-        ],
-      },
-      boxes: [],
-    });
-    const result = runProjection(plan, 4);
+    const premises: Premises = {
+      salaryChangePoints: [{ month: 0, amount: 10000 }],
+      costOfLivingChangePoints: [
+        { month: 0, amount: 6000 },
+        { month: 2, amount: 5000 },
+      ],
+    };
+    const result = runProjection(premises, [], defaultStartDate, 4);
 
     expect(result[0].costOfLiving).toBe(6000);
     expect(result[1].costOfLiving).toBe(6000);
@@ -113,190 +129,167 @@ describe('runProjection', () => {
   });
 
   it('should stop box when target is reached', () => {
-    const plan = createPlan({
-      premises: {
-        salaryChangePoints: [{ month: 0, amount: 10000 }],
-        costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
-      },
-      boxes: [
-        {
-          id: 'reserva',
-          label: 'Reserva',
-          target: 5000,
-          monthlyAmount: [{ month: 0, amount: 4000 }],
-          holdsFunds: true,
-          scheduledMovements: [],
-        },
-      ],
-    });
-    const result = runProjection(plan, 3);
+    const allocations = [
+      makeAllocation({
+        id: 'reserva',
+        target: 5000,
+        monthlyAmount: [{ month: 0, amount: 4000 }],
+        holdsFunds: true,
+      }),
+    ];
+    const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
 
-    expect(result[0].boxes['reserva']).toBe(4000);
-    expect(result[0].boxPayments['reserva']).toBe(4000);
-    expect(result[1].boxes['reserva']).toBe(5000);
-    expect(result[1].boxPayments['reserva']).toBe(1000);
-    expect(result[2].boxes['reserva']).toBe(5000);
-    expect(result[2].boxPayments['reserva']).toBe(0);
+    expect(result[0].allocations['reserva']).toBe(4000);
+    expect(result[0].allocationPayments['reserva']).toBe(4000);
+    expect(result[1].allocations['reserva']).toBe(5000);
+    expect(result[1].allocationPayments['reserva']).toBe(1000);
+    expect(result[2].allocations['reserva']).toBe(5000);
+    expect(result[2].allocationPayments['reserva']).toBe(0);
     expect(result[2].cash).toBeGreaterThan(0);
   });
 
   it('should handle box with no monthly amount (only scheduled payments)', () => {
-    const plan = createPlan({
-      boxes: [
-        {
-          id: 'pontual',
-          label: 'Pontual',
-          target: 50000,
-          monthlyAmount: [],
-          holdsFunds: false,
-          scheduledMovements: [{ month: 2, amount: 10000, label: 'Entrada', type: 'in' }],
-        },
-      ],
-    });
-    const result = runProjection(plan, 4);
+    const allocations = [
+      makeAllocation({
+        id: 'pontual',
+        label: 'Pontual',
+        target: 50000,
+        monthlyAmount: [],
+        holdsFunds: false,
+        scheduledMovements: [{ month: 2, amount: 10000, label: 'Entrada', type: 'in' }],
+      }),
+    ];
+    const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
 
-    expect(result[0].boxPayments['pontual']).toBe(0);
-    expect(result[1].boxPayments['pontual']).toBe(0);
-    expect(result[2].boxPayments['pontual']).toBe(10000);
-    expect(result[2].boxes['pontual']).toBe(10000);
-    expect(result[3].boxPayments['pontual']).toBe(0);
+    expect(result[0].allocationPayments['pontual']).toBe(0);
+    expect(result[1].allocationPayments['pontual']).toBe(0);
+    expect(result[2].allocationPayments['pontual']).toBe(10000);
+    expect(result[2].allocations['pontual']).toBe(10000);
+    expect(result[3].allocationPayments['pontual']).toBe(0);
   });
 
   it('should replace monthly with scheduled payment by default', () => {
-    const plan = createPlan({
-      boxes: [
-        {
-          id: 'terreno',
-          label: 'Terreno',
-          target: 100000,
-          monthlyAmount: [{ month: 0, amount: 2000 }],
-          holdsFunds: false,
-          scheduledMovements: [
-            { month: 1, amount: 10000, label: 'Entrada 1/4', type: 'in' },
-          ],
-        },
-      ],
-    });
-    const result = runProjection(plan, 3);
+    const allocations = [
+      makeAllocation({
+        id: 'terreno',
+        label: 'Terreno',
+        target: 100000,
+        monthlyAmount: [{ month: 0, amount: 2000 }],
+        holdsFunds: false,
+        scheduledMovements: [
+          { month: 1, amount: 10000, label: 'Entrada 1/4', type: 'in' },
+        ],
+      }),
+    ];
+    const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
 
-    expect(result[0].boxPayments['terreno']).toBe(2000);
-    expect(result[1].boxPayments['terreno']).toBe(10000);
+    expect(result[0].allocationPayments['terreno']).toBe(2000);
+    expect(result[1].allocationPayments['terreno']).toBe(10000);
     expect(result[1].scheduledMovements).toEqual([
-      { boxId: 'terreno', amount: 10000, label: 'Entrada 1/4', type: 'in' },
+      { allocationId: 'terreno', amount: 10000, label: 'Entrada 1/4', type: 'in' },
     ]);
-    expect(result[2].boxPayments['terreno']).toBe(2000);
+    expect(result[2].allocationPayments['terreno']).toBe(2000);
   });
 
   it('should add monthly when additionalToMonthly is true', () => {
-    const plan = createPlan({
-      boxes: [
-        {
-          id: 'terreno',
-          label: 'Terreno',
-          target: 0,
-          monthlyAmount: [{ month: 0, amount: 2000 }],
-          holdsFunds: false,
-          scheduledMovements: [
-            {
-              month: 1,
-              amount: 10000,
-              label: 'Extra',
-              type: 'in',
-              additionalToMonthly: true,
-            },
-          ],
-        },
-      ],
-    });
-    const result = runProjection(plan, 2);
+    const allocations = [
+      makeAllocation({
+        id: 'terreno',
+        label: 'Terreno',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 2000 }],
+        holdsFunds: false,
+        scheduledMovements: [
+          {
+            month: 1,
+            amount: 10000,
+            label: 'Extra',
+            type: 'in',
+            additionalToMonthly: true,
+          },
+        ],
+      }),
+    ];
+    const result = runProjection(defaultPremises, allocations, defaultStartDate, 2);
 
-    expect(result[1].boxPayments['terreno']).toBe(12000);
+    expect(result[1].allocationPayments['terreno']).toBe(12000);
   });
 
   it('should sum multiple scheduled payments in same month same box', () => {
-    const plan = createPlan({
-      boxes: [
-        {
-          id: 'terreno',
-          label: 'Terreno',
-          target: 0,
-          monthlyAmount: [{ month: 0, amount: 1000 }],
-          holdsFunds: false,
-          scheduledMovements: [
-            { month: 2, amount: 5000, label: 'Part A', type: 'in' },
-            { month: 2, amount: 3000, label: 'Part B', type: 'in' },
-          ],
-        },
-      ],
-    });
-    const result = runProjection(plan, 3);
+    const allocations = [
+      makeAllocation({
+        id: 'terreno',
+        label: 'Terreno',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 1000 }],
+        holdsFunds: false,
+        scheduledMovements: [
+          { month: 2, amount: 5000, label: 'Part A', type: 'in' },
+          { month: 2, amount: 3000, label: 'Part B', type: 'in' },
+        ],
+      }),
+    ];
+    const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
 
-    expect(result[2].boxPayments['terreno']).toBe(8000);
+    expect(result[2].allocationPayments['terreno']).toBe(8000);
     expect(result[2].scheduledMovements).toHaveLength(2);
   });
 
   it('should NOT cap scheduled payments at target', () => {
-    const plan = createPlan({
-      boxes: [
-        {
-          id: 'box',
-          label: 'Box',
-          target: 5000,
-          monthlyAmount: [{ month: 0, amount: 1000 }],
-          holdsFunds: true,
-          scheduledMovements: [
-            { month: 3, amount: 10000, label: 'Big payment', type: 'in' },
-          ],
-        },
-      ],
-    });
-    const result = runProjection(plan, 5);
+    const allocations = [
+      makeAllocation({
+        id: 'box',
+        label: 'Box',
+        target: 5000,
+        monthlyAmount: [{ month: 0, amount: 1000 }],
+        holdsFunds: true,
+        scheduledMovements: [
+          { month: 3, amount: 10000, label: 'Big payment', type: 'in' },
+        ],
+      }),
+    ];
+    const result = runProjection(defaultPremises, allocations, defaultStartDate, 5);
 
-    expect(result[2].boxes['box']).toBe(3000);
-    expect(result[3].boxes['box']).toBe(13000);
-    expect(result[3].boxPayments['box']).toBe(10000);
-    expect(result[4].boxPayments['box']).toBe(0);
+    expect(result[2].allocations['box']).toBe(3000);
+    expect(result[3].allocations['box']).toBe(13000);
+    expect(result[3].allocationPayments['box']).toBe(10000);
+    expect(result[4].allocationPayments['box']).toBe(0);
   });
 
   it('should execute scheduled payments even after target is reached', () => {
-    const plan = createPlan({
-      boxes: [
-        {
-          id: 'box',
-          label: 'Box',
-          target: 2000,
-          monthlyAmount: [{ month: 0, amount: 1000 }],
-          holdsFunds: false,
-          scheduledMovements: [{ month: 3, amount: 5000, label: 'Lump sum', type: 'in' }],
-        },
-      ],
-    });
-    const result = runProjection(plan, 5);
+    const allocations = [
+      makeAllocation({
+        id: 'box',
+        label: 'Box',
+        target: 2000,
+        monthlyAmount: [{ month: 0, amount: 1000 }],
+        holdsFunds: false,
+        scheduledMovements: [{ month: 3, amount: 5000, label: 'Lump sum', type: 'in' }],
+      }),
+    ];
+    const result = runProjection(defaultPremises, allocations, defaultStartDate, 5);
 
     // Month 0: +1000 (balance 1000)
     // Month 1: +1000 (balance 2000 = target reached)
     // Month 2: target reached, no monthly (balance 2000)
     // Month 3: scheduled payment fires despite target reached (balance 7000)
     // Month 4: target reached, no monthly (balance 7000)
-    expect(result[1].boxes['box']).toBe(2000);
-    expect(result[2].boxPayments['box']).toBe(0);
-    expect(result[3].boxPayments['box']).toBe(5000);
-    expect(result[3].boxes['box']).toBe(7000);
+    expect(result[1].allocations['box']).toBe(2000);
+    expect(result[2].allocationPayments['box']).toBe(0);
+    expect(result[3].allocationPayments['box']).toBe(5000);
+    expect(result[3].allocations['box']).toBe(7000);
     expect(result[3].scheduledMovements).toEqual([
-      { boxId: 'box', amount: 5000, label: 'Lump sum', type: 'in' },
+      { allocationId: 'box', amount: 5000, label: 'Lump sum', type: 'in' },
     ]);
-    expect(result[4].boxPayments['box']).toBe(0);
+    expect(result[4].allocationPayments['box']).toBe(0);
   });
 
   it('should handle negative surplus (cash goes negative)', () => {
-    const plan = createPlan({
-      premises: {
-        salaryChangePoints: [{ month: 0, amount: 5000 }],
-        costOfLivingChangePoints: [{ month: 0, amount: 7000 }],
-      },
-      boxes: [],
-    });
-    const result = runProjection(plan, 3);
+    const premises: Premises = {
+      salaryChangePoints: [{ month: 0, amount: 5000 }],
+      costOfLivingChangePoints: [{ month: 0, amount: 7000 }],
+    };
+    const result = runProjection(premises, [], defaultStartDate, 3);
 
     expect(result[0].surplus).toBe(-2000);
     expect(result[0].cash).toBe(-2000);
@@ -305,31 +298,27 @@ describe('runProjection', () => {
   });
 
   it('should compute totalWealth and totalCommitted correctly', () => {
-    const plan = createPlan({
-      premises: {
-        salaryChangePoints: [{ month: 0, amount: 20000 }],
-        costOfLivingChangePoints: [{ month: 0, amount: 10000 }],
-      },
-      boxes: [
-        {
-          id: 'reserva',
-          label: 'Reserva',
-          target: 0,
-          monthlyAmount: [{ month: 0, amount: 3000 }],
-          holdsFunds: true,
-          scheduledMovements: [],
-        },
-        {
-          id: 'terreno',
-          label: 'Terreno',
-          target: 0,
-          monthlyAmount: [{ month: 0, amount: 2000 }],
-          holdsFunds: false,
-          scheduledMovements: [],
-        },
-      ],
-    });
-    const result = runProjection(plan, 1);
+    const premises: Premises = {
+      salaryChangePoints: [{ month: 0, amount: 20000 }],
+      costOfLivingChangePoints: [{ month: 0, amount: 10000 }],
+    };
+    const allocations = [
+      makeAllocation({
+        id: 'reserva',
+        label: 'Reserva',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 3000 }],
+        holdsFunds: true,
+      }),
+      makeAllocation({
+        id: 'terreno',
+        label: 'Terreno',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 2000 }],
+        holdsFunds: false,
+      }),
+    ];
+    const result = runProjection(premises, allocations, defaultStartDate, 1);
 
     expect(result[0].surplus).toBe(5000);
     expect(result[0].cash).toBe(5000);
@@ -338,20 +327,16 @@ describe('runProjection', () => {
   });
 
   it('should default to 120 months when no explicit months given', () => {
-    const plan = createPlan({ boxes: [] });
-    const result = runProjection(plan);
+    const result = runProjection(defaultPremises, [], defaultStartDate);
     expect(result).toHaveLength(120);
   });
 
   it('should handle change point without month 0 (uses fallback 0)', () => {
-    const plan = createPlan({
-      premises: {
-        salaryChangePoints: [{ month: 5, amount: 10000 }],
-        costOfLivingChangePoints: [{ month: 0, amount: 0 }],
-      },
-      boxes: [],
-    });
-    const result = runProjection(plan, 7);
+    const premises: Premises = {
+      salaryChangePoints: [{ month: 5, amount: 10000 }],
+      costOfLivingChangePoints: [{ month: 0, amount: 0 }],
+    };
+    const result = runProjection(premises, [], defaultStartDate, 7);
 
     expect(result[0].income).toBe(0);
     expect(result[4].income).toBe(0);
@@ -360,292 +345,248 @@ describe('runProjection', () => {
   });
 
   it('should handle box monthlyAmount change points', () => {
-    const plan = createPlan({
-      premises: {
-        salaryChangePoints: [{ month: 0, amount: 20000 }],
-        costOfLivingChangePoints: [{ month: 0, amount: 5000 }],
-      },
-      boxes: [
-        {
-          id: 'terreno',
-          label: 'Terreno',
-          target: 0,
-          monthlyAmount: [
-            { month: 0, amount: 1893 },
-            { month: 10, amount: 2741 },
-          ],
-          holdsFunds: false,
-          scheduledMovements: [],
-        },
-      ],
-    });
-    const result = runProjection(plan, 12);
+    const premises: Premises = {
+      salaryChangePoints: [{ month: 0, amount: 20000 }],
+      costOfLivingChangePoints: [{ month: 0, amount: 5000 }],
+    };
+    const allocations = [
+      makeAllocation({
+        id: 'terreno',
+        label: 'Terreno',
+        target: 0,
+        monthlyAmount: [
+          { month: 0, amount: 1893 },
+          { month: 10, amount: 2741 },
+        ],
+        holdsFunds: false,
+      }),
+    ];
+    const result = runProjection(premises, allocations, defaultStartDate, 12);
 
-    expect(result[0].boxPayments['terreno']).toBe(1893);
-    expect(result[9].boxPayments['terreno']).toBe(1893);
-    expect(result[10].boxPayments['terreno']).toBe(2741);
-    expect(result[11].boxPayments['terreno']).toBe(2741);
+    expect(result[0].allocationPayments['terreno']).toBe(1893);
+    expect(result[9].allocationPayments['terreno']).toBe(1893);
+    expect(result[10].allocationPayments['terreno']).toBe(2741);
+    expect(result[11].allocationPayments['terreno']).toBe(2741);
   });
 
   it('should handle empty boxes', () => {
-    const plan = createPlan({ boxes: [] });
-    const result = runProjection(plan, 3);
+    const result = runProjection(defaultPremises, [], defaultStartDate, 3);
 
     expect(result).toHaveLength(3);
     expect(result[0].surplus).toBe(4000);
     expect(result[0].cash).toBe(4000);
-    expect(Object.keys(result[0].boxes)).toHaveLength(0);
+    expect(Object.keys(result[0].allocations)).toHaveLength(0);
   });
 
   it('should handle boxes deducting unconditionally even when cash is negative', () => {
-    const plan = createPlan({
-      premises: {
-        salaryChangePoints: [{ month: 0, amount: 10000 }],
-        costOfLivingChangePoints: [{ month: 0, amount: 9500 }],
-      },
-      boxes: [
-        {
-          id: 'acoes',
-          label: 'Acoes',
-          target: 0,
-          monthlyAmount: [{ month: 0, amount: 800 }],
-          holdsFunds: true,
-          scheduledMovements: [],
-        },
-      ],
-    });
-    const result = runProjection(plan, 1);
+    const premises: Premises = {
+      salaryChangePoints: [{ month: 0, amount: 10000 }],
+      costOfLivingChangePoints: [{ month: 0, amount: 9500 }],
+    };
+    const allocations = [
+      makeAllocation({
+        id: 'acoes',
+        label: 'Acoes',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 800 }],
+        holdsFunds: true,
+      }),
+    ];
+    const result = runProjection(premises, allocations, defaultStartDate, 1);
 
     expect(result[0].surplus).toBe(-300);
     expect(result[0].cash).toBe(-300);
-    expect(result[0].boxes['acoes']).toBe(800);
+    expect(result[0].allocations['acoes']).toBe(800);
   });
 
   it('should project real plan.md scenario (4 down payments)', () => {
-    const plan = createPlan({
-      premises: {
-        salaryChangePoints: [{ month: 0, amount: 33000 }],
-        costOfLivingChangePoints: [{ month: 0, amount: 18000 }],
-      },
-      boxes: [
-        {
-          id: 'terreno',
-          label: 'Parcela terreno',
-          target: 530000,
-          monthlyAmount: [{ month: 0, amount: 1893 }],
-          holdsFunds: false,
-          scheduledMovements: [
-            { month: 0, amount: 10000, label: 'Entrada 1/4', type: 'in' },
-            { month: 1, amount: 10000, label: 'Entrada 2/4', type: 'in' },
-            { month: 2, amount: 10000, label: 'Entrada 3/4', type: 'in' },
-            { month: 3, amount: 23000, label: 'Entrada 4/4', type: 'in' },
-          ],
-        },
-        {
-          id: 'acoes',
-          label: 'Acoes',
-          target: 0,
-          monthlyAmount: [{ month: 0, amount: 800 }],
-          holdsFunds: true,
-          scheduledMovements: [],
-        },
-      ],
-    });
-    const result = runProjection(plan, 6);
+    const premises: Premises = {
+      salaryChangePoints: [{ month: 0, amount: 33000 }],
+      costOfLivingChangePoints: [{ month: 0, amount: 18000 }],
+    };
+    const allocations = [
+      makeAllocation({
+        id: 'terreno',
+        label: 'Parcela terreno',
+        target: 530000,
+        monthlyAmount: [{ month: 0, amount: 1893 }],
+        holdsFunds: false,
+        scheduledMovements: [
+          { month: 0, amount: 10000, label: 'Entrada 1/4', type: 'in' },
+          { month: 1, amount: 10000, label: 'Entrada 2/4', type: 'in' },
+          { month: 2, amount: 10000, label: 'Entrada 3/4', type: 'in' },
+          { month: 3, amount: 23000, label: 'Entrada 4/4', type: 'in' },
+        ],
+      }),
+      makeAllocation({
+        id: 'acoes',
+        label: 'Acoes',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 800 }],
+        holdsFunds: true,
+      }),
+    ];
+    const result = runProjection(premises, allocations, defaultStartDate, 6);
 
     expect(result[0].income).toBe(33000);
-    expect(result[0].boxPayments['terreno']).toBe(10000);
-    expect(result[0].boxPayments['acoes']).toBe(800);
+    expect(result[0].allocationPayments['terreno']).toBe(10000);
+    expect(result[0].allocationPayments['acoes']).toBe(800);
     expect(result[0].surplus).toBe(4200);
 
-    expect(result[3].boxPayments['terreno']).toBe(23000);
+    expect(result[3].allocationPayments['terreno']).toBe(23000);
     expect(result[3].surplus).toBe(-8800);
     expect(result[3].cash).toBe(3800);
 
-    expect(result[4].boxPayments['terreno']).toBe(1893);
+    expect(result[4].allocationPayments['terreno']).toBe(1893);
     expect(result[4].surplus).toBe(33000 - 18000 - 1893 - 800);
   });
 
   describe('yield', () => {
     it('should apply monthly yield to holdsFunds box', () => {
-      const plan = createPlan({
-        premises: {
-          salaryChangePoints: [{ month: 0, amount: 10000 }],
-          costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
-        },
-        boxes: [
-          {
-            id: 'reserva',
-            label: 'Reserva',
-            target: 0,
-            monthlyAmount: [{ month: 0, amount: 1000 }],
-            holdsFunds: true,
-            yieldRate: 0.12,
-            scheduledMovements: [],
-          },
-        ],
-      });
-      const result = runProjection(plan, 1);
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          holdsFunds: true,
+          yieldRate: 0.12,
+        }),
+      ];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
 
       const expectedYield = 1000 * (0.12 / 12);
-      expect(result[0].boxYields['reserva']).toBeCloseTo(expectedYield);
-      expect(result[0].boxes['reserva']).toBeCloseTo(1000 + expectedYield);
+      expect(result[0].allocationYields['reserva']).toBeCloseTo(expectedYield);
+      expect(result[0].allocations['reserva']).toBeCloseTo(1000 + expectedYield);
     });
 
     it('should compound yield over multiple months', () => {
-      const plan = createPlan({
-        premises: {
-          salaryChangePoints: [{ month: 0, amount: 10000 }],
-          costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
-        },
-        boxes: [
-          {
-            id: 'reserva',
-            label: 'Reserva',
-            target: 0,
-            monthlyAmount: [{ month: 0, amount: 1000 }],
-            holdsFunds: true,
-            yieldRate: 0.12,
-            scheduledMovements: [],
-          },
-        ],
-      });
-      const result = runProjection(plan, 2);
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          holdsFunds: true,
+          yieldRate: 0.12,
+        }),
+      ];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 2);
 
       // Month 0: deposit 1000, yield = 1000 * 0.01 = 10, balance = 1010
       // Month 1: deposit 1000, balance before yield = 2010, yield = 2010 * 0.01 = 20.10
-      expect(result[1].boxYields['reserva']).toBeCloseTo(2010 * 0.01);
-      expect(result[1].boxes['reserva']).toBeCloseTo(2010 + 2010 * 0.01);
+      expect(result[1].allocationYields['reserva']).toBeCloseTo(2010 * 0.01);
+      expect(result[1].allocations['reserva']).toBeCloseTo(2010 + 2010 * 0.01);
     });
 
     it('should continue yielding after target is reached', () => {
-      const plan = createPlan({
-        premises: {
-          salaryChangePoints: [{ month: 0, amount: 10000 }],
-          costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
-        },
-        boxes: [
-          {
-            id: 'reserva',
-            label: 'Reserva',
-            target: 2000,
-            monthlyAmount: [{ month: 0, amount: 1000 }],
-            holdsFunds: true,
-            yieldRate: 0.12,
-            scheduledMovements: [],
-          },
-        ],
-      });
-      const result = runProjection(plan, 4);
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 2000,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          holdsFunds: true,
+          yieldRate: 0.12,
+        }),
+      ];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
 
       // Month 1: balance reaches 2000 (capped), yield makes it > 2000
       // Month 2: no outflow (target reached), but yield still applies
-      expect(result[2].boxPayments['reserva']).toBe(0);
-      expect(result[2].boxYields['reserva']).toBeGreaterThan(0);
-      expect(result[2].boxes['reserva']).toBeGreaterThan(2000);
+      expect(result[2].allocationPayments['reserva']).toBe(0);
+      expect(result[2].allocationYields['reserva']).toBeGreaterThan(0);
+      expect(result[2].allocations['reserva']).toBeGreaterThan(2000);
     });
 
     it('should not yield on holdsFunds: false box', () => {
-      const plan = createPlan({
-        boxes: [
-          {
-            id: 'terreno',
-            label: 'Terreno',
-            target: 0,
-            monthlyAmount: [{ month: 0, amount: 2000 }],
-            holdsFunds: false,
-            yieldRate: 0.12,
-            scheduledMovements: [],
-          },
-        ],
-      });
-      const result = runProjection(plan, 2);
+      const allocations = [
+        makeAllocation({
+          id: 'terreno',
+          label: 'Terreno',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 2000 }],
+          holdsFunds: false,
+          yieldRate: 0.12,
+        }),
+      ];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 2);
 
-      expect(result[0].boxYields['terreno']).toBe(0);
-      expect(result[1].boxYields['terreno']).toBe(0);
-      expect(result[1].boxes['terreno']).toBe(4000);
+      expect(result[0].allocationYields['terreno']).toBe(0);
+      expect(result[1].allocationYields['terreno']).toBe(0);
+      expect(result[1].allocations['terreno']).toBe(4000);
     });
 
     it('should not yield when yieldRate is undefined', () => {
-      const plan = createPlan();
-      const result = runProjection(plan, 1);
+      const allocations = [makeAllocation()];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
 
-      expect(result[0].boxYields['reserva']).toBe(0);
+      expect(result[0].allocationYields['reserva']).toBe(0);
     });
 
     it('should not yield when yieldRate is 0', () => {
-      const plan = createPlan({
-        boxes: [
-          {
-            id: 'reserva',
-            label: 'Reserva',
-            target: 0,
-            monthlyAmount: [{ month: 0, amount: 1000 }],
-            holdsFunds: true,
-            yieldRate: 0,
-            scheduledMovements: [],
-          },
-        ],
-      });
-      const result = runProjection(plan, 1);
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          holdsFunds: true,
+          yieldRate: 0,
+        }),
+      ];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
 
-      expect(result[0].boxYields['reserva']).toBe(0);
-      expect(result[0].boxes['reserva']).toBe(1000);
+      expect(result[0].allocationYields['reserva']).toBe(0);
+      expect(result[0].allocations['reserva']).toBe(1000);
     });
 
     it('should aggregate totalYield across all boxes', () => {
-      const plan = createPlan({
-        premises: {
-          salaryChangePoints: [{ month: 0, amount: 20000 }],
-          costOfLivingChangePoints: [{ month: 0, amount: 10000 }],
-        },
-        boxes: [
-          {
-            id: 'reserva',
-            label: 'Reserva',
-            target: 0,
-            monthlyAmount: [{ month: 0, amount: 3000 }],
-            holdsFunds: true,
-            yieldRate: 0.12,
-            scheduledMovements: [],
-          },
-          {
-            id: 'acoes',
-            label: 'Acoes',
-            target: 0,
-            monthlyAmount: [{ month: 0, amount: 2000 }],
-            holdsFunds: true,
-            yieldRate: 0.06,
-            scheduledMovements: [],
-          },
-        ],
-      });
-      const result = runProjection(plan, 1);
+      const premises: Premises = {
+        salaryChangePoints: [{ month: 0, amount: 20000 }],
+        costOfLivingChangePoints: [{ month: 0, amount: 10000 }],
+      };
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 3000 }],
+          holdsFunds: true,
+          yieldRate: 0.12,
+        }),
+        makeAllocation({
+          id: 'acoes',
+          label: 'Acoes',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 2000 }],
+          holdsFunds: true,
+          yieldRate: 0.06,
+        }),
+      ];
+      const result = runProjection(premises, allocations, defaultStartDate, 1);
 
       const expectedTotal =
-        result[0].boxYields['reserva'] + result[0].boxYields['acoes'];
+        result[0].allocationYields['reserva'] + result[0].allocationYields['acoes'];
       expect(result[0].totalYield).toBeCloseTo(expectedTotal);
     });
 
     it('should include yield in totalWealth', () => {
-      const plan = createPlan({
-        premises: {
-          salaryChangePoints: [{ month: 0, amount: 10000 }],
-          costOfLivingChangePoints: [{ month: 0, amount: 9000 }],
-        },
-        boxes: [
-          {
-            id: 'reserva',
-            label: 'Reserva',
-            target: 0,
-            monthlyAmount: [{ month: 0, amount: 1000 }],
-            holdsFunds: true,
-            yieldRate: 0.12,
-            scheduledMovements: [],
-          },
-        ],
-      });
-      const result = runProjection(plan, 1);
+      const premises: Premises = {
+        salaryChangePoints: [{ month: 0, amount: 10000 }],
+        costOfLivingChangePoints: [{ month: 0, amount: 9000 }],
+      };
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          holdsFunds: true,
+          yieldRate: 0.12,
+        }),
+      ];
+      const result = runProjection(premises, allocations, defaultStartDate, 1);
 
       const expectedYield = 1000 * (0.12 / 12);
       // totalWealth = cash + box balance (which includes yield)
@@ -666,26 +607,23 @@ describe('runProjection', () => {
       //   Mes 11: saldo=10k,  juros=10k*0.01=R$100,    prestacao=10k+100=R$10.100
       //
       // Apos 12 meses: saldo = 120k - 12*10k = R$0
-      const plan = createPlan({
-        boxes: [
-          {
-            id: 'fin',
-            label: 'Casa',
-            target: 0,
-            monthlyAmount: [],
-            holdsFunds: false,
-            scheduledMovements: [],
-            financing: {
-              principal: 120_000,
-              annualRate: 0.12,
-              termMonths: 12,
-              system: 'sac',
-            },
+      const allocations = [
+        makeAllocation({
+          id: 'fin',
+          label: 'Casa',
+          target: 0,
+          monthlyAmount: [],
+          holdsFunds: false,
+          financing: {
+            principal: 120_000,
+            annualRate: 0.12,
+            termMonths: 12,
+            system: 'sac',
           },
-        ],
-      });
+        }),
+      ];
 
-      const result = runProjection(plan, 12);
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 12);
       const rate = 0.12 / 12;
 
       expect(result[0].financingDetails['fin'].amortization).toBeCloseTo(
@@ -727,26 +665,23 @@ describe('runProjection', () => {
       //   Mas o total (PMT) permanece fixo.
       //
       // Ao final de 24 meses: saldo = R$0
-      const plan = createPlan({
-        boxes: [
-          {
-            id: 'car',
-            label: 'Carro',
-            target: 0,
-            monthlyAmount: [],
-            holdsFunds: false,
-            scheduledMovements: [],
-            financing: {
-              principal: 60_000,
-              annualRate: 0.18,
-              termMonths: 24,
-              system: 'price',
-            },
+      const allocations = [
+        makeAllocation({
+          id: 'car',
+          label: 'Carro',
+          target: 0,
+          monthlyAmount: [],
+          holdsFunds: false,
+          financing: {
+            principal: 60_000,
+            annualRate: 0.18,
+            termMonths: 24,
+            system: 'price',
           },
-        ],
-      });
+        }),
+      ];
 
-      const result = runProjection(plan, 24);
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 24);
 
       const firstPayment = result[0].financingDetails['car'].payment;
       for (let i = 1; i < 24; i++) {
@@ -779,31 +714,28 @@ describe('runProjection', () => {
       //   amort = 1.200.000 / 420 = R$2.857,14
       //   juros = 1.200.000 * 0.00917 = R$11.000
       //   prestacao = R$13.857
-      const plan = createPlan({
-        premises: {
-          salaryChangePoints: [{ month: 0, amount: 50_000 }],
-          costOfLivingChangePoints: [{ month: 0, amount: 20_000 }],
-        },
-        boxes: [
-          {
-            id: 'obra',
-            label: 'Financiamento Obra',
-            target: 0,
-            monthlyAmount: [],
-            holdsFunds: false,
-            scheduledMovements: [],
-            financing: {
-              principal: 1_200_000,
-              annualRate: 0.11,
-              termMonths: 420,
-              system: 'sac',
-              constructionMonths: 16,
-            },
+      const premises: Premises = {
+        salaryChangePoints: [{ month: 0, amount: 50_000 }],
+        costOfLivingChangePoints: [{ month: 0, amount: 20_000 }],
+      };
+      const allocations = [
+        makeAllocation({
+          id: 'obra',
+          label: 'Financiamento Obra',
+          target: 0,
+          monthlyAmount: [],
+          holdsFunds: false,
+          financing: {
+            principal: 1_200_000,
+            annualRate: 0.11,
+            termMonths: 420,
+            system: 'sac',
+            constructionMonths: 16,
           },
-        ],
-      });
+        }),
+      ];
 
-      const result = runProjection(plan, 18);
+      const result = runProjection(premises, allocations, defaultStartDate, 18);
 
       for (let i = 0; i < 16; i++) {
         expect(result[i].financingDetails['obra'].phase).toBe('construction');
@@ -833,26 +765,23 @@ describe('runProjection', () => {
       // Fluxo mensal (premissas do createPlan: salario=10k, custo=6k):
       //   surplus = salario - custo_de_vida - prestacao
       //           = 10.000 - 6.000 - 1.120 = R$2.880
-      const plan = createPlan({
-        boxes: [
-          {
-            id: 'fin',
-            label: 'Casa',
-            target: 0,
-            monthlyAmount: [],
-            holdsFunds: false,
-            scheduledMovements: [],
-            financing: {
-              principal: 12_000,
-              annualRate: 0.12,
-              termMonths: 12,
-              system: 'sac',
-            },
+      const allocations = [
+        makeAllocation({
+          id: 'fin',
+          label: 'Casa',
+          target: 0,
+          monthlyAmount: [],
+          holdsFunds: false,
+          financing: {
+            principal: 12_000,
+            annualRate: 0.12,
+            termMonths: 12,
+            system: 'sac',
           },
-        ],
-      });
+        }),
+      ];
 
-      const result = runProjection(plan, 1);
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
       const payment = result[0].financingDetails['fin'].payment;
 
       expect(result[0].surplus).toBeCloseTo(10_000 - 6_000 - payment, 2);
@@ -865,33 +794,30 @@ describe('runProjection', () => {
       //   amort = R$10.000, juros = R$1.200, prestacao = R$11.200
       //   R$11.200 sai do caixa (boxOutflows), mas apenas R$10.000 vira "progresso".
       //
-      // Box balance (boxes['fin']) = principal - outstanding = 120k - 110k = R$10.000
+      // Box balance (allocations['fin']) = principal - outstanding = 120k - 110k = R$10.000
       //   Isso reflete amortizacao acumulada, NAO total pago.
       //   Juros sao custo puro, nao constroem patrimonio.
       //
-      // totalCommitted = soma dos balances de boxes holdsFunds:false = R$10.000
-      const plan = createPlan({
-        boxes: [
-          {
-            id: 'fin',
-            label: 'Casa',
-            target: 0,
-            monthlyAmount: [],
-            holdsFunds: false,
-            scheduledMovements: [],
-            financing: {
-              principal: 120_000,
-              annualRate: 0.12,
-              termMonths: 12,
-              system: 'sac',
-            },
+      // totalCommitted = soma dos balances de allocations holdsFunds:false = R$10.000
+      const allocations = [
+        makeAllocation({
+          id: 'fin',
+          label: 'Casa',
+          target: 0,
+          monthlyAmount: [],
+          holdsFunds: false,
+          financing: {
+            principal: 120_000,
+            annualRate: 0.12,
+            termMonths: 12,
+            system: 'sac',
           },
-        ],
-      });
+        }),
+      ];
 
-      const result = runProjection(plan, 1);
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
 
-      expect(result[0].boxes['fin']).toBeCloseTo(10_000, 0);
+      expect(result[0].allocations['fin']).toBeCloseTo(10_000, 0);
       expect(result[0].totalCommitted).toBeCloseTo(10_000, 0);
     });
 
@@ -914,28 +840,26 @@ describe('runProjection', () => {
       // Mes 2: SAC sobre R$54.545 com 10 parcelas restantes
       //   amort = 54.545/10 = R$5.454, juros = 545 => prestacao ~R$6.000
       //   Muito menor que mes 0 (R$11.200)
-      const plan = createPlan({
-        boxes: [
-          {
-            id: 'fin',
-            label: 'Casa',
-            target: 0,
-            monthlyAmount: [],
-            holdsFunds: false,
-            scheduledMovements: [
-              { month: 1, amount: 50_000, label: 'Amortizacao extra', type: 'in' },
-            ],
-            financing: {
-              principal: 120_000,
-              annualRate: 0.12,
-              termMonths: 12,
-              system: 'sac',
-            },
+      const allocations = [
+        makeAllocation({
+          id: 'fin',
+          label: 'Casa',
+          target: 0,
+          monthlyAmount: [],
+          holdsFunds: false,
+          scheduledMovements: [
+            { month: 1, amount: 50_000, label: 'Amortizacao extra', type: 'in' },
+          ],
+          financing: {
+            principal: 120_000,
+            annualRate: 0.12,
+            termMonths: 12,
+            system: 'sac',
           },
-        ],
-      });
+        }),
+      ];
 
-      const result = runProjection(plan, 3);
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
 
       expect(result[0].financingDetails['fin'].outstandingBalance).toBeCloseTo(
         110_000,
@@ -964,48 +888,45 @@ describe('runProjection', () => {
       // Efeito no financiamento: extra amort de R$10.000 aplicado ao saldo devedor.
       // Efeito no caixa: NENHUM. A transferencia e direta (box -> financing).
       //   Caixa do mes 2 = caixa_mes1 + surplus_mes2 (sem descontar a transferencia)
-      const plan = createPlan({
-        boxes: [
-          {
-            id: 'reserva',
-            label: 'Reserva',
-            target: 0,
-            monthlyAmount: [{ month: 0, amount: 5000 }],
-            holdsFunds: true,
-            scheduledMovements: [
-              {
-                month: 2,
-                amount: 10_000,
-                label: 'Entrada da reserva',
-                type: 'out',
-                destinationBoxId: 'fin',
-              },
-            ],
-          },
-          {
-            id: 'fin',
-            label: 'Casa',
-            target: 0,
-            monthlyAmount: [],
-            holdsFunds: false,
-            scheduledMovements: [],
-            financing: {
-              principal: 120_000,
-              annualRate: 0.12,
-              termMonths: 12,
-              system: 'sac',
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 5000 }],
+          holdsFunds: true,
+          scheduledMovements: [
+            {
+              month: 2,
+              amount: 10_000,
+              label: 'Entrada da reserva',
+              type: 'out',
+              destinationBoxId: 'fin',
             },
+          ],
+        }),
+        makeAllocation({
+          id: 'fin',
+          label: 'Casa',
+          target: 0,
+          monthlyAmount: [],
+          holdsFunds: false,
+          financing: {
+            principal: 120_000,
+            annualRate: 0.12,
+            termMonths: 12,
+            system: 'sac',
           },
-        ],
-      });
+        }),
+      ];
 
-      const result = runProjection(plan, 4);
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
 
       // Month 0-1: reserva = 5k + 5k = 10k
-      expect(result[1].boxes['reserva']).toBeCloseTo(10_000, 0);
+      expect(result[1].allocations['reserva']).toBeCloseTo(10_000, 0);
 
       // Month 2: reserva = 15k - 10k(transfer) = 5k
-      expect(result[2].boxes['reserva']).toBeCloseTo(5_000, 0);
+      expect(result[2].allocations['reserva']).toBeCloseTo(5_000, 0);
       // Cash unaffected by type: 'out' with destinationBoxId transfer (no cash outflow for this)
       const cashWithoutTransfer = result[1].cash + result[2].surplus;
       expect(result[2].cash).toBeCloseTo(cashWithoutTransfer, 0);
@@ -1022,10 +943,10 @@ describe('runProjection', () => {
       //   Reserva pos-deposito = R$10.000 (apos deposito do mes 1)
       //
       // Com motor de 2 passes:
-      //   Passo 1: processa todas as boxes regulares (depositos + out movements)
-      //   Passo 2: processa todas as boxes de financiamento (extra amortizations acumuladas)
+      //   Passo 1: processa todas as allocations regulares (depositos + out movements)
+      //   Passo 2: processa todas as allocations de financiamento (extra amortizations acumuladas)
       //   Ambas as ordens: reserva = 10k apos deposito, deducao = 8k => reserva = 2k
-      const reserva = {
+      const reserva = makeAllocation({
         id: 'reserva',
         label: 'Reserva',
         target: 0,
@@ -1040,32 +961,28 @@ describe('runProjection', () => {
             destinationBoxId: 'fin',
           },
         ],
-      };
+      });
 
-      const fin = {
+      const fin = makeAllocation({
         id: 'fin',
         label: 'Casa',
         target: 0,
         monthlyAmount: [],
         holdsFunds: false,
-        scheduledMovements: [],
         financing: {
           principal: 120_000,
           annualRate: 0.12,
           termMonths: 12,
           system: 'sac' as const,
         },
-      };
+      });
 
-      const planA = createPlan({ boxes: [reserva, fin] });
-      const planB = createPlan({ boxes: [fin, reserva] });
-
-      const resultA = runProjection(planA, 3);
-      const resultB = runProjection(planB, 3);
+      const resultA = runProjection(defaultPremises, [reserva, fin], defaultStartDate, 3);
+      const resultB = runProjection(defaultPremises, [fin, reserva], defaultStartDate, 3);
 
       // Both orderings should produce identical results at month 1
-      expect(resultA[1].boxes['reserva']).toBeCloseTo(
-        resultB[1].boxes['reserva'],
+      expect(resultA[1].allocations['reserva']).toBeCloseTo(
+        resultB[1].allocations['reserva'],
         2,
       );
       expect(resultA[1].financingDetails['fin'].outstandingBalance).toBeCloseTo(
@@ -1077,36 +994,33 @@ describe('runProjection', () => {
 
     it('should include financing box in totalCommitted, not totalWealth', () => {
       // Semantica de totalWealth vs totalCommitted:
-      //   totalWealth = caixa + soma(boxes com holdsFunds:true)
-      //   totalCommitted = soma(boxes com holdsFunds:false)
+      //   totalWealth = caixa + soma(allocations com holdsFunds:true)
+      //   totalCommitted = soma(allocations com holdsFunds:false)
       //
-      // SAC R$12.000 a 12% a.a. em 12 meses (financing box, holdsFunds:false).
+      // SAC R$12.000 a 12% a.a. em 12 meses (financing allocation, holdsFunds:false).
       //   Mes 0: amort = 12.000/12 = R$1.000
       //   balance = principal - outstanding = 12k - 11k = R$1.000
       //
       // totalCommitted = R$1.000 (progresso da amortizacao)
-      // totalWealth = caixa apenas (nao ha boxes holdsFunds:true neste plano)
+      // totalWealth = caixa apenas (nao ha allocations holdsFunds:true neste plano)
       //   caixa = salario(10k) - custo(6k) - prestacao(1.120) = R$2.880
-      const plan = createPlan({
-        boxes: [
-          {
-            id: 'fin',
-            label: 'Casa',
-            target: 0,
-            monthlyAmount: [],
-            holdsFunds: false,
-            scheduledMovements: [],
-            financing: {
-              principal: 12_000,
-              annualRate: 0.12,
-              termMonths: 12,
-              system: 'sac',
-            },
+      const allocations = [
+        makeAllocation({
+          id: 'fin',
+          label: 'Casa',
+          target: 0,
+          monthlyAmount: [],
+          holdsFunds: false,
+          financing: {
+            principal: 12_000,
+            annualRate: 0.12,
+            termMonths: 12,
+            system: 'sac',
           },
-        ],
-      });
+        }),
+      ];
 
-      const result = runProjection(plan, 1);
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
 
       expect(result[0].totalCommitted).toBeCloseTo(1_000, 0);
       expect(result[0].totalWealth).toBeCloseTo(result[0].cash, 0);
@@ -1115,24 +1029,20 @@ describe('runProjection', () => {
 
   describe('scheduled movements - type out', () => {
     it('should return withdrawn amount to cash when out movement has no destinationBoxId', () => {
-      const result = runProjection(
-        createPlan({
-          boxes: [
-            {
-              id: 'reserva',
-              label: 'Reserva',
-              target: 50000,
-              monthlyAmount: [{ month: 0, amount: 4000 }],
-              holdsFunds: true,
-              initialBalance: 10000,
-              scheduledMovements: [
-                { label: 'Saque', month: 2, amount: 5000, type: 'out' },
-              ],
-            },
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 50000,
+          monthlyAmount: [{ month: 0, amount: 4000 }],
+          holdsFunds: true,
+          initialBalance: 10000,
+          scheduledMovements: [
+            { label: 'Saque', month: 2, amount: 5000, type: 'out' },
           ],
         }),
-        4,
-      );
+      ];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
 
       // Month 0: balance = 10000 + 4000 = 14000
       // Month 1: balance = 14000 + 4000 = 18000
@@ -1140,116 +1050,102 @@ describe('runProjection', () => {
       // Surplus without withdrawal = 10000 - 6000 - 4000 = 0
       // Surplus with withdrawal = 10000 - 6000 - 4000 + 5000 = 5000
       // Cash: 0 + 0 + 5000 = 5000
-      expect(result[2].boxes['reserva']).toBe(17000);
+      expect(result[2].allocations['reserva']).toBe(17000);
       expect(result[2].cash).toBe(5000);
       expect(result[2].scheduledMovements).toContainEqual(
-        expect.objectContaining({ boxId: 'reserva', amount: 5000, type: 'out' }),
+        expect.objectContaining({ allocationId: 'reserva', amount: 5000, type: 'out' }),
       );
     });
 
     it('should transfer withdrawn amount to destination regular box', () => {
-      const result = runProjection(
-        createPlan({
-          boxes: [
-            {
-              id: 'reserva',
-              label: 'Reserva',
-              target: 0,
-              monthlyAmount: [{ month: 0, amount: 2000 }],
-              holdsFunds: true,
-              initialBalance: 10000,
-              scheduledMovements: [
-                { label: 'Transferência', month: 1, amount: 3000, type: 'out', destinationBoxId: 'casamento' },
-              ],
-            },
-            {
-              id: 'casamento',
-              label: 'Casamento',
-              target: 0,
-              monthlyAmount: [{ month: 0, amount: 1000 }],
-              holdsFunds: true,
-              scheduledMovements: [],
-            },
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 2000 }],
+          holdsFunds: true,
+          initialBalance: 10000,
+          scheduledMovements: [
+            { label: 'Transferência', month: 1, amount: 3000, type: 'out', destinationBoxId: 'casamento' },
           ],
         }),
-        3,
-      );
+        makeAllocation({
+          id: 'casamento',
+          label: 'Casamento',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          holdsFunds: true,
+        }),
+      ];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
 
       // Month 0: reserva = 10000 + 2000 = 12000, casamento = 1000
       // surplus = 10000 - 6000 - 2000 - 1000 = 1000
       // Month 1: reserva = 12000 + 2000 - 3000 = 11000, casamento = 1000 + 1000 + 3000 = 5000
       // surplus = 10000 - 6000 - 2000 - 1000 = 1000 (transfer doesn't affect cash)
-      expect(result[1].boxes['reserva']).toBe(11000);
-      expect(result[1].boxes['casamento']).toBe(5000);
+      expect(result[1].allocations['reserva']).toBe(11000);
+      expect(result[1].allocations['casamento']).toBe(5000);
       // Cash flow unaffected by box-to-box transfer (surplus is same both months)
       expect(result[1].surplus).toBe(result[0].surplus);
     });
 
     it('should cap withdrawal at available balance when amount exceeds it', () => {
-      const result = runProjection(
-        createPlan({
-          boxes: [
-            {
-              id: 'reserva',
-              label: 'Reserva',
-              target: 0,
-              monthlyAmount: [{ month: 0, amount: 2000 }],
-              holdsFunds: true,
-              initialBalance: 1000,
-              scheduledMovements: [
-                { label: 'Saque grande', month: 0, amount: 50000, type: 'out' },
-              ],
-            },
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 2000 }],
+          holdsFunds: true,
+          initialBalance: 1000,
+          scheduledMovements: [
+            { label: 'Saque grande', month: 0, amount: 50000, type: 'out' },
           ],
         }),
-        2,
-      );
+      ];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 2);
 
       // Month 0: deposit 2000 (balance = 1000 + 2000 = 3000), then withdrawal capped at 3000
-      expect(result[0].boxes['reserva']).toBe(0);
+      expect(result[0].allocations['reserva']).toBe(0);
       // Cash = surplus(10000 - 6000 - 2000 + 3000) = 5000
       expect(result[0].cash).toBe(5000);
       expect(result[0].scheduledMovements[0].amount).toBe(3000); // effective amount, not 50000
     });
 
     it('should accumulate withdrawal to financing box as extra amortization', () => {
-      const result = runProjection(
-        createPlan({
-          boxes: [
-            {
-              id: 'reserva',
-              label: 'Reserva',
-              target: 0,
-              monthlyAmount: [{ month: 0, amount: 5000 }],
-              holdsFunds: true,
-              initialBalance: 10000,
-              scheduledMovements: [
-                { label: 'Amortização extra', month: 2, amount: 8000, type: 'out', destinationBoxId: 'financiamento' },
-              ],
-            },
-            {
-              id: 'financiamento',
-              label: 'Financiamento',
-              target: 0,
-              holdsFunds: false,
-              monthlyAmount: [],
-              scheduledMovements: [],
-              financing: {
-                principal: 500000,
-                annualRate: 0.12,
-                termMonths: 360,
-                system: 'sac' as const,
-              },
-            },
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 5000 }],
+          holdsFunds: true,
+          initialBalance: 10000,
+          scheduledMovements: [
+            { label: 'Amortização extra', month: 2, amount: 8000, type: 'out', destinationBoxId: 'financiamento' },
           ],
         }),
-        4,
-      );
+        makeAllocation({
+          id: 'financiamento',
+          label: 'Financiamento',
+          target: 0,
+          holdsFunds: false,
+          monthlyAmount: [],
+          financing: {
+            principal: 500000,
+            annualRate: 0.12,
+            termMonths: 360,
+            system: 'sac' as const,
+          },
+        }),
+      ];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
 
       // Month 2: reserva deposits 5000 (balance = 20000 + 5000 = 25000)
       // then withdrawal of 8000 → reserva = 17000
       // 8000 goes as extra amortization to financing
-      expect(result[2].boxes['reserva']).toBeCloseTo(17000, -2);
+      expect(result[2].allocations['reserva']).toBeCloseTo(17000, -2);
       // Financing outstanding balance should reflect extra amortization of 8000
       // The extra amort is applied first, then SAC recalculates regular amort on the reduced balance.
       // So the total reduction = 8000 (extra) + regular amort (recalculated on post-extra balance).
@@ -1264,59 +1160,51 @@ describe('runProjection', () => {
     });
 
     it('should resume monthly contributions after withdrawal drops balance below target', () => {
-      const result = runProjection(
-        createPlan({
-          boxes: [
-            {
-              id: 'reserva',
-              label: 'Reserva',
-              target: 20000,
-              monthlyAmount: [{ month: 0, amount: 4000 }],
-              holdsFunds: true,
-              initialBalance: 15000,
-              scheduledMovements: [
-                { label: 'Saque', month: 1, amount: 10000, type: 'out' },
-              ],
-            },
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 20000,
+          monthlyAmount: [{ month: 0, amount: 4000 }],
+          holdsFunds: true,
+          initialBalance: 15000,
+          scheduledMovements: [
+            { label: 'Saque', month: 1, amount: 10000, type: 'out' },
           ],
         }),
-        4,
-      );
+      ];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
 
       // Month 0: 15000 + 4000 = 19000
       // Month 1: 19000 + min(4000, 1000) = 20000 (capped at target), then -10000 = 10000
       // Month 2: 10000 + 4000 = 14000 (monthly resumes, below target)
       // Month 3: 14000 + 4000 = 18000
-      expect(result[1].boxes['reserva']).toBe(10000);
-      expect(result[2].boxes['reserva']).toBe(14000);
-      expect(result[3].boxes['reserva']).toBe(18000);
+      expect(result[1].allocations['reserva']).toBe(10000);
+      expect(result[2].allocations['reserva']).toBe(14000);
+      expect(result[3].allocations['reserva']).toBe(18000);
     });
 
     it('should allow in movements to exceed target', () => {
-      const result = runProjection(
-        createPlan({
-          boxes: [
-            {
-              id: 'reserva',
-              label: 'Reserva',
-              target: 10000,
-              monthlyAmount: [{ month: 0, amount: 4000 }],
-              holdsFunds: true,
-              scheduledMovements: [
-                { label: 'Aporte extra', month: 2, amount: 15000, type: 'in' },
-              ],
-            },
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          label: 'Reserva',
+          target: 10000,
+          monthlyAmount: [{ month: 0, amount: 4000 }],
+          holdsFunds: true,
+          scheduledMovements: [
+            { label: 'Aporte extra', month: 2, amount: 15000, type: 'in' },
           ],
         }),
-        4,
-      );
+      ];
+      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
 
       // Month 0: 4000, Month 1: 8000
       // Month 2: scheduled in replaces monthly (additionalToMonthly default false) → 15000
       // balance = 8000 + 15000 = 23000 (exceeds target 10000 — allowed)
-      expect(result[2].boxes['reserva']).toBe(23000);
+      expect(result[2].allocations['reserva']).toBe(23000);
       // Month 3: target already exceeded, monthly = 0 (capped)
-      expect(result[3].boxes['reserva']).toBe(23000);
+      expect(result[3].allocations['reserva']).toBe(23000);
     });
   });
 });
