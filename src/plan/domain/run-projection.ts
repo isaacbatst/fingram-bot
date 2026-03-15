@@ -5,7 +5,7 @@ import {
   FinancingState,
   initFinancingState,
 } from './financing-calculator';
-import { FinancingMonthDetail, MonthData, Premises } from './plan';
+import { FinancingMonthDetail, MonthData, Premises, RealMonthData } from './plan';
 
 function getAllocationOutflow(
   allocation: Allocation,
@@ -59,8 +59,16 @@ export function runProjection(
   allocations: Allocation[],
   startDate: Date,
   months?: number,
+  realData?: RealMonthData[],
+  currentMonth?: number,
 ): MonthData[] {
   const totalMonths = months ?? 120;
+  const realDataMap = new Map<number, RealMonthData>();
+  if (realData) {
+    for (const rd of realData) {
+      realDataMap.set(rd.month, rd);
+    }
+  }
 
   const allocationBalances: Record<string, number> = {};
   const financingStates: Record<string, FinancingState> = {};
@@ -81,11 +89,22 @@ export function runProjection(
       Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + i, 1),
     );
 
-    const income = getActiveValue(premises.salaryChangePoints, i);
-    const costOfLiving = getActiveValue(
+    const rd = realDataMap.get(i);
+    const isReal = !!rd && currentMonth !== undefined && i < currentMonth;
+
+    const income = isReal ? rd.realIncome : getActiveValue(premises.salaryChangePoints, i);
+    const costOfLiving = isReal ? rd.realCostOfLiving : getActiveValue(
       premises.costOfLivingChangePoints,
       i,
     );
+
+    // Build a lookup for real allocation payments
+    const realAllocationPaymentsMap = new Map<string, number>();
+    if (isReal && rd.allocationPayments) {
+      for (const ap of rd.allocationPayments) {
+        realAllocationPaymentsMap.set(ap.allocationId, ap.amount);
+      }
+    }
 
     let allocationOutflows = 0;
     const allocationPayments: Record<string, number> = {};
@@ -105,15 +124,32 @@ export function runProjection(
     for (const allocation of allocations) {
       if (allocation.financing) continue;
 
-      const { outflow, scheduledMovements: inMovements } = getAllocationOutflow(
-        allocation,
-        i,
-        allocationBalances[allocation.id],
-      );
+      // If real data is available for this allocation, use it instead of computed outflow
+      if (isReal && realAllocationPaymentsMap.has(allocation.id)) {
+        const realPayment = realAllocationPaymentsMap.get(allocation.id)!;
+        allocationBalances[allocation.id] += realPayment;
+        allocationOutflows += realPayment;
+        allocationPayments[allocation.id] = realPayment;
+      } else {
+        const { outflow, scheduledMovements: inMovements } = getAllocationOutflow(
+          allocation,
+          i,
+          allocationBalances[allocation.id],
+        );
 
-      allocationBalances[allocation.id] += outflow;
-      allocationOutflows += outflow;
-      allocationPayments[allocation.id] = outflow;
+        allocationBalances[allocation.id] += outflow;
+        allocationOutflows += outflow;
+        allocationPayments[allocation.id] = outflow;
+
+        for (const sp of inMovements) {
+          monthScheduledMovements.push({
+            allocationId: allocation.id,
+            amount: sp.amount,
+            label: sp.label,
+            type: 'in',
+          });
+        }
+      }
 
       let yieldEarned = 0;
       if (
@@ -127,15 +163,6 @@ export function runProjection(
         allocationBalances[allocation.id] += yieldEarned;
       }
       allocationYields[allocation.id] = yieldEarned;
-
-      for (const sp of inMovements) {
-        monthScheduledMovements.push({
-          allocationId: allocation.id,
-          amount: sp.amount,
-          label: sp.label,
-          type: 'in',
-        });
-      }
 
       // Process 'out' movements for this allocation
       const outsThisMonth = (allocation.scheduledMovements ?? []).filter(
@@ -257,6 +284,7 @@ export function runProjection(
       totalWealth,
       totalCommitted,
       financingDetails,
+      isReal,
     });
   }
 

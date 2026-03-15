@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import { TransactionRepository } from '../transaction.repository';
+import { TransactionRepository, AggregationTransaction } from '../transaction.repository';
 import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
 import { Database } from 'better-sqlite3';
 import { Paginated } from '../../domain/paginated';
@@ -125,5 +125,35 @@ export class TransactionSqliteRepository extends TransactionRepository {
     ).count;
     const totalPages = Math.ceil(total / pageSize);
     return { items, total, page, pageSize, totalPages };
+  }
+
+  async findCommittedByPeriod(
+    vaultId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<AggregationTransaction[]> {
+    const query = `SELECT amount, type, box_id, allocation_id, transfer_id
+                   FROM "transaction"
+                   WHERE vault_id = ?
+                   AND committed = 1
+                   AND date >= ?
+                   AND date < ?`;
+    const rows = this.db
+      .prepare(query)
+      .all(vaultId, startDate.toISOString(), endDate.toISOString()) as {
+      amount: number;
+      type: 'income' | 'expense';
+      box_id: string | null;
+      allocation_id: string | null;
+      transfer_id: string | null;
+    }[];
+
+    return rows.map((row) => ({
+      amount: row.amount,
+      type: row.type,
+      boxId: row.box_id ?? null,
+      allocationId: row.allocation_id ?? null,
+      transferId: row.transfer_id ?? null,
+    }));
   }
 }

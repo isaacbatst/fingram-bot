@@ -34,6 +34,7 @@ describe('PlanService', () => {
         vaultId: testVaultId,
       }),
       listSavingBoxes: vi.fn().mockResolvedValue([]),
+      aggregateByPeriod: vi.fn().mockResolvedValue([]),
     } as unknown as VaultQueryService;
     service = new PlanService(
       planRepository,

@@ -35,6 +35,13 @@ export interface Milestone {
   type: MilestoneType;
 }
 
+export interface RealMonthData {
+  month: number;
+  realIncome: number;
+  realCostOfLiving: number;
+  allocationPayments: { allocationId: string; amount: number }[];
+}
+
 export interface MonthData {
   month: number;
   date: Date;
@@ -56,6 +63,7 @@ export interface MonthData {
   totalWealth: number;
   totalCommitted: number;
   financingDetails: Record<string, FinancingMonthDetail>;
+  isReal: boolean;
 }
 
 type ConstructorParams = {

@@ -1,6 +1,14 @@
 import { Paginated } from '../domain/paginated';
 import { TransactionDTO } from '../dto/transaction.dto,';
 
+export interface AggregationTransaction {
+  amount: number;
+  type: 'income' | 'expense';
+  boxId: string | null;
+  allocationId: string | null;
+  transferId: string | null;
+}
+
 export abstract class TransactionRepository {
   abstract findTransactionsByVaultId(
     vaultId: string,
@@ -16,4 +24,10 @@ export abstract class TransactionRepository {
       pageSize?: number;
     },
   ): Promise<Paginated<TransactionDTO>>;
+
+  abstract findCommittedByPeriod(
+    vaultId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<AggregationTransaction[]>;
 }

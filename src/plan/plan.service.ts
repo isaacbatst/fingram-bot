@@ -1,12 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Either, left, right } from '@/vault/domain/either';
-import { Plan, Milestone, MonthData, Premises } from './domain/plan';
+import { Plan, Milestone, MonthData, Premises, RealMonthData } from './domain/plan';
 import { Allocation } from './shared/domain/allocation';
 import { runProjection } from './domain/run-projection';
 import { PlanRepository } from './repositories/plan.repository';
 import { AllocationRepository } from './shared/repositories/allocation.repository';
 import { PlanQueryService } from './shared/plan-query.service';
-import { VaultQueryService } from '@/vault/shared/vault-query.service';
+import {
+  VaultQueryService,
+  PeriodRange,
+} from '@/vault/shared/vault-query.service';
 import { ChangePoint } from './domain/change-point';
 import {
   AllocationFinancing,
@@ -166,8 +169,51 @@ export class PlanService {
     const plan = await this.planQuery.findPlanById(id);
     if (!plan || plan.vaultId !== vaultId) return left('Plano não encontrado');
     const allocations = await this.planQuery.listAllocationsByPlanId(id);
+
+    // Compute real data for past months
+    const now = new Date();
+    const startDate = plan.startDate;
+    const monthsDiff =
+      (now.getFullYear() - startDate.getUTCFullYear()) * 12 +
+      (now.getMonth() - startDate.getUTCMonth());
+    const currentMonth = Math.max(0, monthsDiff);
+
+    // Build periods for past months
+    const periods: PeriodRange[] = [];
+    for (let i = 0; i < currentMonth; i++) {
+      const periodStart = new Date(
+        Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + i, 1),
+      );
+      const periodEnd = new Date(
+        Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + i + 1, 1),
+      );
+      periods.push({ month: i, startDate: periodStart, endDate: periodEnd });
+    }
+
+    const allocationContext = allocations.map((a) => ({
+      allocationId: a.id,
+      holdsFunds: a.holdsFunds,
+      estratoId: a.estratoId,
+    }));
+
+    let realData: RealMonthData[] = [];
+    if (periods.length > 0) {
+      realData = await this.vaultQuery.aggregateByPeriod(
+        vaultId,
+        periods,
+        allocationContext,
+      );
+    }
+
     return right(
-      runProjection(plan.premises, allocations, plan.startDate, months),
+      runProjection(
+        plan.premises,
+        allocations,
+        plan.startDate,
+        months,
+        realData,
+        currentMonth,
+      ),
     );
   }
 

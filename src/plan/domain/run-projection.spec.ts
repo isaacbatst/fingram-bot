@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Allocation } from '../shared/domain/allocation';
-import { Premises } from './plan';
+import { Premises, RealMonthData } from './plan';
 import { runProjection } from './run-projection';
 
 const defaultPremises: Premises = {
@@ -1205,6 +1205,189 @@ describe('runProjection', () => {
       expect(result[2].allocations['reserva']).toBe(23000);
       // Month 3: target already exceeded, monthly = 0 (capped)
       expect(result[3].allocations['reserva']).toBe(23000);
+    });
+  });
+
+  describe('hybrid projection with realData', () => {
+    it('uses real data for past months and premissas for future', () => {
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+        }),
+      ];
+
+      const realData: RealMonthData[] = [
+        {
+          month: 0,
+          realIncome: 35000,
+          realCostOfLiving: 20000,
+          allocationPayments: [{ allocationId: 'reserva', amount: 1500 }],
+        },
+        {
+          month: 1,
+          realIncome: 33000,
+          realCostOfLiving: 16000,
+          allocationPayments: [{ allocationId: 'reserva', amount: 800 }],
+        },
+      ];
+
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        6,
+        realData,
+        2,
+      );
+
+      // Month 0: real data
+      expect(result[0].income).toBe(35000);
+      expect(result[0].costOfLiving).toBe(20000);
+      expect(result[0].isReal).toBe(true);
+      expect(result[0].allocationPayments['reserva']).toBe(1500);
+
+      // Month 1: real data
+      expect(result[1].income).toBe(33000);
+      expect(result[1].costOfLiving).toBe(16000);
+      expect(result[1].isReal).toBe(true);
+      expect(result[1].allocationPayments['reserva']).toBe(800);
+
+      // Month 2: premissa (currentMonth=2, so month 2 onwards is projected)
+      expect(result[2].income).toBe(10000);
+      expect(result[2].costOfLiving).toBe(6000);
+      expect(result[2].isReal).toBe(false);
+    });
+
+    it('without realData, all months use premissas (backward compat)', () => {
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+        }),
+      ];
+
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        6,
+      );
+
+      expect(result.every((m) => !m.isReal)).toBe(true);
+      // All months should use premissa values
+      expect(result[0].income).toBe(10000);
+      expect(result[0].costOfLiving).toBe(6000);
+    });
+
+    it('real allocation payments override computed outflow', () => {
+      const allocations = [
+        makeAllocation({
+          id: 'terreno',
+          target: 100000,
+          monthlyAmount: [{ month: 0, amount: 2000 }],
+          holdsFunds: false,
+        }),
+      ];
+
+      const realData: RealMonthData[] = [
+        {
+          month: 0,
+          realIncome: 10000,
+          realCostOfLiving: 6000,
+          allocationPayments: [{ allocationId: 'terreno', amount: 5000 }],
+        },
+      ];
+
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        3,
+        realData,
+        1,
+      );
+
+      // Month 0: real allocation payment of 5000 instead of computed 2000
+      expect(result[0].allocationPayments['terreno']).toBe(5000);
+      expect(result[0].allocations['terreno']).toBe(5000);
+      expect(result[0].isReal).toBe(true);
+
+      // Month 1: projected, uses premissa value of 2000
+      expect(result[1].allocationPayments['terreno']).toBe(2000);
+      expect(result[1].allocations['terreno']).toBe(7000);
+      expect(result[1].isReal).toBe(false);
+    });
+
+    it('cash accumulates correctly across real and projected months', () => {
+      const allocations: Allocation[] = [];
+
+      const realData: RealMonthData[] = [
+        {
+          month: 0,
+          realIncome: 12000,
+          realCostOfLiving: 8000,
+          allocationPayments: [],
+        },
+      ];
+
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        3,
+        realData,
+        1,
+      );
+
+      // Month 0: real surplus = 12000 - 8000 = 4000
+      expect(result[0].cash).toBe(4000);
+      expect(result[0].isReal).toBe(true);
+
+      // Month 1: projected surplus = 10000 - 6000 = 4000, cash = 4000 + 4000 = 8000
+      expect(result[1].cash).toBe(8000);
+      expect(result[1].isReal).toBe(false);
+
+      // Month 2: projected surplus = 4000, cash = 8000 + 4000 = 12000
+      expect(result[2].cash).toBe(12000);
+      expect(result[2].isReal).toBe(false);
+    });
+
+    it('real data with empty allocationPayments uses computed outflow for allocations', () => {
+      const allocations = [
+        makeAllocation({
+          id: 'reserva',
+          target: 0,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+        }),
+      ];
+
+      const realData: RealMonthData[] = [
+        {
+          month: 0,
+          realIncome: 15000,
+          realCostOfLiving: 7000,
+          allocationPayments: [],
+        },
+      ];
+
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        2,
+        realData,
+        1,
+      );
+
+      // Month 0: real income/costOfLiving, but no real allocation payments
+      // so computed outflow is used for allocation
+      expect(result[0].income).toBe(15000);
+      expect(result[0].costOfLiving).toBe(7000);
+      expect(result[0].isReal).toBe(true);
+      expect(result[0].allocationPayments['reserva']).toBe(1000); // computed
     });
   });
 });

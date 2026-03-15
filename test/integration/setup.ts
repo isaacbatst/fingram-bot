@@ -99,6 +99,39 @@ export async function createTestAllocation(
   return { id };
 }
 
+export async function createTestTransaction(
+  testDb: NodePgDatabase<typeof schema>,
+  params: {
+    vaultId: string;
+    amount: number;
+    type: 'income' | 'expense';
+    committed?: boolean;
+    date: Date;
+    boxId?: string;
+    allocationId?: string;
+    transferId?: string;
+    description?: string;
+  },
+): Promise<{ id: string }> {
+  const id = crypto.randomUUID();
+  const code = crypto.randomUUID().slice(0, 8);
+  await testDb.insert(schema.transaction).values({
+    id,
+    code,
+    amount: params.amount,
+    type: params.type,
+    vaultId: params.vaultId,
+    committed: params.committed ?? true,
+    date: params.date,
+    createdAt: new Date(),
+    boxId: params.boxId ?? null,
+    allocationId: params.allocationId ?? null,
+    transferId: params.transferId ?? null,
+    description: params.description ?? '',
+  });
+  return { id };
+}
+
 export async function stopTestApp(): Promise<void> {
   await app?.close();
   await pool?.end();

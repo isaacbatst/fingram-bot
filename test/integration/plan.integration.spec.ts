@@ -10,6 +10,7 @@ import {
   createTestVault,
   createTestAllocation,
   truncateAll,
+  createTestTransaction,
 } from './setup';
 
 describe('Plan API (integration)', () => {
@@ -92,6 +93,11 @@ describe('Plan API (integration)', () => {
   });
 
   describe('GET /plans/:id/projection', () => {
+    // Use a future start date to ensure all months use premissas (no hybrid)
+    const futureStartDate = new Date(
+      Date.UTC(new Date().getFullYear() + 1, 0, 1),
+    ).toISOString();
+
     it('should return projection with yield data', async () => {
       // Create plan
       const createRes = await request(app.getHttpServer())
@@ -99,7 +105,7 @@ describe('Plan API (integration)', () => {
         .set('Cookie', `vault_access_token=${vaultToken}`)
         .send({
           name: 'Teste Projection',
-          startDate: '2026-01-01',
+          startDate: futureStartDate,
           premises: {
             salaryChangePoints: [{ month: 0, amount: 10000 }],
             costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
@@ -134,6 +140,7 @@ describe('Plan API (integration)', () => {
       expect(month0.allocationYields[allocationId]).toBeCloseTo(10, 1);
       expect(month0.allocations[allocationId]).toBeCloseTo(1010, 0);
       expect(month0.totalYield).toBeCloseTo(10, 1);
+      expect(month0.isReal).toBe(false); // future plan, all projected
 
       // Month 11: compound effect -> balance > 12000
       const month11 = months[11];
@@ -147,7 +154,7 @@ describe('Plan API (integration)', () => {
         .set('Cookie', `vault_access_token=${vaultToken}`)
         .send({
           name: 'Sem Yield',
-          startDate: '2026-01-01',
+          startDate: futureStartDate,
           premises: {
             salaryChangePoints: [{ month: 0, amount: 10000 }],
             costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
@@ -1060,6 +1067,135 @@ describe('Plan API (integration)', () => {
       expect(res.body.allocated).toBe(4500);
       expect(res.body.buffer).toBe(-2500);
       expect(res.body.overBudget).toBe(true);
+    });
+  });
+
+  describe('Hybrid projection (ISA-101)', () => {
+    it('should use real transaction data for past months and premissas for future', async () => {
+      // Create plan starting 2 months ago
+      const now = new Date();
+      const startDate = new Date(
+        Date.UTC(now.getFullYear(), now.getMonth() - 2, 1),
+      );
+
+      const createRes = await request(app.getHttpServer())
+        .post('/plans')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          name: 'Hybrid Test',
+          startDate: startDate.toISOString(),
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 10000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+          },
+          allocations: [
+            {
+              label: 'Terreno',
+              target: 100000,
+              monthlyAmount: [{ month: 0, amount: 2000 }],
+              holdsFunds: false,
+              scheduledMovements: [],
+            },
+          ],
+        })
+        .expect(201);
+
+      const planId = createRes.body.id;
+      const allocationId = createRes.body.allocations[0].id;
+
+      // Create committed transactions in month 0 (2 months ago)
+      const month0Start = new Date(
+        Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 15),
+      );
+
+      // Income: 12000
+      await createTestTransaction(db, {
+        vaultId,
+        amount: 12000,
+        type: 'income',
+        date: month0Start,
+        committed: true,
+      });
+
+      // Expense (cost of living): 7000
+      await createTestTransaction(db, {
+        vaultId,
+        amount: 7000,
+        type: 'expense',
+        date: month0Start,
+        committed: true,
+      });
+
+      // Expense tagged with allocation: 3000
+      await createTestTransaction(db, {
+        vaultId,
+        amount: 3000,
+        type: 'expense',
+        date: month0Start,
+        committed: true,
+        allocationId,
+      });
+
+      // Get projection
+      const projRes = await request(app.getHttpServer())
+        .get(`/plans/${planId}/projection?months=6`)
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      const months = projRes.body;
+      expect(months).toHaveLength(6);
+
+      // Month 0: real data
+      // realIncome = 12000 (total income, no linked estratos)
+      // realCostOfLiving = 7000 (expenses - tagged expenses - transfer expenses)
+      // Tagged expense = 3000 is not counted as cost of living
+      expect(months[0].isReal).toBe(true);
+      expect(months[0].income).toBe(12000);
+      expect(months[0].costOfLiving).toBe(7000);
+      expect(months[0].allocationPayments[allocationId]).toBe(3000);
+
+      // Month 2 (current month): projected
+      expect(months[2].isReal).toBe(false);
+      expect(months[2].income).toBe(10000);
+      expect(months[2].costOfLiving).toBe(6000);
+    });
+
+    it('projection without transactions should still work with isReal for past months', async () => {
+      // Create plan starting 1 month ago with no transactions
+      const now = new Date();
+      const startDate = new Date(
+        Date.UTC(now.getFullYear(), now.getMonth() - 1, 1),
+      );
+
+      const createRes = await request(app.getHttpServer())
+        .post('/plans')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          name: 'No Transactions',
+          startDate: startDate.toISOString(),
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 10000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+          },
+          allocations: [],
+        })
+        .expect(201);
+
+      const projRes = await request(app.getHttpServer())
+        .get(`/plans/${createRes.body.id}/projection?months=3`)
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      const months = projRes.body;
+
+      // Month 0: real (past) but with zeroed real data
+      expect(months[0].isReal).toBe(true);
+      expect(months[0].income).toBe(0);
+      expect(months[0].costOfLiving).toBe(0);
+
+      // Month 1: projected (current month)
+      expect(months[1].isReal).toBe(false);
+      expect(months[1].income).toBe(10000);
     });
   });
 });

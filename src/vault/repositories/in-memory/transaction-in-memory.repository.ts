@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { Injectable } from '@nestjs/common';
 import { InMemoryStore } from '@/shared/persistence/in-memory/in-memory-store';
-import { TransactionRepository } from '../transaction.repository';
+import { TransactionRepository, AggregationTransaction } from '../transaction.repository';
 import { Paginated } from '../../domain/paginated';
 import { TransactionDTO } from '../../dto/transaction.dto,';
 
@@ -137,5 +137,29 @@ export class TransactionInMemoryRepository extends TransactionRepository {
       pageSize,
       totalPages,
     };
+  }
+
+  async findCommittedByPeriod(
+    vaultId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<AggregationTransaction[]> {
+    const vault = this.store.vaults.get(vaultId);
+    if (!vault) return [];
+
+    const transactions = Array.from(vault.transactions.values());
+    return transactions
+      .filter((t) => {
+        if (!t.isCommitted) return false;
+        const date = t.date ?? t.createdAt;
+        return date >= startDate && date < endDate;
+      })
+      .map((t) => ({
+        amount: t.amount,
+        type: t.type,
+        boxId: t.boxId || null,
+        allocationId: t.allocationId ?? null,
+        transferId: t.transferId ?? null,
+      }));
   }
 }

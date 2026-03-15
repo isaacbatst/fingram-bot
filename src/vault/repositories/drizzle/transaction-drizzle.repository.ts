@@ -1,7 +1,7 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import { eq, and, or, sql, ilike, desc, count, isNull } from 'drizzle-orm';
+import { eq, and, or, sql, ilike, desc, count, isNull, gte, lt } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { TransactionRepository } from '../transaction.repository';
+import { TransactionRepository, AggregationTransaction } from '../transaction.repository';
 import {
   DRIZZLE_DATABASE,
   DrizzleDatabase,
@@ -151,5 +151,37 @@ export class TransactionDrizzleRepository extends TransactionRepository {
     const totalPages = Math.ceil(total / pageSize);
 
     return { items, total, page, pageSize, totalPages };
+  }
+
+  async findCommittedByPeriod(
+    vaultId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<AggregationTransaction[]> {
+    const rows = await this.db
+      .select({
+        amount: transaction.amount,
+        type: transaction.type,
+        boxId: transaction.boxId,
+        allocationId: transaction.allocationId,
+        transferId: transaction.transferId,
+      })
+      .from(transaction)
+      .where(
+        and(
+          eq(transaction.vaultId, vaultId),
+          eq(transaction.committed, true),
+          gte(transaction.date, startDate),
+          lt(transaction.date, endDate),
+        ),
+      );
+
+    return rows.map((row) => ({
+      amount: row.amount,
+      type: row.type as 'income' | 'expense',
+      boxId: row.boxId ?? null,
+      allocationId: row.allocationId ?? null,
+      transferId: row.transferId ?? null,
+    }));
   }
 }
