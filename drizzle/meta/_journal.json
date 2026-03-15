@@ -36,6 +36,20 @@
       "when": 1741720000000,
       "tag": "0004_sync_plan_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1773589044869,
+      "tag": "0005_steep_blur",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1773592941194,
+      "tag": "0006_cheerful_chameleon",
+      "breakpoints": true
     }
   ]
 }

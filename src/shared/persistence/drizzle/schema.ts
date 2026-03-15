@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   pgTable,
   text,
@@ -7,6 +8,7 @@ import {
   timestamp,
   jsonb,
   integer,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
 // Base categories - used as templates for vault categories
@@ -72,6 +74,7 @@ export const transaction = pgTable('transaction', {
   date: timestamp('date'),
   boxId: text('box_id').references(() => box.id),
   transferId: text('transfer_id'),
+  allocationId: text('allocation_id').references(() => allocation.id, { onDelete: 'set null' }),
 });
 
 export const budget = pgTable('budget', {
@@ -102,7 +105,23 @@ export const plan = pgTable('plan', {
   status: text('status').notNull().default('draft'),
   startDate: timestamp('start_date').notNull(),
   premises: jsonb('premises').notNull(),
-  boxes: jsonb('boxes').notNull().default('[]'),
   milestones: jsonb('milestones').notNull().default('[]'),
   createdAt: timestamp('created_at').notNull(),
 });
+
+export const allocation = pgTable('allocation', {
+  id: text('id').primaryKey(),
+  planId: text('plan_id').notNull().references(() => plan.id, { onDelete: 'cascade' }),
+  label: text('label').notNull(),
+  target: doublePrecision('target').notNull().default(0),
+  monthlyAmount: jsonb('monthly_amount').notNull().default('[]'),
+  holdsFunds: boolean('holds_funds').notNull(),
+  yieldRate: doublePrecision('yield_rate'),
+  financing: jsonb('financing'),
+  scheduledMovements: jsonb('scheduled_movements').notNull().default('[]'),
+  initialBalance: doublePrecision('initial_balance'),
+  estratoId: text('estrato_id').references(() => box.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').notNull(),
+}, (table) => [
+  uniqueIndex('allocation_estrato_id_unique').on(table.estratoId).where(sql`${table.estratoId} IS NOT NULL`),
+]);

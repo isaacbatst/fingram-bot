@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "allocation_estrato_id_unique" ON "allocation" USING btree ("estrato_id") WHERE "allocation"."estrato_id" IS NOT NULL;
