@@ -184,6 +184,9 @@ export function runProjection(
             // onCompletion: auto-realize all accumulated when target first reached
             if (allocation.realizationMode === 'onCompletion') {
               allocationRealized[id] = allocationAccumulated[id];
+              // Sync balance to em_mãos (= 0 after full realization)
+              allocationBalances[id] =
+                allocationAccumulated[id] - allocationRealized[id];
               monthRealizedAllocations.push(id);
             }
           }
@@ -192,11 +195,11 @@ export function runProjection(
 
       allocationPayments[id] = totalPayment;
 
-      // Phase C: Yield (skip if targetReached)
+      // Phase C: Yield (skip if targetReached; only for non-immediate modes that hold funds)
       let yieldEarned = 0;
       if (
         !targetReached[id] &&
-        allocation.holdsFunds &&
+        allocation.realizationMode !== 'immediate' &&
         allocation.yieldRate &&
         allocation.yieldRate > 0 &&
         allocationBalances[id] > 0
