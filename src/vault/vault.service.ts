@@ -275,7 +275,7 @@ export class VaultService {
         input.transaction.allocationId,
       );
       if (!allocation) return left('Alocação não encontrada');
-      if (allocation.holdsFunds)
+      if (allocation.realizationMode !== 'immediate')
         return left(
           'Só alocações Pagamento podem ser vinculadas a transações',
         );
@@ -387,7 +387,7 @@ export class VaultService {
           input.allocationId,
         );
         if (!allocation) return left('Alocação não encontrada');
-        if (allocation.holdsFunds)
+        if (allocation.realizationMode !== 'immediate')
           return left(
             'Só alocações Pagamento podem ser vinculadas a transações',
           );
