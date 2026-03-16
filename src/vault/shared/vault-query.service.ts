@@ -3,10 +3,11 @@ import { BoxRepository } from '@/vault/repositories/box.repository';
 import { TransactionRepository } from '@/vault/repositories/transaction.repository';
 import { BoxInfo } from './domain/box-info';
 import { RealMonthData } from '@/plan/domain/plan';
+import { RealizationMode } from '@/plan/shared/domain/allocation';
 
 export interface AllocationContext {
   allocationId: string;
-  holdsFunds: boolean;
+  realizationMode: RealizationMode;
   estratoId: string | null;
 }
 
@@ -90,7 +91,7 @@ export class VaultQueryService {
 
       // Allocation payments
       const allocationPayments = allocationContext.map((ctx) => {
-        if (!ctx.holdsFunds) {
+        if (ctx.realizationMode === 'immediate') {
           // Pagamento: sum expenses tagged with this allocationId
           const amount = expenses
             .filter((t) => t.allocationId === ctx.allocationId)
@@ -106,11 +107,26 @@ export class VaultQueryService {
         }
       });
 
+      // Realization aggregation for manual/onCompletion allocations (hybrid projection)
+      const allocationRealizations = allocationContext
+        .filter((ctx) => ctx.realizationMode !== 'immediate')
+        .map((ctx) => {
+          const amount = expenses
+            .filter(
+              (t) =>
+                t.allocationId === ctx.allocationId &&
+                (t as any).withdrawalType === 'realization',
+            )
+            .reduce((sum, t) => sum + t.amount, 0);
+          return { allocationId: ctx.allocationId, amount };
+        });
+
       result.push({
         month: period.month,
         realIncome,
         realCostOfLiving,
         allocationPayments,
+        allocationRealizations,
       });
     }
 

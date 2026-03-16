@@ -105,6 +105,14 @@ export function runProjection(
       }
     }
 
+    // Track real realizations for manual/onCompletion allocations
+    if (isReal && rd.allocationRealizations) {
+      for (const ar of rd.allocationRealizations) {
+        allocationRealized[ar.allocationId] =
+          (allocationRealized[ar.allocationId] ?? 0) + ar.amount;
+      }
+    }
+
     let allocationOutflows = 0;
     const allocationPayments: Record<string, number> = {};
     const allocationYields: Record<string, number> = {};

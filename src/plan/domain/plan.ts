@@ -40,6 +40,7 @@ export interface RealMonthData {
   realIncome: number;
   realCostOfLiving: number;
   allocationPayments: { allocationId: string; amount: number }[];
+  allocationRealizations: { allocationId: string; amount: number }[];
 }
 
 export interface MonthData {
