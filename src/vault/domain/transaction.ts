@@ -17,6 +17,7 @@ type ConstructorParams = {
   type: 'expense' | 'income';
   date: Date;
   allocationId: string | null;
+  withdrawalType: 'withdrawal' | 'realization' | null;
 };
 
 type CreateParams = {
@@ -30,6 +31,7 @@ type CreateParams = {
   categoryId?: string | null;
   createdAt?: Date;
   allocationId?: string;
+  withdrawalType?: 'withdrawal' | 'realization' | null;
 };
 
 export class Transaction {
@@ -50,6 +52,7 @@ export class Transaction {
       type: params.type ?? 'expense',
       date: params.date,
       allocationId: params.allocationId ?? null,
+      withdrawalType: params.withdrawalType ?? null,
     });
   }
 
@@ -71,6 +74,7 @@ export class Transaction {
   public type: 'expense' | 'income' = 'expense';
   public date: Date = new Date();
   public allocationId: string | null = null;
+  public withdrawalType: 'withdrawal' | 'realization' | null = null;
 
   private constructor(params: ConstructorParams) {
     this.id = params.id;
@@ -86,6 +90,7 @@ export class Transaction {
     this.type = params.type;
     this.date = params.date;
     this.allocationId = params.allocationId;
+    this.withdrawalType = params.withdrawalType;
   }
   commit(): Either<string, boolean> {
     if (this.isCommitted) {

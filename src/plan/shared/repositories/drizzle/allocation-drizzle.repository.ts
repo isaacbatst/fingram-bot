@@ -10,6 +10,7 @@ import {
   Allocation,
   AllocationFinancing,
   AllocationScheduledMovement,
+  RealizationMode,
 } from '../../domain/allocation';
 import { AllocationRepository } from '../allocation.repository';
 
@@ -34,7 +35,7 @@ export class AllocationDrizzleRepository extends AllocationRepository {
       label: allocation.label,
       target: allocation.target,
       monthlyAmount: allocation.monthlyAmount,
-      holdsFunds: allocation.holdsFunds,
+      realizationMode: allocation.realizationMode,
       yieldRate: allocation.yieldRate ?? null,
       financing: allocation.financing ?? null,
       scheduledMovements: allocation.scheduledMovements,
@@ -51,7 +52,7 @@ export class AllocationDrizzleRepository extends AllocationRepository {
       label: row.label,
       target: row.target,
       monthlyAmount: (row.monthlyAmount as ChangePoint[]) ?? [],
-      holdsFunds: row.holdsFunds,
+      realizationMode: row.realizationMode as RealizationMode,
       yieldRate: row.yieldRate ?? undefined,
       financing: (row.financing as AllocationFinancing) ?? undefined,
       scheduledMovements:
