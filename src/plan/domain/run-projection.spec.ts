@@ -16,7 +16,7 @@ function makeAllocation(
     label: string;
     target: number;
     monthlyAmount: { month: number; amount: number }[];
-    holdsFunds: boolean;
+    realizationMode: 'immediate' | 'manual' | 'onCompletion';
     yieldRate: number;
     financing: {
       principal: number;
@@ -45,7 +45,7 @@ function makeAllocation(
     label: overrides.label ?? 'Reserva',
     target: overrides.target ?? 10000,
     monthlyAmount: overrides.monthlyAmount ?? [{ month: 0, amount: 4000 }],
-    holdsFunds: overrides.holdsFunds ?? true,
+    realizationMode: overrides.realizationMode ?? 'manual',
     yieldRate: overrides.yieldRate,
     financing: overrides.financing,
     scheduledMovements: overrides.scheduledMovements ?? [],
@@ -62,7 +62,7 @@ describe('runProjection', () => {
         id: 'reserva',
         target: 10000,
         monthlyAmount: [{ month: 0, amount: 4000 }],
-        holdsFunds: true,
+        realizationMode: 'manual',
         initialBalance: 2500,
       }),
     ];
@@ -134,7 +134,7 @@ describe('runProjection', () => {
         id: 'reserva',
         target: 5000,
         monthlyAmount: [{ month: 0, amount: 4000 }],
-        holdsFunds: true,
+        realizationMode: 'manual',
       }),
     ];
     const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
@@ -155,7 +155,7 @@ describe('runProjection', () => {
         label: 'Pontual',
         target: 50000,
         monthlyAmount: [],
-        holdsFunds: false,
+        realizationMode: 'immediate',
         scheduledMovements: [{ month: 2, amount: 10000, label: 'Entrada', type: 'in' }],
       }),
     ];
@@ -175,7 +175,7 @@ describe('runProjection', () => {
         label: 'Terreno',
         target: 100000,
         monthlyAmount: [{ month: 0, amount: 2000 }],
-        holdsFunds: false,
+        realizationMode: 'immediate',
         scheduledMovements: [
           { month: 1, amount: 10000, label: 'Entrada 1/4', type: 'in' },
         ],
@@ -198,7 +198,7 @@ describe('runProjection', () => {
         label: 'Terreno',
         target: 0,
         monthlyAmount: [{ month: 0, amount: 2000 }],
-        holdsFunds: false,
+        realizationMode: 'immediate',
         scheduledMovements: [
           {
             month: 1,
@@ -222,7 +222,7 @@ describe('runProjection', () => {
         label: 'Terreno',
         target: 0,
         monthlyAmount: [{ month: 0, amount: 1000 }],
-        holdsFunds: false,
+        realizationMode: 'immediate',
         scheduledMovements: [
           { month: 2, amount: 5000, label: 'Part A', type: 'in' },
           { month: 2, amount: 3000, label: 'Part B', type: 'in' },
@@ -242,7 +242,7 @@ describe('runProjection', () => {
         label: 'Box',
         target: 5000,
         monthlyAmount: [{ month: 0, amount: 1000 }],
-        holdsFunds: true,
+        realizationMode: 'manual',
         scheduledMovements: [
           { month: 3, amount: 10000, label: 'Big payment', type: 'in' },
         ],
@@ -263,7 +263,7 @@ describe('runProjection', () => {
         label: 'Box',
         target: 2000,
         monthlyAmount: [{ month: 0, amount: 1000 }],
-        holdsFunds: false,
+        realizationMode: 'immediate',
         scheduledMovements: [{ month: 3, amount: 5000, label: 'Lump sum', type: 'in' }],
       }),
     ];
@@ -308,14 +308,14 @@ describe('runProjection', () => {
         label: 'Reserva',
         target: 0,
         monthlyAmount: [{ month: 0, amount: 3000 }],
-        holdsFunds: true,
+        realizationMode: 'manual',
       }),
       makeAllocation({
         id: 'terreno',
         label: 'Terreno',
         target: 0,
         monthlyAmount: [{ month: 0, amount: 2000 }],
-        holdsFunds: false,
+        realizationMode: 'immediate',
       }),
     ];
     const result = runProjection(premises, allocations, defaultStartDate, 1);
@@ -358,7 +358,7 @@ describe('runProjection', () => {
           { month: 0, amount: 1893 },
           { month: 10, amount: 2741 },
         ],
-        holdsFunds: false,
+        realizationMode: 'immediate',
       }),
     ];
     const result = runProjection(premises, allocations, defaultStartDate, 12);
@@ -389,7 +389,7 @@ describe('runProjection', () => {
         label: 'Acoes',
         target: 0,
         monthlyAmount: [{ month: 0, amount: 800 }],
-        holdsFunds: true,
+        realizationMode: 'manual',
       }),
     ];
     const result = runProjection(premises, allocations, defaultStartDate, 1);
@@ -410,7 +410,7 @@ describe('runProjection', () => {
         label: 'Parcela terreno',
         target: 530000,
         monthlyAmount: [{ month: 0, amount: 1893 }],
-        holdsFunds: false,
+        realizationMode: 'immediate',
         scheduledMovements: [
           { month: 0, amount: 10000, label: 'Entrada 1/4', type: 'in' },
           { month: 1, amount: 10000, label: 'Entrada 2/4', type: 'in' },
@@ -423,7 +423,7 @@ describe('runProjection', () => {
         label: 'Acoes',
         target: 0,
         monthlyAmount: [{ month: 0, amount: 800 }],
-        holdsFunds: true,
+        realizationMode: 'manual',
       }),
     ];
     const result = runProjection(premises, allocations, defaultStartDate, 6);
@@ -449,7 +449,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 1000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           yieldRate: 0.12,
         }),
       ];
@@ -467,7 +467,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 1000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           yieldRate: 0.12,
         }),
       ];
@@ -486,7 +486,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 2000,
           monthlyAmount: [{ month: 0, amount: 1000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           yieldRate: 0.12,
         }),
       ];
@@ -506,7 +506,7 @@ describe('runProjection', () => {
           label: 'Terreno',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 2000 }],
-          holdsFunds: false,
+          realizationMode: 'immediate',
           yieldRate: 0.12,
         }),
       ];
@@ -531,7 +531,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 1000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           yieldRate: 0,
         }),
       ];
@@ -552,7 +552,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 3000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           yieldRate: 0.12,
         }),
         makeAllocation({
@@ -560,7 +560,7 @@ describe('runProjection', () => {
           label: 'Acoes',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 2000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           yieldRate: 0.06,
         }),
       ];
@@ -582,7 +582,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 1000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           yieldRate: 0.12,
         }),
       ];
@@ -613,7 +613,7 @@ describe('runProjection', () => {
           label: 'Casa',
           target: 0,
           monthlyAmount: [],
-          holdsFunds: false,
+          realizationMode: 'immediate',
           financing: {
             principal: 120_000,
             annualRate: 0.12,
@@ -671,7 +671,7 @@ describe('runProjection', () => {
           label: 'Carro',
           target: 0,
           monthlyAmount: [],
-          holdsFunds: false,
+          realizationMode: 'immediate',
           financing: {
             principal: 60_000,
             annualRate: 0.18,
@@ -724,7 +724,7 @@ describe('runProjection', () => {
           label: 'Financiamento Obra',
           target: 0,
           monthlyAmount: [],
-          holdsFunds: false,
+          realizationMode: 'immediate',
           financing: {
             principal: 1_200_000,
             annualRate: 0.11,
@@ -771,7 +771,7 @@ describe('runProjection', () => {
           label: 'Casa',
           target: 0,
           monthlyAmount: [],
-          holdsFunds: false,
+          realizationMode: 'immediate',
           financing: {
             principal: 12_000,
             annualRate: 0.12,
@@ -805,7 +805,7 @@ describe('runProjection', () => {
           label: 'Casa',
           target: 0,
           monthlyAmount: [],
-          holdsFunds: false,
+          realizationMode: 'immediate',
           financing: {
             principal: 120_000,
             annualRate: 0.12,
@@ -846,7 +846,7 @@ describe('runProjection', () => {
           label: 'Casa',
           target: 0,
           monthlyAmount: [],
-          holdsFunds: false,
+          realizationMode: 'immediate',
           scheduledMovements: [
             { month: 1, amount: 50_000, label: 'Amortizacao extra', type: 'in' },
           ],
@@ -894,7 +894,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 5000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           scheduledMovements: [
             {
               month: 2,
@@ -910,7 +910,7 @@ describe('runProjection', () => {
           label: 'Casa',
           target: 0,
           monthlyAmount: [],
-          holdsFunds: false,
+          realizationMode: 'immediate',
           financing: {
             principal: 120_000,
             annualRate: 0.12,
@@ -951,7 +951,7 @@ describe('runProjection', () => {
         label: 'Reserva',
         target: 0,
         monthlyAmount: [{ month: 0, amount: 5000 }],
-        holdsFunds: true,
+        realizationMode: 'manual',
         scheduledMovements: [
           {
             month: 1,
@@ -968,7 +968,7 @@ describe('runProjection', () => {
         label: 'Casa',
         target: 0,
         monthlyAmount: [],
-        holdsFunds: false,
+        realizationMode: 'immediate',
         financing: {
           principal: 120_000,
           annualRate: 0.12,
@@ -1010,7 +1010,7 @@ describe('runProjection', () => {
           label: 'Casa',
           target: 0,
           monthlyAmount: [],
-          holdsFunds: false,
+          realizationMode: 'immediate',
           financing: {
             principal: 12_000,
             annualRate: 0.12,
@@ -1035,7 +1035,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 50000,
           monthlyAmount: [{ month: 0, amount: 4000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           initialBalance: 10000,
           scheduledMovements: [
             { label: 'Saque', month: 2, amount: 5000, type: 'out' },
@@ -1064,7 +1064,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 2000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           initialBalance: 10000,
           scheduledMovements: [
             { label: 'Transferência', month: 1, amount: 3000, type: 'out', destinationBoxId: 'casamento' },
@@ -1075,7 +1075,7 @@ describe('runProjection', () => {
           label: 'Casamento',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 1000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
         }),
       ];
       const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
@@ -1097,7 +1097,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 2000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           initialBalance: 1000,
           scheduledMovements: [
             { label: 'Saque grande', month: 0, amount: 50000, type: 'out' },
@@ -1120,7 +1120,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 5000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           initialBalance: 10000,
           scheduledMovements: [
             { label: 'Amortização extra', month: 2, amount: 8000, type: 'out', destinationBoxId: 'financiamento' },
@@ -1130,7 +1130,7 @@ describe('runProjection', () => {
           id: 'financiamento',
           label: 'Financiamento',
           target: 0,
-          holdsFunds: false,
+          realizationMode: 'immediate',
           monthlyAmount: [],
           financing: {
             principal: 500000,
@@ -1166,7 +1166,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 20000,
           monthlyAmount: [{ month: 0, amount: 4000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           initialBalance: 15000,
           scheduledMovements: [
             { label: 'Saque', month: 1, amount: 10000, type: 'out' },
@@ -1191,7 +1191,7 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 10000,
           monthlyAmount: [{ month: 0, amount: 4000 }],
-          holdsFunds: true,
+          realizationMode: 'manual',
           scheduledMovements: [
             { label: 'Aporte extra', month: 2, amount: 15000, type: 'in' },
           ],
@@ -1288,7 +1288,7 @@ describe('runProjection', () => {
           id: 'terreno',
           target: 100000,
           monthlyAmount: [{ month: 0, amount: 2000 }],
-          holdsFunds: false,
+          realizationMode: 'immediate',
         }),
       ];
 
@@ -1388,6 +1388,25 @@ describe('runProjection', () => {
       expect(result[0].costOfLiving).toBe(7000);
       expect(result[0].isReal).toBe(true);
       expect(result[0].allocationPayments['reserva']).toBe(1000); // computed
+    });
+  });
+
+  describe('realization mode', () => {
+    const startDate = new Date('2026-01-01');
+
+    it('immediate mode: accumulated and realized track together, em_mãos always 0', () => {
+      const alloc = makeAllocation({
+        realizationMode: 'immediate',
+        monthlyAmount: [{ month: 0, amount: 1000 }],
+        target: 0,
+      });
+
+      const result = runProjection(defaultPremises, [alloc], startDate, 3);
+
+      expect(result[0].allocationAccumulated[alloc.id]).toBe(1000);
+      expect(result[0].allocationRealized[alloc.id]).toBe(1000);
+      const emMaos = result[0].allocationAccumulated[alloc.id] - result[0].allocationRealized[alloc.id];
+      expect(emMaos).toBe(0);
     });
   });
 });

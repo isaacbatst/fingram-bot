@@ -71,10 +71,16 @@ export function runProjection(
   }
 
   const allocationBalances: Record<string, number> = {};
+  const allocationAccumulated: Record<string, number> = {};
+  const allocationRealized: Record<string, number> = {};
+  const targetReached: Record<string, boolean> = {};
   const financingStates: Record<string, FinancingState> = {};
 
   for (const allocation of allocations) {
-    allocationBalances[allocation.id] = allocation.initialBalance ?? 0;
+    const initial = allocation.initialBalance ?? 0;
+    allocationBalances[allocation.id] = initial;
+    allocationAccumulated[allocation.id] = initial;
+    allocationRealized[allocation.id] = allocation.realizationMode === 'immediate' ? initial : 0;
     if (allocation.financing) {
       financingStates[allocation.id] = initFinancingState(allocation.financing);
     }
@@ -130,6 +136,10 @@ export function runProjection(
         allocationBalances[allocation.id] += realPayment;
         allocationOutflows += realPayment;
         allocationPayments[allocation.id] = realPayment;
+        allocationAccumulated[allocation.id] += realPayment;
+        if (allocation.realizationMode === 'immediate') {
+          allocationRealized[allocation.id] += realPayment;
+        }
       } else {
         const { outflow, scheduledMovements: inMovements } = getAllocationOutflow(
           allocation,
@@ -140,6 +150,10 @@ export function runProjection(
         allocationBalances[allocation.id] += outflow;
         allocationOutflows += outflow;
         allocationPayments[allocation.id] = outflow;
+        allocationAccumulated[allocation.id] += outflow;
+        if (allocation.realizationMode === 'immediate') {
+          allocationRealized[allocation.id] += outflow;
+        }
 
         for (const sp of inMovements) {
           monthScheduledMovements.push({
@@ -161,6 +175,7 @@ export function runProjection(
         const monthlyRate = allocation.yieldRate / 12;
         yieldEarned = allocationBalances[allocation.id] * monthlyRate;
         allocationBalances[allocation.id] += yieldEarned;
+        allocationAccumulated[allocation.id] += yieldEarned;
       }
       allocationYields[allocation.id] = yieldEarned;
 
@@ -246,8 +261,12 @@ export function runProjection(
       allocationPayments[allocation.id] = detail.payment;
 
       // Balance tracks amortization progress (not total paid)
-      allocationBalances[allocation.id] =
-        allocation.financing.principal - detail.outstandingBalance;
+      const amortProgress = allocation.financing.principal - detail.outstandingBalance;
+      allocationBalances[allocation.id] = amortProgress;
+      allocationAccumulated[allocation.id] = amortProgress;
+      if (allocation.realizationMode === 'immediate') {
+        allocationRealized[allocation.id] = amortProgress;
+      }
 
       // No yield on financing allocations
       allocationYields[allocation.id] = 0;
@@ -259,11 +278,9 @@ export function runProjection(
     let totalWealth = cash;
     let totalCommitted = 0;
     for (const allocation of allocations) {
-      if (allocation.holdsFunds) {
-        totalWealth += allocationBalances[allocation.id];
-      } else {
-        totalCommitted += allocationBalances[allocation.id];
-      }
+      const emMaos = allocationAccumulated[allocation.id] - allocationRealized[allocation.id];
+      totalWealth += emMaos;
+      totalCommitted += allocationRealized[allocation.id];
     }
 
     result.push({
@@ -285,6 +302,9 @@ export function runProjection(
       totalCommitted,
       financingDetails,
       isReal,
+      allocationAccumulated: { ...allocationAccumulated },
+      allocationRealized: { ...allocationRealized },
+      realizedAllocations: [],
     });
   }
 
