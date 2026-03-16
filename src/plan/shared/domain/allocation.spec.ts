@@ -7,11 +7,11 @@ describe('Allocation', () => {
     label: 'Reserva Emergência',
     target: 50000,
     monthlyAmount: [{ month: 0, amount: 2500 }],
-    holdsFunds: true,
+    realizationMode: 'manual' as const,
     scheduledMovements: [],
   };
 
-  it('creates with UUID and holdsFunds=true', () => {
+  it('creates with UUID and holdsFunds=true (manual realizationMode)', () => {
     const alloc = Allocation.create(baseParams);
     expect(alloc.id).toBeDefined();
     expect(alloc.holdsFunds).toBe(true);
@@ -19,8 +19,8 @@ describe('Allocation', () => {
     expect(alloc.estratoId).toBeNull();
   });
 
-  it('creates Pagamento with holdsFunds=false', () => {
-    const alloc = Allocation.create({ ...baseParams, holdsFunds: false });
+  it('creates Pagamento with realizationMode=immediate', () => {
+    const alloc = Allocation.create({ ...baseParams, realizationMode: 'immediate' });
     expect(alloc.type).toBe('pagamento');
   });
 
@@ -32,7 +32,7 @@ describe('Allocation', () => {
   });
 
   it('bindToEstrato fails for Pagamento', () => {
-    const alloc = Allocation.create({ ...baseParams, holdsFunds: false });
+    const alloc = Allocation.create({ ...baseParams, realizationMode: 'immediate' });
     const [error] = alloc.bindToEstrato('box-1');
     expect(error).not.toBeNull();
   });
@@ -51,7 +51,7 @@ describe('Allocation', () => {
       label: 'Test',
       target: 1000,
       monthlyAmount: [],
-      holdsFunds: true,
+      realizationMode: 'manual',
       scheduledMovements: [],
       estratoId: 'box-1',
       createdAt: new Date(),

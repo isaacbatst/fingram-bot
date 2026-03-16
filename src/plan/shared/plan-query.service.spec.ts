@@ -128,7 +128,7 @@ describe('PlanQueryService', () => {
     const createPlanAndAllocation = async (
       overrides: {
         planStartDate?: Date;
-        holdsFunds?: boolean;
+        realizationMode?: 'immediate' | 'manual' | 'onCompletion';
         scheduledMovements?: Allocation['scheduledMovements'];
         monthlyAmount?: { month: number; amount: number }[];
         planStatus?: 'draft' | 'active' | 'archived';
@@ -155,7 +155,7 @@ describe('PlanQueryService', () => {
         monthlyAmount: overrides.monthlyAmount ?? [
           { month: 0, amount: 2000 },
         ],
-        holdsFunds: overrides.holdsFunds ?? false,
+        realizationMode: overrides.realizationMode ?? 'immediate',
         scheduledMovements: overrides.scheduledMovements ?? [],
       });
       await allocationRepo.create(allocation);
@@ -232,7 +232,7 @@ describe('PlanQueryService', () => {
     it('only matches Pagamento allocations (not Reserva)', async () => {
       await createPlanAndAllocation({
         planStartDate: planStart(),
-        holdsFunds: true, // Reserva
+        realizationMode: 'manual', // Reserva
         scheduledMovements: [
           { month: 2, amount: 5000, label: 'Aporte', type: 'in' },
         ],

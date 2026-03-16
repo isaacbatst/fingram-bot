@@ -49,7 +49,7 @@ export class PlanQueryService {
 
   async listPaymentAllocations(vaultId: string): Promise<Allocation[]> {
     const all = await this.allocationRepo.findByVaultId(vaultId);
-    return all.filter((a) => !a.holdsFunds);
+    return all.filter((a) => a.realizationMode === 'immediate');
   }
 
   async getAllocationsByVaultId(vaultId: string): Promise<Allocation[]> {
@@ -89,7 +89,7 @@ export class PlanQueryService {
 
     // 3. For each Pagamento allocation, check scheduled movements for current month
     for (const allocation of allocations) {
-      if (allocation.holdsFunds) continue; // Only Pagamento
+      if (allocation.realizationMode !== 'immediate') continue; // Only Pagamento
 
       for (const sm of allocation.scheduledMovements) {
         if (sm.month !== currentPlanMonth) continue;

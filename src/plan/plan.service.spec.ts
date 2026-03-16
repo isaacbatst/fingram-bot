@@ -144,7 +144,7 @@ describe('PlanService', () => {
             label: 'Emergency Fund',
             target: 30000,
             monthlyAmount: [{ month: 0, amount: 1000 }],
-            holdsFunds: true,
+            realizationMode: 'manual' as const,
             scheduledMovements: [],
           },
         ],
@@ -182,7 +182,7 @@ describe('PlanService', () => {
             label: 'Savings',
             target: 10000,
             monthlyAmount: [{ month: 0, amount: 500 }],
-            holdsFunds: true,
+            realizationMode: 'manual' as const,
             scheduledMovements: [],
           },
         ],
@@ -250,7 +250,7 @@ describe('PlanService', () => {
             label: 'Emergency Fund',
             target: 30000,
             monthlyAmount: [{ month: 0, amount: 1000 }],
-            holdsFunds: true,
+            realizationMode: 'manual' as const,
             scheduledMovements: [],
           },
         ],
@@ -373,7 +373,7 @@ describe('PlanService', () => {
   });
 
   describe('bindAllocationToEstrato', () => {
-    async function createPlanWithAllocation(holdsFunds: boolean) {
+    async function createPlanWithAllocation(realizationMode: 'immediate' | 'manual' | 'onCompletion') {
       const [, result] = await service.create({
         vaultId: testVaultId,
         name: 'Test Plan',
@@ -384,7 +384,7 @@ describe('PlanService', () => {
             label: 'Test Allocation',
             target: 10000,
             monthlyAmount: [{ month: 0, amount: 500 }],
-            holdsFunds,
+            realizationMode,
             scheduledMovements: [],
           },
         ],
@@ -393,7 +393,7 @@ describe('PlanService', () => {
     }
 
     it('should bind Reserva allocation to saving box — success, estratoId updated', async () => {
-      const { allocations } = await createPlanWithAllocation(true);
+      const { allocations } = await createPlanWithAllocation('manual');
       const allocation = allocations[0];
 
       const [error, updated] = await service.bindAllocationToEstrato(
@@ -407,7 +407,7 @@ describe('PlanService', () => {
     });
 
     it('should return error when binding Pagamento allocation', async () => {
-      const { allocations } = await createPlanWithAllocation(false);
+      const { allocations } = await createPlanWithAllocation('immediate');
       const allocation = allocations[0];
 
       const [error] = await service.bindAllocationToEstrato(
@@ -420,7 +420,7 @@ describe('PlanService', () => {
     });
 
     it('should unbind (estratoId: null) — success, estratoId cleared', async () => {
-      const { allocations } = await createPlanWithAllocation(true);
+      const { allocations } = await createPlanWithAllocation('manual');
       const allocation = allocations[0];
 
       // First bind
@@ -450,7 +450,7 @@ describe('PlanService', () => {
     it('should return error when box not found', async () => {
       vi.mocked(vaultQueryService.findBoxById).mockResolvedValueOnce(null);
 
-      const { allocations } = await createPlanWithAllocation(true);
+      const { allocations } = await createPlanWithAllocation('manual');
       const allocation = allocations[0];
 
       const [error] = await service.bindAllocationToEstrato(
@@ -472,7 +472,7 @@ describe('PlanService', () => {
         vaultId: testVaultId,
       });
 
-      const { allocations } = await createPlanWithAllocation(true);
+      const { allocations } = await createPlanWithAllocation('manual');
       const allocation = allocations[0];
 
       const [error] = await service.bindAllocationToEstrato(

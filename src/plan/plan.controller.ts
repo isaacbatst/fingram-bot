@@ -63,7 +63,7 @@ export class PlanController {
         label: string;
         target: number;
         monthlyAmount: { month: number; amount: number }[];
-        holdsFunds: boolean;
+        realizationMode: 'immediate' | 'manual' | 'onCompletion';
         yieldRate?: number;
         financing?: {
           principal: number;

@@ -14,13 +14,14 @@ import { ChangePoint } from './domain/change-point';
 import {
   AllocationFinancing,
   AllocationScheduledMovement,
+  RealizationMode,
 } from './shared/domain/allocation';
 
 interface CreateAllocationInput {
   label: string;
   target: number;
   monthlyAmount: ChangePoint[];
-  holdsFunds: boolean;
+  realizationMode: RealizationMode;
   yieldRate?: number;
   financing?: AllocationFinancing;
   scheduledMovements: AllocationScheduledMovement[];
@@ -96,15 +97,21 @@ export class PlanService {
       if (alloc.yieldRate !== undefined && alloc.yieldRate < 0) {
         return left('Taxa de rendimento não pode ser negativa');
       }
-      if (alloc.yieldRate !== undefined && !alloc.holdsFunds) {
+      if (alloc.yieldRate !== undefined && alloc.realizationMode === 'immediate') {
         return left(
           'Taxa de rendimento só pode ser definida para alocações que retêm fundos',
         );
       }
+      if (alloc.realizationMode === 'onCompletion' && (!alloc.target || alloc.target <= 0)) {
+        return left('Modo onCompletion requer target > 0');
+      }
+      if (alloc.realizationMode === 'immediate' && alloc.scheduledMovements?.some((m) => m.type === 'out')) {
+        return left('Alocações immediate não suportam scheduled movements do tipo out');
+      }
       if (alloc.financing) {
-        if (alloc.holdsFunds) {
+        if (alloc.realizationMode !== 'immediate') {
           return left(
-            'Alocação com financiamento não pode reter fundos (holdsFunds deve ser false)',
+            'Alocação com financiamento não pode reter fundos (realizationMode deve ser immediate)',
           );
         }
         if (alloc.financing.principal <= 0) {
@@ -192,7 +199,7 @@ export class PlanService {
 
     const allocationContext = allocations.map((a) => ({
       allocationId: a.id,
-      holdsFunds: a.holdsFunds,
+      realizationMode: a.realizationMode,
       estratoId: a.estratoId,
     }));
 
