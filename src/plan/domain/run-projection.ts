@@ -7,51 +7,42 @@ import {
 } from './financing-calculator';
 import { FinancingMonthDetail, MonthData, Premises, RealMonthData } from './plan';
 
-function getAllocationOutflow(
+function getMonthlyAporte(
   allocation: Allocation,
   month: number,
-  currentBalance: number,
-): {
-  outflow: number;
-  scheduledMovements: { amount: number; label: string }[];
-} {
-  const paymentsThisMonth = (allocation.scheduledMovements ?? []).filter(
-    (p) => p.month === month && p.type === 'in',
-  );
-
-  if (paymentsThisMonth.length > 0) {
-    const scheduledTotal = paymentsThisMonth.reduce(
-      (sum, p) => sum + p.amount,
-      0,
-    );
-    const hasAdditional = paymentsThisMonth.some((p) => p.additionalToMonthly);
-
-    let outflow = scheduledTotal;
-    if (hasAdditional) {
-      outflow += getActiveValue(allocation.monthlyAmount, month);
-    }
-
-    return {
-      outflow,
-      scheduledMovements: paymentsThisMonth.map((p) => ({
-        amount: p.amount,
-        label: p.label,
-      })),
-    };
-  }
-
-  if (allocation.target > 0 && currentBalance >= allocation.target) {
-    return { outflow: 0, scheduledMovements: [] };
+  currentAccumulated: number,
+): number {
+  if (allocation.target > 0 && currentAccumulated >= allocation.target) {
+    return 0;
   }
 
   let outflow = getActiveValue(allocation.monthlyAmount, month);
 
   if (allocation.target > 0) {
-    const remaining = allocation.target - currentBalance;
+    const remaining = allocation.target - currentAccumulated;
     outflow = Math.min(outflow, remaining);
   }
 
-  return { outflow, scheduledMovements: [] };
+  return outflow;
+}
+
+function getScheduledInMovements(
+  allocation: Allocation,
+  month: number,
+): { total: number; hasAdditional: boolean; movements: { amount: number; label: string }[] } {
+  const paymentsThisMonth = (allocation.scheduledMovements ?? []).filter(
+    (p) => p.month === month && p.type === 'in',
+  );
+
+  if (paymentsThisMonth.length === 0) {
+    return { total: 0, hasAdditional: false, movements: [] };
+  }
+
+  const total = paymentsThisMonth.reduce((sum, p) => sum + p.amount, 0);
+  const hasAdditional = paymentsThisMonth.some((p) => p.additionalToMonthly);
+  const movements = paymentsThisMonth.map((p) => ({ amount: p.amount, label: p.label }));
+
+  return { total, hasAdditional, movements };
 }
 
 export function runProjection(
@@ -80,7 +71,8 @@ export function runProjection(
     const initial = allocation.initialBalance ?? 0;
     allocationBalances[allocation.id] = initial;
     allocationAccumulated[allocation.id] = initial;
-    allocationRealized[allocation.id] = allocation.realizationMode === 'immediate' ? initial : 0;
+    allocationRealized[allocation.id] =
+      allocation.realizationMode === 'immediate' ? initial : 0;
     if (allocation.financing) {
       financingStates[allocation.id] = initFinancingState(allocation.financing);
     }
@@ -98,11 +90,12 @@ export function runProjection(
     const rd = realDataMap.get(i);
     const isReal = !!rd && currentMonth !== undefined && i < currentMonth;
 
-    const income = isReal ? rd.realIncome : getActiveValue(premises.salaryChangePoints, i);
-    const costOfLiving = isReal ? rd.realCostOfLiving : getActiveValue(
-      premises.costOfLivingChangePoints,
-      i,
-    );
+    const income = isReal
+      ? rd.realIncome
+      : getActiveValue(premises.salaryChangePoints, i);
+    const costOfLiving = isReal
+      ? rd.realCostOfLiving
+      : getActiveValue(premises.costOfLivingChangePoints, i);
 
     // Build a lookup for real allocation payments
     const realAllocationPaymentsMap = new Map<string, number>();
@@ -130,64 +123,92 @@ export function runProjection(
     for (const allocation of allocations) {
       if (allocation.financing) continue;
 
-      // If real data is available for this allocation, use it instead of computed outflow
-      if (isReal && realAllocationPaymentsMap.has(allocation.id)) {
-        const realPayment = realAllocationPaymentsMap.get(allocation.id)!;
-        allocationBalances[allocation.id] += realPayment;
-        allocationOutflows += realPayment;
-        allocationPayments[allocation.id] = realPayment;
-        allocationAccumulated[allocation.id] += realPayment;
-        if (allocation.realizationMode === 'immediate') {
-          allocationRealized[allocation.id] += realPayment;
-        }
-      } else {
-        const { outflow, scheduledMovements: inMovements } = getAllocationOutflow(
-          allocation,
-          i,
-          allocationBalances[allocation.id],
-        );
+      const id = allocation.id;
+      let totalPayment = 0;
 
-        allocationBalances[allocation.id] += outflow;
-        allocationOutflows += outflow;
-        allocationPayments[allocation.id] = outflow;
-        allocationAccumulated[allocation.id] += outflow;
+      if (isReal && realAllocationPaymentsMap.has(id)) {
+        // Real data path: use actual recorded payment
+        const realPayment = realAllocationPaymentsMap.get(id)!;
+        allocationBalances[id] += realPayment;
+        allocationOutflows += realPayment;
+        allocationAccumulated[id] += realPayment;
         if (allocation.realizationMode === 'immediate') {
-          allocationRealized[allocation.id] += outflow;
+          allocationRealized[id] += realPayment;
         }
+        totalPayment = realPayment;
+      } else {
+        // Phase A: Regular monthly aporte (skip if targetReached)
+        let monthlyAporte = 0;
+        if (!targetReached[id]) {
+          monthlyAporte = getMonthlyAporte(allocation, i, allocationAccumulated[id]);
+        }
+
+        // Phase B-in: Scheduled 'in' movements (ALWAYS processed, even after targetReached)
+        const { total: scheduledTotal, hasAdditional, movements: inMovements } =
+          getScheduledInMovements(allocation, i);
+
+        let outflow: number;
+        if (scheduledTotal > 0) {
+          // Scheduled 'in' replaces monthly, unless additionalToMonthly
+          const additionalMonthly =
+            hasAdditional && !targetReached[id]
+              ? getActiveValue(allocation.monthlyAmount, i)
+              : 0;
+          outflow = scheduledTotal + additionalMonthly;
+        } else {
+          outflow = monthlyAporte;
+        }
+
+        allocationBalances[id] += outflow;
+        allocationOutflows += outflow;
+        allocationAccumulated[id] += outflow;
+        if (allocation.realizationMode === 'immediate') {
+          allocationRealized[id] += outflow;
+        }
+        totalPayment = outflow;
 
         for (const sp of inMovements) {
           monthScheduledMovements.push({
-            allocationId: allocation.id,
+            allocationId: id,
             amount: sp.amount,
             label: sp.label,
             type: 'in',
           });
         }
+
+        // Phase D: Target check — set targetReached permanently after aportes
+        if (allocation.target > 0 && allocationAccumulated[id] >= allocation.target) {
+          targetReached[id] = true;
+        }
       }
 
+      allocationPayments[id] = totalPayment;
+
+      // Phase C: Yield (skip if targetReached)
       let yieldEarned = 0;
       if (
+        !targetReached[id] &&
         allocation.holdsFunds &&
         allocation.yieldRate &&
         allocation.yieldRate > 0 &&
-        allocationBalances[allocation.id] > 0
+        allocationBalances[id] > 0
       ) {
         const monthlyRate = allocation.yieldRate / 12;
-        yieldEarned = allocationBalances[allocation.id] * monthlyRate;
-        allocationBalances[allocation.id] += yieldEarned;
-        allocationAccumulated[allocation.id] += yieldEarned;
+        yieldEarned = allocationBalances[id] * monthlyRate;
+        allocationBalances[id] += yieldEarned;
+        allocationAccumulated[id] += yieldEarned;
       }
-      allocationYields[allocation.id] = yieldEarned;
+      allocationYields[id] = yieldEarned;
 
-      // Process 'out' movements for this allocation
+      // Phase B-out: 'out' scheduled movements (ALWAYS processed, even after targetReached)
       const outsThisMonth = (allocation.scheduledMovements ?? []).filter(
         (p) => p.month === i && p.type === 'out',
       );
 
       for (const out of outsThisMonth) {
-        const available = allocationBalances[allocation.id] ?? 0;
+        const available = allocationBalances[id] ?? 0;
         const deduction = Math.min(out.amount, available);
-        allocationBalances[allocation.id] -= deduction;
+        allocationBalances[id] -= deduction;
 
         if (out.destinationBoxId) {
           const destAllocation = allocations.find(
@@ -205,7 +226,7 @@ export function runProjection(
         }
 
         monthScheduledMovements.push({
-          allocationId: allocation.id,
+          allocationId: id,
           amount: deduction,
           label: out.label,
           type: 'out',
@@ -230,9 +251,9 @@ export function runProjection(
       const financingMonth = i - financingStart;
 
       // Process 'in' movements on financing allocation as extra amortization from cash
-      const financingInsThisMonth = (
-        allocation.scheduledMovements ?? []
-      ).filter((p) => p.month === i && p.type === 'in');
+      const financingInsThisMonth = (allocation.scheduledMovements ?? []).filter(
+        (p) => p.month === i && p.type === 'in',
+      );
 
       let extraAmortization = extraAmortizations[allocation.id] ?? 0;
       for (const sp of financingInsThisMonth) {
@@ -278,7 +299,8 @@ export function runProjection(
     let totalWealth = cash;
     let totalCommitted = 0;
     for (const allocation of allocations) {
-      const emMaos = allocationAccumulated[allocation.id] - allocationRealized[allocation.id];
+      const emMaos =
+        allocationAccumulated[allocation.id] - allocationRealized[allocation.id];
       totalWealth += emMaos;
       totalCommitted += allocationRealized[allocation.id];
     }
@@ -293,10 +315,7 @@ export function runProjection(
       allocations: { ...allocationBalances },
       allocationPayments,
       allocationYields: { ...allocationYields },
-      totalYield: Object.values(allocationYields).reduce(
-        (sum, v) => sum + v,
-        0,
-      ),
+      totalYield: Object.values(allocationYields).reduce((sum, v) => sum + v, 0),
       scheduledMovements: monthScheduledMovements,
       totalWealth,
       totalCommitted,

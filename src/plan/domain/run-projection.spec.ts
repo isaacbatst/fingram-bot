@@ -479,7 +479,7 @@ describe('runProjection', () => {
       expect(result[1].allocations['reserva']).toBeCloseTo(2010 + 2010 * 0.01);
     });
 
-    it('should continue yielding after target is reached', () => {
+    it('should stop yielding after target is reached (targetReached is permanent)', () => {
       const allocations = [
         makeAllocation({
           id: 'reserva',
@@ -492,11 +492,12 @@ describe('runProjection', () => {
       ];
       const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
 
-      // Month 1: balance reaches 2000 (capped), yield makes it > 2000
-      // Month 2: no outflow (target reached), but yield still applies
+      // Month 0: deposit 1000, yield on 1000 = 10. accumulated = 1010. Not yet at target.
+      // Month 1: deposit min(1000, 2000-1010) = 990. accumulated = 2000 = target. targetReached set. No yield.
+      // Month 2: targetReached, no outflow, no yield. balance stays at 2000.
       expect(result[2].allocationPayments['reserva']).toBe(0);
-      expect(result[2].allocationYields['reserva']).toBeGreaterThan(0);
-      expect(result[2].allocations['reserva']).toBeGreaterThan(2000);
+      expect(result[2].allocationYields['reserva']).toBe(0);
+      expect(result[2].allocations['reserva']).toBeCloseTo(2000);
     });
 
     it('should not yield on holdsFunds: false box', () => {
@@ -1159,7 +1160,7 @@ describe('runProjection', () => {
       expect(withoutExtra - withExtra).toBeGreaterThan(regularOnlyReduction + 7000);
     });
 
-    it('should resume monthly contributions after withdrawal drops balance below target', () => {
+    it('should NOT resume monthly contributions after withdrawal drops balance below target (targetReached is permanent)', () => {
       const allocations = [
         makeAllocation({
           id: 'reserva',
@@ -1175,13 +1176,13 @@ describe('runProjection', () => {
       ];
       const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
 
-      // Month 0: 15000 + 4000 = 19000
-      // Month 1: 19000 + min(4000, 1000) = 20000 (capped at target), then -10000 = 10000
-      // Month 2: 10000 + 4000 = 14000 (monthly resumes, below target)
-      // Month 3: 14000 + 4000 = 18000
+      // Month 0: 15000 + 4000 = 19000. accumulated = 19000 < 20000. targetReached not set.
+      // Month 1: 19000 + min(4000, 1000) = 20000 (capped at target). targetReached set. Then -10000 = 10000.
+      // Month 2: targetReached, no monthly. balance stays 10000.
+      // Month 3: targetReached, no monthly. balance stays 10000.
       expect(result[1].allocations['reserva']).toBe(10000);
-      expect(result[2].allocations['reserva']).toBe(14000);
-      expect(result[3].allocations['reserva']).toBe(18000);
+      expect(result[2].allocations['reserva']).toBe(10000);
+      expect(result[3].allocations['reserva']).toBe(10000);
     });
 
     it('should allow in movements to exceed target', () => {
@@ -1405,8 +1406,58 @@ describe('runProjection', () => {
 
       expect(result[0].allocationAccumulated[alloc.id]).toBe(1000);
       expect(result[0].allocationRealized[alloc.id]).toBe(1000);
-      const emMaos = result[0].allocationAccumulated[alloc.id] - result[0].allocationRealized[alloc.id];
+      const emMaos =
+        result[0].allocationAccumulated[alloc.id] - result[0].allocationRealized[alloc.id];
       expect(emMaos).toBe(0);
+    });
+
+    it('manual mode: accumulated grows, realized stays 0, em_mãos = accumulated', () => {
+      const alloc = makeAllocation({
+        realizationMode: 'manual',
+        monthlyAmount: [{ month: 0, amount: 1000 }],
+        target: 5000,
+      });
+      const result = runProjection(defaultPremises, [alloc], startDate, 3);
+      expect(result[2].allocationAccumulated[alloc.id]).toBe(3000);
+      expect(result[2].allocationRealized[alloc.id]).toBe(0);
+      expect(result[2].totalWealth).toBeGreaterThan(result[2].cash);
+    });
+
+    it('manual mode: yield applies on em_mãos and increments accumulated', () => {
+      const alloc = makeAllocation({
+        realizationMode: 'manual',
+        monthlyAmount: [{ month: 0, amount: 1000 }],
+        target: 0,
+        yieldRate: 0.12,
+      });
+      const result = runProjection(defaultPremises, [alloc], startDate, 2);
+      expect(result[0].allocationAccumulated[alloc.id]).toBeCloseTo(1010);
+      expect(result[0].allocationRealized[alloc.id]).toBe(0);
+    });
+
+    it('manual mode: aportes stop permanently when accumulated >= target', () => {
+      const alloc = makeAllocation({
+        realizationMode: 'manual',
+        monthlyAmount: [{ month: 0, amount: 1000 }],
+        target: 2500,
+      });
+      const result = runProjection(defaultPremises, [alloc], startDate, 5);
+      expect(result[2].allocationAccumulated[alloc.id]).toBe(2500);
+      expect(result[3].allocationPayments[alloc.id]).toBe(0);
+      expect(result[3].allocationAccumulated[alloc.id]).toBe(2500);
+    });
+
+    it('manual mode: yield stops after target reached', () => {
+      const alloc = makeAllocation({
+        realizationMode: 'manual',
+        monthlyAmount: [{ month: 0, amount: 10000 }],
+        target: 10000,
+        yieldRate: 0.12,
+      });
+      const result = runProjection(defaultPremises, [alloc], startDate, 3);
+      // Month 0: deposit 10000, target reached, yield applied this month
+      // Month 1: targetReached=true, no yield
+      expect(result[1].allocationYields[alloc.id]).toBe(0);
     });
   });
 });
