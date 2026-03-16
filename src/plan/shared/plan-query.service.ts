@@ -5,6 +5,13 @@ import { Plan } from '@/plan/domain/plan';
 import { Allocation } from './domain/allocation';
 import { getActiveValue } from '@/plan/domain/change-point';
 
+function calcPlanMonth(startDate: Date, currentDate: Date): number {
+  const monthsDiff =
+    (currentDate.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
+    (currentDate.getUTCMonth() - startDate.getUTCMonth());
+  return Math.max(0, monthsDiff);
+}
+
 export interface ScheduledMovementMatch {
   allocationId: string;
   allocationLabel: string;
@@ -57,11 +64,7 @@ export class PlanQueryService {
     const activePlan = plans.find((p) => p.status === 'active') ?? plans[0];
     if (!activePlan) return null;
 
-    const startDate = activePlan.startDate;
-    const monthsDiff =
-      (currentDate.getFullYear() - startDate.getFullYear()) * 12 +
-      (currentDate.getMonth() - startDate.getMonth());
-    const planMonth = Math.max(0, monthsDiff);
+    const planMonth = calcPlanMonth(activePlan.startDate, currentDate);
 
     return getActiveValue(
       activePlan.premises.costOfLivingChangePoints,
@@ -82,11 +85,7 @@ export class PlanQueryService {
     const plan = plans.find((p) => p.status === 'active') ?? plans[0];
     if (!plan) return null;
 
-    const startDate = plan.startDate;
-    const monthsDiff =
-      (currentDate.getFullYear() - startDate.getFullYear()) * 12 +
-      (currentDate.getMonth() - startDate.getMonth());
-    const currentPlanMonth = Math.max(0, monthsDiff);
+    const currentPlanMonth = calcPlanMonth(plan.startDate, currentDate);
 
     // 3. For each Pagamento allocation, check scheduled movements for current month
     for (const allocation of allocations) {

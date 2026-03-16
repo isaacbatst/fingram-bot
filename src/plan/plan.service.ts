@@ -174,8 +174,8 @@ export class PlanService {
     const now = new Date();
     const startDate = plan.startDate;
     const monthsDiff =
-      (now.getFullYear() - startDate.getUTCFullYear()) * 12 +
-      (now.getMonth() - startDate.getUTCMonth());
+      (now.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
+      (now.getUTCMonth() - startDate.getUTCMonth());
     const currentMonth = Math.max(0, monthsDiff);
 
     // Build periods for past months

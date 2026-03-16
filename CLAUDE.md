@@ -53,6 +53,27 @@ npm run test:integration  # Integration tests (testcontainers + real PostgreSQL)
 - **Setup:** `test/integration/setup.ts` — container lifecycle, migration, vault creation, truncation helpers
 - **DB setup:** Uses `migrate()` from drizzle-orm to apply real migrations against the test container
 
+## Date/Timezone Handling
+
+**CRITICAL: Always use UTC methods for date arithmetic involving stored dates.**
+
+PostgreSQL `timestamp without time zone` columns store dates without timezone info. Drizzle/node-postgres interprets them as UTC (appending `Z`). When JavaScript's `Date` object uses local-time methods (`getMonth()`, `getFullYear()`), the date shifts in non-UTC timezones:
+
+```
+DB:    2026-01-01 00:00:00           → stored as-is
+JS:    new Date('2026-01-01T00:00:00.000Z')
+       .getMonth()  → 11 (Dec 31 in UTC-3!)   ← WRONG
+       .getUTCMonth() → 0 (Jan 1)              ← CORRECT
+```
+
+**Rules:**
+- Use `getUTCMonth()`, `getUTCFullYear()`, `getUTCDate()` when comparing or computing differences between stored dates
+- Use `Date.UTC()` when constructing dates for queries or period boundaries
+- Never mix local and UTC methods in the same calculation (e.g., `now.getMonth() - startDate.getUTCMonth()`)
+- Server runs in `America/Fortaleza` (UTC-3) — any midnight-UTC date becomes previous day locally
+
+**Where this applies:** Plan month calculations, period ranges, scheduled movement matching, cost-of-living lookups — anywhere a stored `startDate`/`createdAt` is compared to `new Date()`.
+
 ## Verification Commands
 
 ```bash
