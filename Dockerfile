@@ -15,5 +15,6 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=builder /app/dist ./dist
+COPY drizzle ./drizzle
 ENV NODE_ENV=production
-CMD ["node", "dist/main"]
+CMD node dist/migrate.js && node dist/main
