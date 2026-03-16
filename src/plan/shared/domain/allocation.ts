@@ -99,11 +99,6 @@ export class Allocation {
     return this.realizationMode === 'immediate' ? 'pagamento' : 'reserva';
   }
 
-  /** @deprecated Use realizationMode instead */
-  get holdsFunds(): boolean {
-    return this.realizationMode !== 'immediate';
-  }
-
   bindToEstrato(estratoId: string): Either<string, void> {
     if (this.realizationMode === 'immediate') {
       return left('Só alocações Reserva podem vincular a estrato');

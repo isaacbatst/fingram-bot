@@ -11,10 +11,10 @@ describe('Allocation', () => {
     scheduledMovements: [],
   };
 
-  it('creates with UUID and holdsFunds=true (manual realizationMode)', () => {
+  it('creates with UUID and realizationMode=manual (Reserva)', () => {
     const alloc = Allocation.create(baseParams);
     expect(alloc.id).toBeDefined();
-    expect(alloc.holdsFunds).toBe(true);
+    expect(alloc.realizationMode).toBe('manual');
     expect(alloc.type).toBe('reserva');
     expect(alloc.estratoId).toBeNull();
   });
