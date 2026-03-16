@@ -109,6 +109,7 @@ export function runProjection(
     const allocationPayments: Record<string, number> = {};
     const allocationYields: Record<string, number> = {};
     const financingDetails: Record<string, FinancingMonthDetail> = {};
+    const monthRealizedAllocations: string[] = [];
     const monthScheduledMovements: {
       allocationId: string;
       amount: number;
@@ -178,7 +179,14 @@ export function runProjection(
 
         // Phase D: Target check — set targetReached permanently after aportes
         if (allocation.target > 0 && allocationAccumulated[id] >= allocation.target) {
-          targetReached[id] = true;
+          if (!targetReached[id]) {
+            targetReached[id] = true;
+            // onCompletion: auto-realize all accumulated when target first reached
+            if (allocation.realizationMode === 'onCompletion') {
+              allocationRealized[id] = allocationAccumulated[id];
+              monthRealizedAllocations.push(id);
+            }
+          }
         }
       }
 
@@ -323,7 +331,7 @@ export function runProjection(
       isReal,
       allocationAccumulated: { ...allocationAccumulated },
       allocationRealized: { ...allocationRealized },
-      realizedAllocations: [],
+      realizedAllocations: monthRealizedAllocations,
     });
   }
 

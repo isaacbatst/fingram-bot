@@ -1459,5 +1459,59 @@ describe('runProjection', () => {
       // Month 1: targetReached=true, no yield
       expect(result[1].allocationYields[alloc.id]).toBe(0);
     });
+
+    it('onCompletion: realizes all em_mãos when target reached', () => {
+      const alloc = makeAllocation({
+        realizationMode: 'onCompletion',
+        monthlyAmount: [{ month: 0, amount: 5000 }],
+        target: 10000,
+      });
+      const result = runProjection(defaultPremises, [alloc], startDate, 4);
+
+      // Month 0: accumulated=5000, not reached
+      expect(result[0].allocationAccumulated[alloc.id]).toBe(5000);
+      expect(result[0].allocationRealized[alloc.id]).toBe(0);
+
+      // Month 1: accumulated=10000, target reached → auto-realize
+      expect(result[1].allocationAccumulated[alloc.id]).toBe(10000);
+      expect(result[1].allocationRealized[alloc.id]).toBe(10000);
+      expect(result[1].realizedAllocations).toContain(alloc.id);
+
+      // Month 2: no more payments, realized stays
+      expect(result[2].allocationPayments[alloc.id]).toBe(0);
+      expect(result[2].allocationAccumulated[alloc.id]).toBe(10000);
+      expect(result[2].allocationRealized[alloc.id]).toBe(10000);
+    });
+
+    it('onCompletion: totalWealth drops when realized', () => {
+      const alloc = makeAllocation({
+        realizationMode: 'onCompletion',
+        monthlyAmount: [{ month: 0, amount: 10000 }],
+        target: 10000,
+      });
+      const result = runProjection(
+        { salaryChangePoints: [{ month: 0, amount: 50000 }], costOfLivingChangePoints: [{ month: 0, amount: 10000 }] },
+        [alloc],
+        startDate,
+        3,
+      );
+      // Month 0: accumulated=10k, realized=10k, em_mãos=0
+      // Wealth = cash(30k) + em_mãos(0) = 30k
+      expect(result[0].totalWealth).toBe(30000);
+      // Month 1: no payments, surplus=40k
+      expect(result[1].totalWealth).toBe(70000);
+    });
+
+    it('onCompletion: yield stops after target reached', () => {
+      const alloc = makeAllocation({
+        realizationMode: 'onCompletion',
+        monthlyAmount: [{ month: 0, amount: 10000 }],
+        target: 10000,
+        yieldRate: 0.12,
+      });
+      const result = runProjection(defaultPremises, [alloc], startDate, 3);
+      expect(result[1].allocationYields[alloc.id]).toBe(0);
+      expect(result[2].allocationYields[alloc.id]).toBe(0);
+    });
   });
 });
