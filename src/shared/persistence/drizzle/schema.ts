@@ -75,6 +75,7 @@ export const transaction = pgTable('transaction', {
   boxId: text('box_id').references(() => box.id),
   transferId: text('transfer_id'),
   allocationId: text('allocation_id').references(() => allocation.id, { onDelete: 'set null' }),
+  withdrawalType: text('withdrawal_type'),
 });
 
 export const budget = pgTable('budget', {
@@ -115,7 +116,7 @@ export const allocation = pgTable('allocation', {
   label: text('label').notNull(),
   target: doublePrecision('target').notNull().default(0),
   monthlyAmount: jsonb('monthly_amount').notNull().default('[]'),
-  holdsFunds: boolean('holds_funds').notNull(),
+  realizationMode: text('realization_mode').notNull().default('manual'),
   yieldRate: doublePrecision('yield_rate'),
   financing: jsonb('financing'),
   scheduledMovements: jsonb('scheduled_movements').notNull().default('[]'),
