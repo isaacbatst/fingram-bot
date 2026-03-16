@@ -64,6 +64,9 @@ export interface MonthData {
   totalCommitted: number;
   financingDetails: Record<string, FinancingMonthDetail>;
   isReal: boolean;
+  allocationAccumulated: Record<string, number>;
+  allocationRealized: Record<string, number>;
+  realizedAllocations: string[];
 }
 
 type ConstructorParams = {
