@@ -73,7 +73,7 @@ export async function createTestAllocation(
   params: {
     planId: string;
     label: string;
-    holdsFunds: boolean;
+    realizationMode: 'immediate' | 'manual' | 'onCompletion';
     target?: number;
     monthlyAmount?: any[];
     scheduledMovements?: any[];
@@ -87,7 +87,7 @@ export async function createTestAllocation(
     id,
     planId: params.planId,
     label: params.label,
-    holdsFunds: params.holdsFunds,
+    realizationMode: params.realizationMode,
     target: params.target ?? 0,
     monthlyAmount: params.monthlyAmount ?? [],
     scheduledMovements: params.scheduledMovements ?? [],

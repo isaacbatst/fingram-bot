@@ -57,7 +57,7 @@ describe('Plan API (integration)', () => {
               label: 'Reserva',
               target: 0,
               monthlyAmount: [{ month: 0, amount: 1000 }],
-              holdsFunds: true,
+              realizationMode: 'manual',
               yieldRate: 0.12,
               scheduledMovements: [],
             },
@@ -70,7 +70,7 @@ describe('Plan API (integration)', () => {
       expect(res.body.allocations[0].yieldRate).toBe(0.12);
     });
 
-    it('should reject yieldRate on holdsFunds: false allocation', async () => {
+    it('should reject yieldRate on immediate realizationMode allocation', async () => {
       await request(app.getHttpServer())
         .post('/plans')
         .set('Cookie', `vault_access_token=${vaultToken}`)
@@ -86,7 +86,7 @@ describe('Plan API (integration)', () => {
               label: 'Terreno',
               target: 100000,
               monthlyAmount: [{ month: 0, amount: 2000 }],
-              holdsFunds: false,
+              realizationMode: 'immediate',
               yieldRate: 0.12,
               scheduledMovements: [],
             },
@@ -119,7 +119,7 @@ describe('Plan API (integration)', () => {
               label: 'Reserva',
               target: 0,
               monthlyAmount: [{ month: 0, amount: 1000 }],
-              holdsFunds: true,
+              realizationMode: 'manual',
               yieldRate: 0.12,
               scheduledMovements: [],
             },
@@ -168,7 +168,7 @@ describe('Plan API (integration)', () => {
               label: 'Reserva',
               target: 0,
               monthlyAmount: [{ month: 0, amount: 1000 }],
-              holdsFunds: true,
+              realizationMode: 'manual',
               scheduledMovements: [],
             },
           ],
@@ -207,7 +207,7 @@ describe('Plan API (integration)', () => {
               label: 'Financiamento Casa',
               target: 0,
               monthlyAmount: [],
-              holdsFunds: false,
+              realizationMode: 'immediate',
               scheduledMovements: [],
               financing: {
                 principal: 120_000,
@@ -273,7 +273,7 @@ describe('Plan API (integration)', () => {
               label: 'Carro',
               target: 0,
               monthlyAmount: [],
-              holdsFunds: false,
+              realizationMode: 'immediate',
               scheduledMovements: [],
               financing: {
                 principal: 60_000,
@@ -308,7 +308,7 @@ describe('Plan API (integration)', () => {
       ).toBeCloseTo(0, 0);
     });
 
-    it('should reject financing on holdsFunds: true allocation', async () => {
+    it('should reject financing on manual realizationMode allocation', async () => {
       await request(app.getHttpServer())
         .post('/plans')
         .set('Cookie', `vault_access_token=${vaultToken}`)
@@ -324,7 +324,7 @@ describe('Plan API (integration)', () => {
               label: 'Errado',
               target: 0,
               monthlyAmount: [],
-              holdsFunds: true,
+              realizationMode: 'manual',
               scheduledMovements: [],
               financing: {
                 principal: 100_000,
@@ -354,7 +354,7 @@ describe('Plan API (integration)', () => {
               label: 'Financiamento Obra',
               target: 0,
               monthlyAmount: [],
-              holdsFunds: false,
+              realizationMode: 'immediate',
               scheduledMovements: [],
               financing: {
                 principal: 1_200_000,
@@ -414,7 +414,7 @@ describe('Plan API (integration)', () => {
               label: 'Reserva',
               target: 50000,
               monthlyAmount: [{ month: 0, amount: 1000 }],
-              holdsFunds: true,
+              realizationMode: 'manual',
               scheduledMovements: [],
             },
           ],
@@ -446,7 +446,7 @@ describe('Plan API (integration)', () => {
     });
 
     it('should reject binding Pagamento allocation to box', async () => {
-      // Create a plan with a Pagamento allocation (holdsFunds: false)
+      // Create a plan with a Pagamento allocation (realizationMode: 'immediate')
       const createRes = await request(app.getHttpServer())
         .post('/plans')
         .set('Cookie', `vault_access_token=${vaultToken}`)
@@ -462,7 +462,7 @@ describe('Plan API (integration)', () => {
               label: 'Terreno',
               target: 100000,
               monthlyAmount: [{ month: 0, amount: 2000 }],
-              holdsFunds: false,
+              realizationMode: 'immediate',
               scheduledMovements: [],
             },
           ],
@@ -508,7 +508,7 @@ describe('Plan API (integration)', () => {
               label: 'Reserva',
               target: 50000,
               monthlyAmount: [{ month: 0, amount: 1000 }],
-              holdsFunds: true,
+              realizationMode: 'manual',
               scheduledMovements: [],
             },
           ],
@@ -562,7 +562,7 @@ describe('Plan API (integration)', () => {
               label: 'Reserva',
               target: 50000,
               monthlyAmount: [{ month: 0, amount: 1000 }],
-              holdsFunds: true,
+              realizationMode: 'manual',
               scheduledMovements: [],
             },
           ],
@@ -610,7 +610,7 @@ describe('Plan API (integration)', () => {
               label: 'Reserva',
               target: 50000,
               monthlyAmount: [{ month: 0, amount: 1000 }],
-              holdsFunds: true,
+              realizationMode: 'manual',
               scheduledMovements: [],
             },
           ],
@@ -658,7 +658,7 @@ describe('Plan API (integration)', () => {
               label: 'Reserva',
               target: 50000,
               monthlyAmount: [{ month: 0, amount: 1000 }],
-              holdsFunds: true,
+              realizationMode: 'manual',
               scheduledMovements: [],
             },
           ],
@@ -716,14 +716,14 @@ describe('Plan API (integration)', () => {
               label: 'Reserva A',
               target: 25000,
               monthlyAmount: [{ month: 0, amount: 500 }],
-              holdsFunds: true,
+              realizationMode: 'manual',
               scheduledMovements: [],
             },
             {
               label: 'Reserva B',
               target: 25000,
               monthlyAmount: [{ month: 0, amount: 500 }],
-              holdsFunds: true,
+              realizationMode: 'manual',
               scheduledMovements: [],
             },
           ],
@@ -781,14 +781,14 @@ describe('Plan API (integration)', () => {
               label: 'Terreno',
               target: 100000,
               monthlyAmount: [{ month: 0, amount: 2000 }],
-              holdsFunds: false,
+              realizationMode: 'immediate',
               scheduledMovements: [],
             },
             {
               label: 'Reserva',
               target: 50000,
               monthlyAmount: [{ month: 0, amount: 1000 }],
-              holdsFunds: true,
+              realizationMode: 'manual',
               scheduledMovements: [],
             },
           ],
@@ -796,10 +796,10 @@ describe('Plan API (integration)', () => {
         .expect(201);
 
       const pagamentoAllocation = res.body.allocations.find(
-        (a: any) => !a.holdsFunds,
+        (a: any) => a.realizationMode === 'immediate',
       );
       const reservaAllocation = res.body.allocations.find(
-        (a: any) => a.holdsFunds,
+        (a: any) => a.realizationMode !== 'immediate',
       );
 
       return {
@@ -935,9 +935,9 @@ describe('Plan API (integration)', () => {
 
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBeGreaterThan(0);
-      // All returned allocations must be Pagamento (holdsFunds === false)
+      // All returned allocations must be Pagamento (realizationMode === 'immediate')
       for (const alloc of res.body) {
-        expect(alloc.holdsFunds).toBe(false);
+        expect(alloc.realizationMode).toBe('immediate');
       }
     });
   });
@@ -1098,7 +1098,7 @@ describe('Plan API (integration)', () => {
               label: 'Terreno',
               target: 100000,
               monthlyAmount: [{ month: 0, amount: 2000 }],
-              holdsFunds: false,
+              realizationMode: 'immediate',
               scheduledMovements: [],
             },
           ],
@@ -1214,7 +1214,7 @@ describe('Plan API (integration)', () => {
       opts: {
         scheduledMovements?: any[];
         monthlyAmount?: any[];
-        holdsFunds?: boolean;
+        realizationMode?: 'immediate' | 'manual' | 'onCompletion';
       } = {},
     ) {
       const now = new Date();
@@ -1238,7 +1238,7 @@ describe('Plan API (integration)', () => {
               label: 'Terreno',
               target: 100000,
               monthlyAmount: opts.monthlyAmount ?? [{ month: 0, amount: 2000 }],
-              holdsFunds: opts.holdsFunds ?? false,
+              realizationMode: opts.realizationMode ?? 'immediate',
               scheduledMovements: opts.scheduledMovements ?? [
                 {
                   month: 0,
