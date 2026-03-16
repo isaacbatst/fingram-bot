@@ -4,6 +4,8 @@ import { Either, left, right } from '@/vault/domain/either';
 
 export type AllocationType = 'reserva' | 'pagamento';
 
+export type RealizationMode = 'immediate' | 'manual' | 'onCompletion';
+
 export interface AllocationFinancing {
   principal: number;
   annualRate: number;
@@ -29,7 +31,7 @@ type CreateParams = {
   label: string;
   target: number;
   monthlyAmount: ChangePoint[];
-  holdsFunds: boolean;
+  realizationMode: RealizationMode;
   yieldRate?: number;
   financing?: AllocationFinancing;
   scheduledMovements: AllocationScheduledMovement[];
@@ -42,7 +44,7 @@ type RestoreParams = {
   label: string;
   target: number;
   monthlyAmount: ChangePoint[];
-  holdsFunds: boolean;
+  realizationMode: RealizationMode;
   yieldRate?: number;
   financing?: AllocationFinancing;
   scheduledMovements: AllocationScheduledMovement[];
@@ -70,7 +72,7 @@ export class Allocation {
   label: string;
   target: number;
   monthlyAmount: ChangePoint[];
-  readonly holdsFunds: boolean;
+  readonly realizationMode: RealizationMode;
   yieldRate?: number;
   financing?: AllocationFinancing;
   scheduledMovements: AllocationScheduledMovement[];
@@ -84,7 +86,7 @@ export class Allocation {
     this.label = params.label;
     this.target = params.target;
     this.monthlyAmount = params.monthlyAmount;
-    this.holdsFunds = params.holdsFunds;
+    this.realizationMode = params.realizationMode;
     this.yieldRate = params.yieldRate;
     this.financing = params.financing;
     this.scheduledMovements = params.scheduledMovements;
@@ -94,11 +96,16 @@ export class Allocation {
   }
 
   get type(): AllocationType {
-    return this.holdsFunds ? 'reserva' : 'pagamento';
+    return this.realizationMode === 'immediate' ? 'pagamento' : 'reserva';
+  }
+
+  /** @deprecated Use realizationMode instead */
+  get holdsFunds(): boolean {
+    return this.realizationMode !== 'immediate';
   }
 
   bindToEstrato(estratoId: string): Either<string, void> {
-    if (!this.holdsFunds) {
+    if (this.realizationMode === 'immediate') {
       return left('Só alocações Reserva podem vincular a estrato');
     }
     this.estratoId = estratoId;
