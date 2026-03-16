@@ -1,16 +1,20 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import * as schema from '@/shared/persistence/drizzle/schema';
 import { INestApplication } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import request from 'supertest';
-import { eq, sql } from 'drizzle-orm';
-import * as schema from '@/shared/persistence/drizzle/schema';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import {
+  createTestTransaction,
+  createTestVault,
   startTestApp,
   stopTestApp,
-  createTestVault,
-  createTestAllocation,
   truncateAll,
-  createTestTransaction,
 } from './setup';
 
 describe('Plan API (integration)', () => {
@@ -231,12 +235,13 @@ describe('Plan API (integration)', () => {
       expect(months[0].financingDetails[allocationId].phase).toBe(
         'amortization',
       );
-      expect(
-        months[0].financingDetails[allocationId].amortization,
-      ).toBeCloseTo(10_000, 0);
-      expect(
-        months[0].financingDetails[allocationId].interest,
-      ).toBeGreaterThan(0);
+      expect(months[0].financingDetails[allocationId].amortization).toBeCloseTo(
+        10_000,
+        0,
+      );
+      expect(months[0].financingDetails[allocationId].interest).toBeGreaterThan(
+        0,
+      );
 
       // Payments should decline (SAC)
       expect(months[11].financingDetails[allocationId].payment).toBeLessThan(
@@ -1232,9 +1237,7 @@ describe('Plan API (integration)', () => {
             {
               label: 'Terreno',
               target: 100000,
-              monthlyAmount: opts.monthlyAmount ?? [
-                { month: 0, amount: 2000 },
-              ],
+              monthlyAmount: opts.monthlyAmount ?? [{ month: 0, amount: 2000 }],
               holdsFunds: opts.holdsFunds ?? false,
               scheduledMovements: opts.scheduledMovements ?? [
                 {
