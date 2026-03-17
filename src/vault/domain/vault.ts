@@ -508,6 +508,7 @@ export class Vault {
 
     for (const transaction of this.transactions.values()) {
       if (transaction.type !== 'expense') continue;
+      if (transaction.allocationId) continue;
 
       if (transaction.transferId) {
         // includeAll: exclude all transfers (they cancel out vault-wide)

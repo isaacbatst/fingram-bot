@@ -535,6 +535,28 @@ describe('Vault - Boxes', () => {
     expect(vault.totalSpentAmount({ month: 3, year: 2026 })).toBe(300);
   });
 
+  it('should exclude expenses with allocationId from totalSpentAmount', () => {
+    const vault = new Vault();
+    const box = Box.create({ name: 'Principal', type: 'spending', isDefault: true, vaultId: vault.id });
+    vault.addBox(box);
+
+    vault.addTransaction(Transaction.restore({
+      id: 'spent-t1', code: 'b1', vaultId: vault.id, boxId: box.id,
+      transferId: null, allocationId: null,
+      amount: 500, isCommitted: true, description: 'Supermercado',
+      createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
+    }));
+
+    vault.addTransaction(Transaction.restore({
+      id: 'spent-t2', code: 'b2', vaultId: vault.id, boxId: box.id,
+      transferId: null, allocationId: 'alloc-1',
+      amount: 1893, isCommitted: true, description: 'Parcela terreno',
+      createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
+    }));
+
+    expect(vault.totalSpentAmount({ month: 3, year: 2026 })).toBe(500);
+  });
+
   it('should exclude expenses with allocationId from budget summary', () => {
     const vault = new Vault();
     const category = new Category('cat-alloc-1', 'Moradia', '1');
