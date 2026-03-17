@@ -565,6 +565,8 @@ export class Vault {
       date = this.getCurrentBudgetPeriod();
     }
 
+    // Planned expenses are always in spending boxes (direct expense tagged with allocationId).
+    // No isSpendingTransaction check needed — unlike totalSpentAmount which handles cross-type transfers.
     for (const transaction of this.transactions.values()) {
       if (transaction.type !== 'expense') continue;
       if (!transaction.allocationId) continue;
