@@ -49,6 +49,7 @@ export interface SerializedVault {
   percentageTotalBudgetedAmount: number;
   totalSpentAmount: number;
   totalIncomeAmount: number;
+  totalPlannedExpenses: number;
   budgetsSummary: BudgetSummary[];
   budgetStartDay: number;
 }
@@ -558,6 +559,24 @@ export class Vault {
     return total;
   }
 
+  totalPlannedExpenses(date?: { month: number; year: number }): number {
+    let total = 0;
+    if (!date) {
+      date = this.getCurrentBudgetPeriod();
+    }
+
+    for (const transaction of this.transactions.values()) {
+      if (transaction.type !== 'expense') continue;
+      if (!transaction.allocationId) continue;
+
+      const transactionDate = new Date(transaction.date);
+      if (this.isDateInBudgetPeriod(transactionDate, date.month, date.year)) {
+        total += Math.abs(transaction.amount);
+      }
+    }
+    return total;
+  }
+
   getCustomPrompt(): string {
     return this.customPrompt;
   }
@@ -646,6 +665,7 @@ export class Vault {
       percentageTotalBudgetedAmount: this.percentageTotalBudgetedAmount(),
       totalSpentAmount: this.totalSpentAmount(options.date),
       totalIncomeAmount: this.totalIncomeAmount(options.date),
+      totalPlannedExpenses: this.totalPlannedExpenses(options.date),
       budgetsSummary: this.getBudgetsSummary(
         options.date?.month,
         options.date?.year,

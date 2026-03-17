@@ -587,6 +587,51 @@ describe('Vault - Boxes', () => {
     expect(moradia.percentageUsed).toBe(30);
   });
 
+  it('should return sum of expenses with allocationId from totalPlannedExpenses', () => {
+    const vault = new Vault();
+    const box = Box.create({ name: 'Principal', type: 'spending', isDefault: true, vaultId: vault.id });
+    vault.addBox(box);
+
+    vault.addTransaction(Transaction.restore({
+      id: 'planned-t1', code: 'c1', vaultId: vault.id, boxId: box.id,
+      transferId: null, allocationId: null,
+      amount: 500, isCommitted: true, description: 'Supermercado',
+      createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
+    }));
+
+    vault.addTransaction(Transaction.restore({
+      id: 'planned-t2', code: 'c2', vaultId: vault.id, boxId: box.id,
+      transferId: null, allocationId: 'alloc-1',
+      amount: 1893, isCommitted: true, description: 'Parcela terreno',
+      createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
+    }));
+
+    vault.addTransaction(Transaction.restore({
+      id: 'planned-t3', code: 'c3', vaultId: vault.id, boxId: box.id,
+      transferId: null, allocationId: 'alloc-2',
+      amount: 200, isCommitted: true, description: 'Seguro',
+      createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
+    }));
+
+    expect(vault.totalPlannedExpenses({ month: 3, year: 2026 })).toBe(2093);
+  });
+
+  it('should include totalPlannedExpenses in toJSON serialization', () => {
+    const vault = new Vault();
+    const box = Box.create({ name: 'Principal', type: 'spending', isDefault: true, vaultId: vault.id });
+    vault.addBox(box);
+
+    vault.addTransaction(Transaction.restore({
+      id: 'planned-t4', code: 'd1', vaultId: vault.id, boxId: box.id,
+      transferId: null, allocationId: 'alloc-1',
+      amount: 1000, isCommitted: true, description: 'Parcela',
+      createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
+    }));
+
+    const json = vault.toJSON({ date: { month: 3, year: 2026 } });
+    expect(json.totalPlannedExpenses).toBe(1000);
+  });
+
   it('should exclude transfers from totalIncomeAmount', () => {
     const vault = new Vault();
     const boxA = Box.create({ vaultId: vault.id, name: 'A' });
