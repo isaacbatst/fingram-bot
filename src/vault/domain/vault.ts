@@ -454,7 +454,8 @@ export class Vault {
           if (
             transaction.categoryId !== categoryId ||
             transaction.type !== 'expense' ||
-            transaction.transferId
+            transaction.transferId ||
+            transaction.allocationId
           ) {
             return false;
           }

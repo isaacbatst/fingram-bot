@@ -535,6 +535,36 @@ describe('Vault - Boxes', () => {
     expect(vault.totalSpentAmount({ month: 3, year: 2026 })).toBe(300);
   });
 
+  it('should exclude expenses with allocationId from budget summary', () => {
+    const vault = new Vault();
+    const category = new Category('cat-alloc-1', 'Moradia', '1');
+    vault.setBudget(category, 1000);
+
+    const box = Box.create({ name: 'Principal', type: 'spending', isDefault: true, vaultId: vault.id });
+    vault.addBox(box);
+
+    // Regular expense — should count
+    vault.addTransaction(Transaction.restore({
+      id: 'alloc-t1', code: 'a1', vaultId: vault.id, boxId: box.id,
+      transferId: null, allocationId: null,
+      amount: 300, isCommitted: true, description: 'Aluguel',
+      createdAt: new Date(), date: new Date('2026-03-15'), categoryId: 'cat-alloc-1', type: 'expense',
+    }));
+
+    // Allocation-tagged expense — should NOT count
+    vault.addTransaction(Transaction.restore({
+      id: 'alloc-t2', code: 'a2', vaultId: vault.id, boxId: box.id,
+      transferId: null, allocationId: 'alloc-1',
+      amount: 1893, isCommitted: true, description: 'Parcela terreno',
+      createdAt: new Date(), date: new Date('2026-03-15'), categoryId: 'cat-alloc-1', type: 'expense',
+    }));
+
+    const summary = vault.getBudgetsSummary(3, 2026);
+    const moradia = summary.find(s => s.category.id === 'cat-alloc-1')!;
+    expect(moradia.spent).toBe(300);
+    expect(moradia.percentageUsed).toBe(30);
+  });
+
   it('should exclude transfers from totalIncomeAmount', () => {
     const vault = new Vault();
     const boxA = Box.create({ vaultId: vault.id, name: 'A' });
