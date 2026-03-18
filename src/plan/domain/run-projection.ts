@@ -157,7 +157,7 @@ export function runProjection(
       const id = allocation.id;
       let totalPayment = 0;
 
-      if (isReal && realAllocationPaymentsMap.has(id)) {
+      if (realAllocationPaymentsMap.has(id)) {
         // Real data path: use actual recorded payment
         const realPayment = realAllocationPaymentsMap.get(id)!;
         allocationBalances[id] += realPayment;
