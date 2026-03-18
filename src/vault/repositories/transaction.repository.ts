@@ -7,6 +7,7 @@ export interface AggregationTransaction {
   boxId: string | null;
   allocationId: string | null;
   transferId: string | null;
+  withdrawalType: 'withdrawal' | 'realization' | null;
 }
 
 export abstract class TransactionRepository {

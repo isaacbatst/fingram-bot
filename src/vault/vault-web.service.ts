@@ -283,6 +283,7 @@ export class VaultWebService {
       date: Date;
       type: 'income' | 'expense';
       allocationId?: string;
+      withdrawalType?: 'withdrawal' | 'realization';
     },
   ): Promise<
     Either<
@@ -308,14 +309,20 @@ export class VaultWebService {
           type: data.type,
           shouldCommit: true, // Auto-commit new transactions
           allocationId: data.allocationId,
+          withdrawalType: data.withdrawalType,
         },
         platform: 'web',
       });
 
       if (error !== null) {
         const isValidationError =
-          error === 'Só alocações Pagamento podem ser vinculadas a transações' ||
-          error === 'Alocação não pertence a este vault';
+          error === 'Alocação não pertence a este vault' ||
+          error === 'Alocação não encontrada' ||
+          error ===
+            'Transações vinculadas a alocações Reserva precisam de withdrawalType' ||
+          error === 'withdrawalType só se aplica a alocações Reserva' ||
+          error ===
+            'Alocações com realizationMode "never" não aceitam realização';
         return left({
           type: isValidationError
             ? VaultErrorType.BAD_REQUEST
@@ -379,8 +386,13 @@ export class VaultWebService {
 
       if (error !== null) {
         const isValidationError =
-          error === 'Só alocações Pagamento podem ser vinculadas a transações' ||
-          error === 'Alocação não pertence a este vault';
+          error === 'Alocação não pertence a este vault' ||
+          error === 'Alocação não encontrada' ||
+          error ===
+            'Transações vinculadas a alocações Reserva precisam de withdrawalType' ||
+          error === 'withdrawalType só se aplica a alocações Reserva' ||
+          error ===
+            'Alocações com realizationMode "never" não aceitam realização';
         return left({
           type: isValidationError
             ? VaultErrorType.BAD_REQUEST
@@ -713,9 +725,7 @@ export class VaultWebService {
     }
   }
 
-  async getBudgetCeiling(
-    vaultId: string,
-  ): Promise<
+  async getBudgetCeiling(vaultId: string): Promise<
     Either<
       VaultError,
       {

@@ -1,6 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Either, left, right } from '@/vault/domain/either';
-import { Plan, Milestone, MonthData, Premises, RealMonthData } from './domain/plan';
+import {
+  Plan,
+  Milestone,
+  MonthData,
+  Premises,
+  RealMonthData,
+} from './domain/plan';
 import { Allocation } from './shared/domain/allocation';
 import { runProjection } from './domain/run-projection';
 import { PlanRepository } from './repositories/plan.repository';
@@ -54,9 +60,7 @@ export class PlanService {
     }
 
     if (!input.premises.salaryChangePoints?.length) {
-      return left(
-        'Premissas devem ter pelo menos um change point de salário',
-      );
+      return left('Premissas devem ter pelo menos um change point de salário');
     }
 
     if (!input.premises.costOfLivingChangePoints?.length) {
@@ -67,9 +71,7 @@ export class PlanService {
 
     for (const cp of input.premises.salaryChangePoints) {
       if (cp.amount < 0) {
-        return left(
-          'Valor do change point de salário não pode ser negativo',
-        );
+        return left('Valor do change point de salário não pode ser negativo');
       }
       if (cp.month < 0) {
         return left('Mês do change point não pode ser negativo');
@@ -97,16 +99,27 @@ export class PlanService {
       if (alloc.yieldRate !== undefined && alloc.yieldRate < 0) {
         return left('Taxa de rendimento não pode ser negativa');
       }
-      if (alloc.yieldRate !== undefined && alloc.realizationMode === 'immediate') {
+      if (
+        alloc.yieldRate !== undefined &&
+        alloc.realizationMode === 'immediate'
+      ) {
         return left(
           'Taxa de rendimento só pode ser definida para alocações que retêm fundos',
         );
       }
-      if (alloc.realizationMode === 'onCompletion' && (!alloc.target || alloc.target <= 0)) {
+      if (
+        alloc.realizationMode === 'onCompletion' &&
+        (!alloc.target || alloc.target <= 0)
+      ) {
         return left('Modo onCompletion requer target > 0');
       }
-      if (alloc.realizationMode === 'immediate' && alloc.scheduledMovements?.some((m) => m.type === 'out')) {
-        return left('Alocações immediate não suportam scheduled movements do tipo out');
+      if (
+        alloc.realizationMode === 'immediate' &&
+        alloc.scheduledMovements?.some((m) => m.type === 'out')
+      ) {
+        return left(
+          'Alocações immediate não suportam scheduled movements do tipo out',
+        );
       }
       if (alloc.financing) {
         if (alloc.realizationMode !== 'immediate') {
@@ -118,9 +131,7 @@ export class PlanService {
           return left('Principal do financiamento deve ser maior que zero');
         }
         if (alloc.financing.annualRate <= 0) {
-          return left(
-            'Taxa de juros do financiamento deve ser maior que zero',
-          );
+          return left('Taxa de juros do financiamento deve ser maior que zero');
         }
         if (
           alloc.financing.termMonths <= 0 ||
@@ -185,14 +196,18 @@ export class PlanService {
       (now.getUTCMonth() - startDate.getUTCMonth());
     const currentMonth = Math.max(0, monthsDiff);
 
-    // Build periods for past months
+    // Build periods for past months + current month
     const periods: PeriodRange[] = [];
-    for (let i = 0; i < currentMonth; i++) {
+    for (let i = 0; i <= currentMonth; i++) {
       const periodStart = new Date(
         Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + i, 1),
       );
       const periodEnd = new Date(
-        Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth() + i + 1, 1),
+        Date.UTC(
+          startDate.getUTCFullYear(),
+          startDate.getUTCMonth() + i + 1,
+          1,
+        ),
       );
       periods.push({ month: i, startDate: periodStart, endDate: periodEnd });
     }
@@ -244,7 +259,8 @@ export class PlanService {
     if (!allocation) return left('Alocação não encontrada');
 
     const plan = await this.planQuery.findPlanById(allocation.planId);
-    if (!plan || plan.vaultId !== vaultId) return left('Alocação não pertence a este vault');
+    if (!plan || plan.vaultId !== vaultId)
+      return left('Alocação não pertence a este vault');
 
     if (estratoId === null) {
       allocation.unbindEstrato();
@@ -254,8 +270,10 @@ export class PlanService {
 
     const box = await this.vaultQuery.findBoxById(estratoId);
     if (!box) return left('Estrato não encontrado');
-    if (box.vaultId !== vaultId) return left('Estrato não pertence a este vault');
-    if (box.type !== 'saving') return left('Só estratos do tipo saving podem ser vinculados');
+    if (box.vaultId !== vaultId)
+      return left('Estrato não pertence a este vault');
+    if (box.type !== 'saving')
+      return left('Só estratos do tipo saving podem ser vinculados');
 
     const [bindError] = allocation.bindToEstrato(estratoId);
     if (bindError) return left(bindError);

@@ -4,7 +4,7 @@ import { Either, left, right } from '@/vault/domain/either';
 
 export type AllocationType = 'reserva' | 'pagamento';
 
-export type RealizationMode = 'immediate' | 'manual' | 'onCompletion';
+export type RealizationMode = 'immediate' | 'manual' | 'onCompletion' | 'never';
 
 export interface AllocationFinancing {
   principal: number;

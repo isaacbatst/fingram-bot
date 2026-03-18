@@ -80,7 +80,8 @@ export class VaultQueryService {
       const transferExpenses = expenses
         .filter((t) => t.transferId)
         .reduce((sum, t) => sum + t.amount, 0);
-      const realCostOfLiving = totalExpenses - taggedExpenses - transferExpenses;
+      const realCostOfLiving =
+        totalExpenses - taggedExpenses - transferExpenses;
 
       // Income = income - income in linked estratos
       const totalIncome = incomes.reduce((sum, t) => sum + t.amount, 0);
@@ -99,7 +100,8 @@ export class VaultQueryService {
           return { allocationId: ctx.allocationId, amount };
         } else {
           // Reserva: sum transfers INTO the linked estrato
-          if (!ctx.estratoId) return { allocationId: ctx.allocationId, amount: 0 };
+          if (!ctx.estratoId)
+            return { allocationId: ctx.allocationId, amount: 0 };
           const amount = incomes
             .filter((t) => t.boxId === ctx.estratoId && t.transferId)
             .reduce((sum, t) => sum + t.amount, 0);
@@ -115,7 +117,7 @@ export class VaultQueryService {
             .filter(
               (t) =>
                 t.allocationId === ctx.allocationId &&
-                (t as any).withdrawalType === 'realization',
+                t.withdrawalType === 'realization',
             )
             .reduce((sum, t) => sum + t.amount, 0);
           return { allocationId: ctx.allocationId, amount };

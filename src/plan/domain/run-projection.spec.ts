@@ -66,7 +66,12 @@ describe('runProjection', () => {
         initialBalance: 2500,
       }),
     ];
-    const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
+    const result = runProjection(
+      defaultPremises,
+      allocations,
+      defaultStartDate,
+      1,
+    );
 
     // Month 0: 2500 initial + 4000 deposit = 6500
     expect(result[0].allocations['reserva']).toBe(6500);
@@ -74,7 +79,12 @@ describe('runProjection', () => {
 
   it('should calculate basic surplus correctly', () => {
     const allocations = [makeAllocation()];
-    const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
+    const result = runProjection(
+      defaultPremises,
+      allocations,
+      defaultStartDate,
+      1,
+    );
 
     expect(result).toHaveLength(1);
     expect(result[0].income).toBe(10000);
@@ -86,7 +96,12 @@ describe('runProjection', () => {
 
   it('should return correct month numbers and dates', () => {
     const startDate = new Date(2026, 2, 1);
-    const result = runProjection(defaultPremises, [makeAllocation()], startDate, 3);
+    const result = runProjection(
+      defaultPremises,
+      [makeAllocation()],
+      startDate,
+      3,
+    );
 
     expect(result[0].month).toBe(0);
     expect(result[0].date.getUTCMonth()).toBe(2); // March
@@ -137,7 +152,12 @@ describe('runProjection', () => {
         realizationMode: 'manual',
       }),
     ];
-    const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
+    const result = runProjection(
+      defaultPremises,
+      allocations,
+      defaultStartDate,
+      3,
+    );
 
     expect(result[0].allocations['reserva']).toBe(4000);
     expect(result[0].allocationPayments['reserva']).toBe(4000);
@@ -156,10 +176,17 @@ describe('runProjection', () => {
         target: 50000,
         monthlyAmount: [],
         realizationMode: 'immediate',
-        scheduledMovements: [{ month: 2, amount: 10000, label: 'Entrada', type: 'in' }],
+        scheduledMovements: [
+          { month: 2, amount: 10000, label: 'Entrada', type: 'in' },
+        ],
       }),
     ];
-    const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
+    const result = runProjection(
+      defaultPremises,
+      allocations,
+      defaultStartDate,
+      4,
+    );
 
     expect(result[0].allocationPayments['pontual']).toBe(0);
     expect(result[1].allocationPayments['pontual']).toBe(0);
@@ -181,12 +208,22 @@ describe('runProjection', () => {
         ],
       }),
     ];
-    const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
+    const result = runProjection(
+      defaultPremises,
+      allocations,
+      defaultStartDate,
+      3,
+    );
 
     expect(result[0].allocationPayments['terreno']).toBe(2000);
     expect(result[1].allocationPayments['terreno']).toBe(10000);
     expect(result[1].scheduledMovements).toEqual([
-      { allocationId: 'terreno', amount: 10000, label: 'Entrada 1/4', type: 'in' },
+      {
+        allocationId: 'terreno',
+        amount: 10000,
+        label: 'Entrada 1/4',
+        type: 'in',
+      },
     ]);
     expect(result[2].allocationPayments['terreno']).toBe(2000);
   });
@@ -210,7 +247,12 @@ describe('runProjection', () => {
         ],
       }),
     ];
-    const result = runProjection(defaultPremises, allocations, defaultStartDate, 2);
+    const result = runProjection(
+      defaultPremises,
+      allocations,
+      defaultStartDate,
+      2,
+    );
 
     expect(result[1].allocationPayments['terreno']).toBe(12000);
   });
@@ -229,7 +271,12 @@ describe('runProjection', () => {
         ],
       }),
     ];
-    const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
+    const result = runProjection(
+      defaultPremises,
+      allocations,
+      defaultStartDate,
+      3,
+    );
 
     expect(result[2].allocationPayments['terreno']).toBe(8000);
     expect(result[2].scheduledMovements).toHaveLength(2);
@@ -248,7 +295,12 @@ describe('runProjection', () => {
         ],
       }),
     ];
-    const result = runProjection(defaultPremises, allocations, defaultStartDate, 5);
+    const result = runProjection(
+      defaultPremises,
+      allocations,
+      defaultStartDate,
+      5,
+    );
 
     expect(result[2].allocations['box']).toBe(3000);
     expect(result[3].allocations['box']).toBe(13000);
@@ -264,10 +316,17 @@ describe('runProjection', () => {
         target: 2000,
         monthlyAmount: [{ month: 0, amount: 1000 }],
         realizationMode: 'immediate',
-        scheduledMovements: [{ month: 3, amount: 5000, label: 'Lump sum', type: 'in' }],
+        scheduledMovements: [
+          { month: 3, amount: 5000, label: 'Lump sum', type: 'in' },
+        ],
       }),
     ];
-    const result = runProjection(defaultPremises, allocations, defaultStartDate, 5);
+    const result = runProjection(
+      defaultPremises,
+      allocations,
+      defaultStartDate,
+      5,
+    );
 
     // Month 0: +1000 (balance 1000)
     // Month 1: +1000 (balance 2000 = target reached)
@@ -308,6 +367,13 @@ describe('runProjection', () => {
         label: 'Reserva',
         target: 0,
         monthlyAmount: [{ month: 0, amount: 3000 }],
+        realizationMode: 'never',
+      }),
+      makeAllocation({
+        id: 'casamento',
+        label: 'Casamento',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 1000 }],
         realizationMode: 'manual',
       }),
       makeAllocation({
@@ -320,9 +386,13 @@ describe('runProjection', () => {
     ];
     const result = runProjection(premises, allocations, defaultStartDate, 1);
 
-    expect(result[0].surplus).toBe(5000);
-    expect(result[0].cash).toBe(5000);
-    expect(result[0].totalWealth).toBe(8000);
+    // surplus = 20000 - 10000 - 3000 - 1000 - 2000 = 4000
+    expect(result[0].surplus).toBe(4000);
+    expect(result[0].cash).toBe(4000);
+    // totalWealth = cash (4000) + never reserva (3000) = 7000
+    // manual (casamento) does NOT count as patrimônio
+    expect(result[0].totalWealth).toBe(7000);
+    // totalCommitted = immediate realized (2000)
     expect(result[0].totalCommitted).toBe(2000);
   });
 
@@ -453,11 +523,18 @@ describe('runProjection', () => {
           yieldRate: 0.12,
         }),
       ];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        1,
+      );
 
       const expectedYield = 1000 * (0.12 / 12);
       expect(result[0].allocationYields['reserva']).toBeCloseTo(expectedYield);
-      expect(result[0].allocations['reserva']).toBeCloseTo(1000 + expectedYield);
+      expect(result[0].allocations['reserva']).toBeCloseTo(
+        1000 + expectedYield,
+      );
     });
 
     it('should compound yield over multiple months', () => {
@@ -471,7 +548,12 @@ describe('runProjection', () => {
           yieldRate: 0.12,
         }),
       ];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 2);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        2,
+      );
 
       // Month 0: deposit 1000, yield = 1000 * 0.01 = 10, balance = 1010
       // Month 1: deposit 1000, balance before yield = 2010, yield = 2010 * 0.01 = 20.10
@@ -490,7 +572,12 @@ describe('runProjection', () => {
           yieldRate: 0.12,
         }),
       ];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        4,
+      );
 
       // Month 0: deposit 1000, yield on 1000 = 10. accumulated = 1010. Not yet at target.
       // Month 1: deposit min(1000, 2000-1010) = 990. accumulated = 2000 = target. targetReached set. No yield.
@@ -511,7 +598,12 @@ describe('runProjection', () => {
           yieldRate: 0.12,
         }),
       ];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 2);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        2,
+      );
 
       expect(result[0].allocationYields['terreno']).toBe(0);
       expect(result[1].allocationYields['terreno']).toBe(0);
@@ -520,7 +612,12 @@ describe('runProjection', () => {
 
     it('should not yield when yieldRate is undefined', () => {
       const allocations = [makeAllocation()];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        1,
+      );
 
       expect(result[0].allocationYields['reserva']).toBe(0);
     });
@@ -536,7 +633,12 @@ describe('runProjection', () => {
           yieldRate: 0,
         }),
       ];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        1,
+      );
 
       expect(result[0].allocationYields['reserva']).toBe(0);
       expect(result[0].allocations['reserva']).toBe(1000);
@@ -568,11 +670,12 @@ describe('runProjection', () => {
       const result = runProjection(premises, allocations, defaultStartDate, 1);
 
       const expectedTotal =
-        result[0].allocationYields['reserva'] + result[0].allocationYields['acoes'];
+        result[0].allocationYields['reserva'] +
+        result[0].allocationYields['acoes'];
       expect(result[0].totalYield).toBeCloseTo(expectedTotal);
     });
 
-    it('should include yield in totalWealth', () => {
+    it('should include yield in totalWealth for never allocations', () => {
       const premises: Premises = {
         salaryChangePoints: [{ month: 0, amount: 10000 }],
         costOfLivingChangePoints: [{ month: 0, amount: 9000 }],
@@ -583,14 +686,14 @@ describe('runProjection', () => {
           label: 'Reserva',
           target: 0,
           monthlyAmount: [{ month: 0, amount: 1000 }],
-          realizationMode: 'manual',
+          realizationMode: 'never',
           yieldRate: 0.12,
         }),
       ];
       const result = runProjection(premises, allocations, defaultStartDate, 1);
 
       const expectedYield = 1000 * (0.12 / 12);
-      // totalWealth = cash + box balance (which includes yield)
+      // totalWealth = cash (0) + never reserve balance (which includes yield)
       expect(result[0].totalWealth).toBeCloseTo(0 + 1000 + expectedYield);
     });
   });
@@ -624,7 +727,12 @@ describe('runProjection', () => {
         }),
       ];
 
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 12);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        12,
+      );
       const rate = 0.12 / 12;
 
       expect(result[0].financingDetails['fin'].amortization).toBeCloseTo(
@@ -682,7 +790,12 @@ describe('runProjection', () => {
         }),
       ];
 
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 24);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        24,
+      );
 
       const firstPayment = result[0].financingDetails['car'].payment;
       for (let i = 1; i < 24; i++) {
@@ -782,7 +895,12 @@ describe('runProjection', () => {
         }),
       ];
 
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        1,
+      );
       const payment = result[0].financingDetails['fin'].payment;
 
       expect(result[0].surplus).toBeCloseTo(10_000 - 6_000 - payment, 2);
@@ -816,7 +934,12 @@ describe('runProjection', () => {
         }),
       ];
 
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        1,
+      );
 
       expect(result[0].allocations['fin']).toBeCloseTo(10_000, 0);
       expect(result[0].totalCommitted).toBeCloseTo(10_000, 0);
@@ -849,7 +972,12 @@ describe('runProjection', () => {
           monthlyAmount: [],
           realizationMode: 'immediate',
           scheduledMovements: [
-            { month: 1, amount: 50_000, label: 'Amortizacao extra', type: 'in' },
+            {
+              month: 1,
+              amount: 50_000,
+              label: 'Amortizacao extra',
+              type: 'in',
+            },
           ],
           financing: {
             principal: 120_000,
@@ -860,7 +988,12 @@ describe('runProjection', () => {
         }),
       ];
 
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        3,
+      );
 
       expect(result[0].financingDetails['fin'].outstandingBalance).toBeCloseTo(
         110_000,
@@ -921,7 +1054,12 @@ describe('runProjection', () => {
         }),
       ];
 
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        4,
+      );
 
       // Month 0-1: reserva = 5k + 5k = 10k
       expect(result[1].allocations['reserva']).toBeCloseTo(10_000, 0);
@@ -978,8 +1116,18 @@ describe('runProjection', () => {
         },
       });
 
-      const resultA = runProjection(defaultPremises, [reserva, fin], defaultStartDate, 3);
-      const resultB = runProjection(defaultPremises, [fin, reserva], defaultStartDate, 3);
+      const resultA = runProjection(
+        defaultPremises,
+        [reserva, fin],
+        defaultStartDate,
+        3,
+      );
+      const resultB = runProjection(
+        defaultPremises,
+        [fin, reserva],
+        defaultStartDate,
+        3,
+      );
 
       // Both orderings should produce identical results at month 1
       expect(resultA[1].allocations['reserva']).toBeCloseTo(
@@ -1021,7 +1169,12 @@ describe('runProjection', () => {
         }),
       ];
 
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 1);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        1,
+      );
 
       expect(result[0].totalCommitted).toBeCloseTo(1_000, 0);
       expect(result[0].totalWealth).toBeCloseTo(result[0].cash, 0);
@@ -1043,7 +1196,12 @@ describe('runProjection', () => {
           ],
         }),
       ];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        4,
+      );
 
       // Month 0: balance = 10000 + 4000 = 14000
       // Month 1: balance = 14000 + 4000 = 18000
@@ -1054,7 +1212,11 @@ describe('runProjection', () => {
       expect(result[2].allocations['reserva']).toBe(17000);
       expect(result[2].cash).toBe(5000);
       expect(result[2].scheduledMovements).toContainEqual(
-        expect.objectContaining({ allocationId: 'reserva', amount: 5000, type: 'out' }),
+        expect.objectContaining({
+          allocationId: 'reserva',
+          amount: 5000,
+          type: 'out',
+        }),
       );
     });
 
@@ -1068,7 +1230,13 @@ describe('runProjection', () => {
           realizationMode: 'manual',
           initialBalance: 10000,
           scheduledMovements: [
-            { label: 'Transferência', month: 1, amount: 3000, type: 'out', destinationBoxId: 'casamento' },
+            {
+              label: 'Transferência',
+              month: 1,
+              amount: 3000,
+              type: 'out',
+              destinationBoxId: 'casamento',
+            },
           ],
         }),
         makeAllocation({
@@ -1079,7 +1247,12 @@ describe('runProjection', () => {
           realizationMode: 'manual',
         }),
       ];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 3);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        3,
+      );
 
       // Month 0: reserva = 10000 + 2000 = 12000, casamento = 1000
       // surplus = 10000 - 6000 - 2000 - 1000 = 1000
@@ -1105,7 +1278,12 @@ describe('runProjection', () => {
           ],
         }),
       ];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 2);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        2,
+      );
 
       // Month 0: deposit 2000 (balance = 1000 + 2000 = 3000), then withdrawal capped at 3000
       expect(result[0].allocations['reserva']).toBe(0);
@@ -1124,7 +1302,13 @@ describe('runProjection', () => {
           realizationMode: 'manual',
           initialBalance: 10000,
           scheduledMovements: [
-            { label: 'Amortização extra', month: 2, amount: 8000, type: 'out', destinationBoxId: 'financiamento' },
+            {
+              label: 'Amortização extra',
+              month: 2,
+              amount: 8000,
+              type: 'out',
+              destinationBoxId: 'financiamento',
+            },
           ],
         }),
         makeAllocation({
@@ -1141,7 +1325,12 @@ describe('runProjection', () => {
           },
         }),
       ];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        4,
+      );
 
       // Month 2: reserva deposits 5000 (balance = 20000 + 5000 = 25000)
       // then withdrawal of 8000 → reserva = 17000
@@ -1150,14 +1339,19 @@ describe('runProjection', () => {
       // Financing outstanding balance should reflect extra amortization of 8000
       // The extra amort is applied first, then SAC recalculates regular amort on the reduced balance.
       // So the total reduction = 8000 (extra) + regular amort (recalculated on post-extra balance).
-      const withoutExtra = result[1].financingDetails['financiamento'].outstandingBalance;
-      const withExtra = result[2].financingDetails['financiamento'].outstandingBalance;
+      const withoutExtra =
+        result[1].financingDetails['financiamento'].outstandingBalance;
+      const withExtra =
+        result[2].financingDetails['financiamento'].outstandingBalance;
       // Reduction must be greater than 8000 (extra alone) because regular amort also applies
       expect(withoutExtra - withExtra).toBeGreaterThan(8000);
       // And the extra amortization should make month 2 outstanding notably lower
       // than it would be with just regular amortization (~1388/mo for 500k/360)
-      const regularOnlyReduction = result[0].financingDetails['financiamento'].amortization;
-      expect(withoutExtra - withExtra).toBeGreaterThan(regularOnlyReduction + 7000);
+      const regularOnlyReduction =
+        result[0].financingDetails['financiamento'].amortization;
+      expect(withoutExtra - withExtra).toBeGreaterThan(
+        regularOnlyReduction + 7000,
+      );
     });
 
     it('should NOT resume monthly contributions after withdrawal drops balance below target (targetReached is permanent)', () => {
@@ -1174,7 +1368,12 @@ describe('runProjection', () => {
           ],
         }),
       ];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        4,
+      );
 
       // Month 0: 15000 + 4000 = 19000. accumulated = 19000 < 20000. targetReached not set.
       // Month 1: 19000 + min(4000, 1000) = 20000 (capped at target). targetReached set. Then -10000 = 10000.
@@ -1198,7 +1397,12 @@ describe('runProjection', () => {
           ],
         }),
       ];
-      const result = runProjection(defaultPremises, allocations, defaultStartDate, 4);
+      const result = runProjection(
+        defaultPremises,
+        allocations,
+        defaultStartDate,
+        4,
+      );
 
       // Month 0: 4000, Month 1: 8000
       // Month 2: scheduled in replaces monthly (additionalToMonthly default false) → 15000
@@ -1407,11 +1611,12 @@ describe('runProjection', () => {
       expect(result[0].allocationAccumulated[alloc.id]).toBe(1000);
       expect(result[0].allocationRealized[alloc.id]).toBe(1000);
       const emMaos =
-        result[0].allocationAccumulated[alloc.id] - result[0].allocationRealized[alloc.id];
+        result[0].allocationAccumulated[alloc.id] -
+        result[0].allocationRealized[alloc.id];
       expect(emMaos).toBe(0);
     });
 
-    it('manual mode: accumulated grows, realized stays 0, em_mãos = accumulated', () => {
+    it('manual mode: accumulated grows, realized stays 0, does not count in totalWealth', () => {
       const alloc = makeAllocation({
         realizationMode: 'manual',
         monthlyAmount: [{ month: 0, amount: 1000 }],
@@ -1420,7 +1625,8 @@ describe('runProjection', () => {
       const result = runProjection(defaultPremises, [alloc], startDate, 3);
       expect(result[2].allocationAccumulated[alloc.id]).toBe(3000);
       expect(result[2].allocationRealized[alloc.id]).toBe(0);
-      expect(result[2].totalWealth).toBeGreaterThan(result[2].cash);
+      // manual (realizable) allocations don't count towards totalWealth
+      expect(result[2].totalWealth).toBe(result[2].cash);
     });
 
     it('manual mode: yield applies on em_mãos and increments accumulated', () => {
@@ -1490,7 +1696,10 @@ describe('runProjection', () => {
         target: 10000,
       });
       const result = runProjection(
-        { salaryChangePoints: [{ month: 0, amount: 50000 }], costOfLivingChangePoints: [{ month: 0, amount: 10000 }] },
+        {
+          salaryChangePoints: [{ month: 0, amount: 50000 }],
+          costOfLivingChangePoints: [{ month: 0, amount: 10000 }],
+        },
         [alloc],
         startDate,
         3,

@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { Injectable } from '@nestjs/common';
 import { InMemoryStore } from '@/shared/persistence/in-memory/in-memory-store';
-import { TransactionRepository, AggregationTransaction } from '../transaction.repository';
+import {
+  TransactionRepository,
+  AggregationTransaction,
+} from '../transaction.repository';
 import { Paginated } from '../../domain/paginated';
 import { TransactionDTO } from '../../dto/transaction.dto,';
 
@@ -160,6 +163,7 @@ export class TransactionInMemoryRepository extends TransactionRepository {
         boxId: t.boxId || null,
         allocationId: t.allocationId ?? null,
         transferId: t.transferId ?? null,
+        withdrawalType: t.withdrawalType ?? null,
       }));
   }
 }

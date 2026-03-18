@@ -116,11 +116,24 @@ export class VaultWebController {
       );
     }
 
+    if (
+      data.withdrawalType &&
+      !['withdrawal', 'realization'].includes(data.withdrawalType)
+    ) {
+      throw new BadRequestException(
+        'withdrawalType deve ser "withdrawal" ou "realization"',
+      );
+    }
+
     // Converte a data de string para Date se estiver presente
     const parsedData = {
       ...data,
       date: data.date ? new Date(data.date) : new Date(),
       allocationId: data.allocationId,
+      withdrawalType: data.withdrawalType as
+        | 'withdrawal'
+        | 'realization'
+        | undefined,
     };
 
     const [error, result] = await this.vaultWebService.createTransaction(
@@ -135,12 +148,11 @@ export class VaultWebController {
     // If expense and no allocationId was explicitly set, check for suggestions
     let suggestion = null;
     if (data.type === 'expense' && !data.allocationId) {
-      suggestion =
-        await this.planQueryService.findMatchingScheduledMovement(
-          vaultId,
-          data.amount,
-          new Date(),
-        );
+      suggestion = await this.planQueryService.findMatchingScheduledMovement(
+        vaultId,
+        data.amount,
+        new Date(),
+      );
     }
 
     return { ...result, suggestion };
@@ -459,7 +471,8 @@ export class VaultWebController {
   @UseGuards(VaultAccessTokenGuard)
   @Get('budget-ceiling')
   async getBudgetCeiling(@VaultSession() vaultId: string) {
-    const [error, result] = await this.vaultWebService.getBudgetCeiling(vaultId);
+    const [error, result] =
+      await this.vaultWebService.getBudgetCeiling(vaultId);
     if (error) {
       return { ceiling: null, allocated: 0, buffer: null, overBudget: false };
     }

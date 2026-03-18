@@ -259,6 +259,7 @@ export class VaultService {
       shouldCommit?: boolean;
       type: 'expense' | 'income';
       allocationId?: string;
+      withdrawalType?: 'withdrawal' | 'realization';
     };
     platform?: 'web' | 'telegram-bot';
   }): Promise<Either<string, { transaction: TransactionDTO; vault: Vault }>> {
@@ -275,10 +276,22 @@ export class VaultService {
         input.transaction.allocationId,
       );
       if (!allocation) return left('Alocação não encontrada');
-      if (allocation.realizationMode !== 'immediate')
+
+      const isReserva = allocation.realizationMode !== 'immediate';
+      if (isReserva && !input.transaction.withdrawalType)
         return left(
-          'Só alocações Pagamento podem ser vinculadas a transações',
+          'Transações vinculadas a alocações Reserva precisam de withdrawalType',
         );
+      if (!isReserva && input.transaction.withdrawalType)
+        return left('withdrawalType só se aplica a alocações Reserva');
+      if (
+        allocation.realizationMode === 'never' &&
+        input.transaction.withdrawalType === 'realization'
+      )
+        return left(
+          'Alocações com realizationMode "never" não aceitam realização',
+        );
+
       const plan = await this.planQueryService.findPlanById(allocation.planId);
       if (!plan || plan.vaultId !== input.vaultId)
         return left('Alocação não pertence a este vault');
@@ -298,6 +311,7 @@ export class VaultService {
       type: input.transaction.type,
       vaultId: vault.id,
       allocationId: input.transaction.allocationId,
+      withdrawalType: input.transaction.withdrawalType,
     });
     vault.addTransaction(transaction);
     if (input.transaction.shouldCommit) {
@@ -338,6 +352,7 @@ export class VaultService {
     type?: 'income' | 'expense';
     boxId?: string;
     allocationId?: string | null;
+    withdrawalType?: 'withdrawal' | 'realization' | null;
   }) {
     this.logger.log(`Editing transaction in vault: ${JSON.stringify(input)}`);
     const vault = await this.vaultRepository.findById(input.vaultId);
@@ -367,6 +382,8 @@ export class VaultService {
       date?: Date;
       type?: 'income' | 'expense';
       boxId?: string;
+      allocationId?: string | null;
+      withdrawalType?: 'withdrawal' | 'realization' | null;
     } = {};
 
     if (typeof input.newAmount === 'number')
@@ -381,22 +398,37 @@ export class VaultService {
     // Validate and set allocationId if provided (null means remove, undefined means don't change)
     if (input.allocationId !== undefined) {
       if (input.allocationId === null) {
-        (updatedData as any).allocationId = null;
+        updatedData.allocationId = null;
+        updatedData.withdrawalType = null;
       } else {
         const allocation = await this.planQueryService.findAllocationById(
           input.allocationId,
         );
         if (!allocation) return left('Alocação não encontrada');
-        if (allocation.realizationMode !== 'immediate')
+
+        const isReserva = allocation.realizationMode !== 'immediate';
+        if (isReserva && !input.withdrawalType)
           return left(
-            'Só alocações Pagamento podem ser vinculadas a transações',
+            'Transações vinculadas a alocações Reserva precisam de withdrawalType',
           );
+        if (!isReserva && input.withdrawalType)
+          return left('withdrawalType só se aplica a alocações Reserva');
+        if (
+          allocation.realizationMode === 'never' &&
+          input.withdrawalType === 'realization'
+        )
+          return left(
+            'Alocações com realizationMode "never" não aceitam realização',
+          );
+
         const plan = await this.planQueryService.findPlanById(
           allocation.planId,
         );
         if (!plan || plan.vaultId !== input.vaultId)
           return left('Alocação não pertence a este vault');
-        (updatedData as any).allocationId = input.allocationId;
+        updatedData.allocationId = input.allocationId;
+        if (input.withdrawalType)
+          updatedData.withdrawalType = input.withdrawalType;
       }
     }
 

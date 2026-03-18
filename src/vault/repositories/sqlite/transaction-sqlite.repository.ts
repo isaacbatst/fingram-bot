@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import { TransactionRepository, AggregationTransaction } from '../transaction.repository';
+import {
+  TransactionRepository,
+  AggregationTransaction,
+} from '../transaction.repository';
 import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
 import { Database } from 'better-sqlite3';
 import { Paginated } from '../../domain/paginated';
@@ -132,7 +135,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
     startDate: Date,
     endDate: Date,
   ): Promise<AggregationTransaction[]> {
-    const query = `SELECT amount, type, box_id, allocation_id, transfer_id
+    const query = `SELECT amount, type, box_id, allocation_id, transfer_id, withdrawal_type
                    FROM "transaction"
                    WHERE vault_id = ?
                    AND committed = 1
@@ -146,6 +149,7 @@ export class TransactionSqliteRepository extends TransactionRepository {
       box_id: string | null;
       allocation_id: string | null;
       transfer_id: string | null;
+      withdrawal_type: string | null;
     }[];
 
     return rows.map((row) => ({
@@ -154,6 +158,10 @@ export class TransactionSqliteRepository extends TransactionRepository {
       boxId: row.box_id ?? null,
       allocationId: row.allocation_id ?? null,
       transferId: row.transfer_id ?? null,
+      withdrawalType: row.withdrawal_type as
+        | 'withdrawal'
+        | 'realization'
+        | null,
     }));
   }
 }

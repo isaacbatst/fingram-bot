@@ -1,7 +1,21 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
-import { eq, and, or, sql, ilike, desc, count, isNull, gte, lt } from 'drizzle-orm';
+import {
+  eq,
+  and,
+  or,
+  sql,
+  ilike,
+  desc,
+  count,
+  isNull,
+  gte,
+  lt,
+} from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { TransactionRepository, AggregationTransaction } from '../transaction.repository';
+import {
+  TransactionRepository,
+  AggregationTransaction,
+} from '../transaction.repository';
 import {
   DRIZZLE_DATABASE,
   DrizzleDatabase,
@@ -165,6 +179,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
         boxId: transaction.boxId,
         allocationId: transaction.allocationId,
         transferId: transaction.transferId,
+        withdrawalType: transaction.withdrawalType,
       })
       .from(transaction)
       .where(
@@ -182,6 +197,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
       boxId: row.boxId ?? null,
       allocationId: row.allocationId ?? null,
       transferId: row.transferId ?? null,
+      withdrawalType: row.withdrawalType ?? null,
     }));
   }
 }
