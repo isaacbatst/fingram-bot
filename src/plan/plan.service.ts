@@ -340,14 +340,9 @@ export class PlanService {
         break;
       }
 
-      case 'discount': {
-        // Discount reduces the total target — the final cost is lower
-        allocation.target = Math.max(0, allocation.target - Math.abs(excess));
-        break;
-      }
-
+      case 'discount':
       case 'pendingPayment':
-        // No-op — will complete later
+        // No-op — real data already reflects the actual amount paid
         break;
     }
 
