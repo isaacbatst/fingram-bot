@@ -109,30 +109,29 @@ export function runProjection(
       ? rd.realCostOfLiving
       : getActiveValue(premises.costOfLivingChangePoints, i);
 
-    // Build a lookup for real allocation payments (only for fully past months)
+    // Build a lookup for real allocation payments
+    // Past months: all allocations use real data
+    // Current month: only immediate allocations use real data (discrete payments)
     const realAllocationPaymentsMap = new Map<string, number>();
-    if (isReal && rd.allocationPayments) {
+    if (rd?.allocationPayments) {
       for (const ap of rd.allocationPayments) {
-        realAllocationPaymentsMap.set(ap.allocationId, ap.amount);
+        if (isReal) {
+          realAllocationPaymentsMap.set(ap.allocationId, ap.amount);
+        } else {
+          // Current month: use real data for immediate allocations only
+          const alloc = allocations.find((a) => a.id === ap.allocationId);
+          if (alloc?.realizationMode === 'immediate' && ap.amount > 0) {
+            realAllocationPaymentsMap.set(ap.allocationId, ap.amount);
+          }
+        }
       }
     }
 
-    // Track real realizations and payments as discrete events (past + current month)
-    // Unlike income/costOfLiving which need a full month, these are facts that should reflect immediately
+    // Track real realizations for manual/onCompletion allocations (past + current month)
     if (rd?.allocationRealizations) {
       for (const ar of rd.allocationRealizations) {
         allocationRealized[ar.allocationId] =
           (allocationRealized[ar.allocationId] ?? 0) + ar.amount;
-      }
-    }
-    if (!isReal && rd?.allocationPayments) {
-      // Current month: overlay real payments on top of projected for immediate allocations
-      for (const ap of rd.allocationPayments) {
-        const allocation = allocations.find((a) => a.id === ap.allocationId);
-        if (allocation?.realizationMode === 'immediate') {
-          allocationRealized[ap.allocationId] =
-            (allocationRealized[ap.allocationId] ?? 0) + ap.amount;
-        }
       }
     }
 
