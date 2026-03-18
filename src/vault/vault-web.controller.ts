@@ -145,9 +145,17 @@ export class VaultWebController {
       this.handleError(error.type, error.message);
     }
 
-    // If expense and no allocationId was explicitly set, check for suggestions
+    // If expense with explicit allocationId, check for divergence
+    // If expense without allocationId, check for match suggestions
     let suggestion = null;
-    if (data.type === 'expense' && !data.allocationId) {
+    let divergence = null;
+    if (data.type === 'expense' && data.allocationId) {
+      divergence = await this.planQueryService.checkAllocationDivergence(
+        data.allocationId,
+        data.amount,
+        new Date(),
+      );
+    } else if (data.type === 'expense' && !data.allocationId) {
       suggestion = await this.planQueryService.findMatchingScheduledMovement(
         vaultId,
         data.amount,
@@ -155,7 +163,7 @@ export class VaultWebController {
       );
     }
 
-    return { ...result, suggestion };
+    return { ...result, suggestion, divergence };
   }
 
   @UseGuards(VaultAccessTokenGuard)

@@ -113,8 +113,7 @@ export class PlanQueryService {
               amount: sm.amount,
               label: sm.label,
             },
-            divergencePercent:
-              Math.round(divergencePercent * 100) / 100,
+            divergencePercent: Math.round(divergencePercent * 100) / 100,
             divergenceAmount,
           };
         }
@@ -141,11 +140,90 @@ export class PlanQueryService {
               amount: activeMonthly,
               label: `Parcela mensal`,
             },
-            divergencePercent:
-              Math.round(divergencePercent * 100) / 100,
+            divergencePercent: Math.round(divergencePercent * 100) / 100,
             divergenceAmount,
           };
         }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Given a specific allocation and an actual amount, check if the value
+   * diverges significantly from what was expected for the current month.
+   * Used when the user explicitly tags a transaction to an allocation.
+   */
+  async checkAllocationDivergence(
+    allocationId: string,
+    amount: number,
+    currentDate: Date,
+  ): Promise<ScheduledMovementMatch | null> {
+    const allocation = await this.allocationRepo.findById(allocationId);
+    if (!allocation) return null;
+
+    const plan = await this.planRepo.findById(allocation.planId);
+    if (!plan) return null;
+
+    const currentPlanMonth = calcPlanMonth(plan.startDate, currentDate);
+
+    // 1. Check scheduled movements for current month
+    for (const sm of allocation.scheduledMovements) {
+      if (sm.month !== currentPlanMonth) continue;
+      if (sm.type !== 'in') continue;
+
+      const divergenceAmount = Math.abs(amount - sm.amount);
+      const divergencePercent =
+        sm.amount > 0 ? (divergenceAmount / sm.amount) * 100 : 0;
+
+      const percentThreshold = sm.amount * 0.1;
+      const absoluteThreshold = 500;
+      const threshold = Math.min(percentThreshold, absoluteThreshold);
+
+      if (divergenceAmount > threshold) {
+        return {
+          allocationId: allocation.id,
+          allocationLabel: allocation.label,
+          scheduledMovement: {
+            month: sm.month,
+            amount: sm.amount,
+            label: sm.label,
+          },
+          divergencePercent: Math.round(divergencePercent * 100) / 100,
+          divergenceAmount,
+        };
+      }
+
+      // Within tolerance — no divergence to report
+      return null;
+    }
+
+    // 2. Check monthlyAmount for current month
+    const activeMonthly = getActiveValue(
+      allocation.monthlyAmount,
+      currentPlanMonth,
+    );
+    if (activeMonthly > 0) {
+      const divergenceAmount = Math.abs(amount - activeMonthly);
+      const divergencePercent = (divergenceAmount / activeMonthly) * 100;
+
+      const percentThreshold = activeMonthly * 0.1;
+      const absoluteThreshold = 500;
+      const threshold = Math.min(percentThreshold, absoluteThreshold);
+
+      if (divergenceAmount > threshold) {
+        return {
+          allocationId: allocation.id,
+          allocationLabel: allocation.label,
+          scheduledMovement: {
+            month: currentPlanMonth,
+            amount: activeMonthly,
+            label: 'Parcela mensal',
+          },
+          divergencePercent: Math.round(divergencePercent * 100) / 100,
+          divergenceAmount,
+        };
       }
     }
 
