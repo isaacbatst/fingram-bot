@@ -155,6 +155,42 @@ export class PlanController {
     return allocation;
   }
 
+  @Post(':planId/allocations/:allocationId/reconcile')
+  async reconcile(
+    @VaultSession() vaultId: string,
+    @Param('planId') planId: string,
+    @Param('allocationId') allocationId: string,
+    @Body()
+    body: {
+      action:
+        | 'extraAmortization'
+        | 'additionalCost'
+        | 'updateMonthlyAmount'
+        | 'discount'
+        | 'pendingPayment';
+      actual: number;
+      expected: number;
+    },
+  ) {
+    if (!body.action) {
+      throw new BadRequestException('Ação é obrigatória');
+    }
+    if (typeof body.actual !== 'number' || typeof body.expected !== 'number') {
+      throw new BadRequestException('actual e expected são obrigatórios');
+    }
+
+    const [error, allocation] = await this.planService.reconcileDivergence({
+      allocationId,
+      vaultId,
+      action: body.action,
+      actual: body.actual,
+      expected: body.expected,
+    });
+
+    if (error) throw new BadRequestException(error);
+    return allocation;
+  }
+
   @Get(':id/projection')
   async getProjection(
     @VaultSession() vaultId: string,

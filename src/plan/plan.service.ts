@@ -16,7 +16,7 @@ import {
   VaultQueryService,
   PeriodRange,
 } from '@/vault/shared/vault-query.service';
-import { ChangePoint } from './domain/change-point';
+import { ChangePoint, getActiveValue } from './domain/change-point';
 import {
   AllocationFinancing,
   AllocationScheduledMovement,
@@ -280,5 +280,81 @@ export class PlanService {
 
     await this.allocationRepo.update(allocation);
     return right(allocation);
+  }
+
+  async reconcileDivergence(input: {
+    allocationId: string;
+    vaultId: string;
+    action:
+      | 'extraAmortization'
+      | 'additionalCost'
+      | 'updateMonthlyAmount'
+      | 'discount'
+      | 'pendingPayment';
+    actual: number;
+    expected: number;
+  }): Promise<Either<string, Allocation>> {
+    const allocation = await this.planQuery.findAllocationById(
+      input.allocationId,
+    );
+    if (!allocation) return left('Alocação não encontrada');
+
+    const plan = await this.planQuery.findPlanById(allocation.planId);
+    if (!plan || plan.vaultId !== input.vaultId)
+      return left('Alocação não pertence a este vault');
+
+    const excess = input.actual - input.expected;
+
+    switch (input.action) {
+      case 'extraAmortization': {
+        if (allocation.financing) {
+          // Add a scheduled movement for extra amortization in the current month
+          const currentPlanMonth = this.calcPlanMonth(plan.startDate);
+          allocation.scheduledMovements.push({
+            month: currentPlanMonth,
+            amount: Math.abs(excess),
+            label: 'Amortização extra',
+            type: 'in',
+          });
+        } else {
+          // Non-financing: reduce target by excess
+          allocation.target = Math.max(0, allocation.target - Math.abs(excess));
+        }
+        break;
+      }
+
+      case 'additionalCost': {
+        allocation.target += Math.abs(excess);
+        break;
+      }
+
+      case 'updateMonthlyAmount': {
+        const currentPlanMonth = this.calcPlanMonth(plan.startDate);
+        // Add new change point at current month with actual amount
+        allocation.monthlyAmount = [
+          ...allocation.monthlyAmount.filter(
+            (cp) => cp.month !== currentPlanMonth,
+          ),
+          { month: currentPlanMonth, amount: input.actual },
+        ].sort((a, b) => a.month - b.month);
+        break;
+      }
+
+      case 'discount':
+      case 'pendingPayment':
+        // No-op — informational only
+        break;
+    }
+
+    await this.allocationRepo.update(allocation);
+    return right(allocation);
+  }
+
+  private calcPlanMonth(startDate: Date): number {
+    const now = new Date();
+    const monthsDiff =
+      (now.getUTCFullYear() - startDate.getUTCFullYear()) * 12 +
+      (now.getUTCMonth() - startDate.getUTCMonth());
+    return Math.max(0, monthsDiff);
   }
 }

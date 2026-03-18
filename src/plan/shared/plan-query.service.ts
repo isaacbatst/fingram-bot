@@ -15,6 +15,7 @@ function calcPlanMonth(startDate: Date, currentDate: Date): number {
 export interface ScheduledMovementMatch {
   allocationId: string;
   allocationLabel: string;
+  planId?: string; // included in divergence checks for reconciliation
   scheduledMovement: {
     month: number;
     amount: number;
@@ -22,6 +23,7 @@ export interface ScheduledMovementMatch {
   };
   divergencePercent: number; // 0 = exact match
   divergenceAmount: number; // absolute difference
+  actual?: number; // the actual amount paid (only in divergence checks)
 }
 
 @Injectable()
@@ -185,6 +187,7 @@ export class PlanQueryService {
         return {
           allocationId: allocation.id,
           allocationLabel: allocation.label,
+          planId: allocation.planId,
           scheduledMovement: {
             month: sm.month,
             amount: sm.amount,
@@ -192,6 +195,7 @@ export class PlanQueryService {
           },
           divergencePercent: Math.round(divergencePercent * 100) / 100,
           divergenceAmount,
+          actual: amount,
         };
       }
 
@@ -216,6 +220,7 @@ export class PlanQueryService {
         return {
           allocationId: allocation.id,
           allocationLabel: allocation.label,
+          planId: allocation.planId,
           scheduledMovement: {
             month: currentPlanMonth,
             amount: activeMonthly,
@@ -223,6 +228,7 @@ export class PlanQueryService {
           },
           divergencePercent: Math.round(divergencePercent * 100) / 100,
           divergenceAmount,
+          actual: amount,
         };
       }
     }
