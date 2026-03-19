@@ -619,6 +619,112 @@ describe('PlanService', () => {
     });
   });
 
+  describe('updateAllocation', () => {
+    it('should update allocation label and target', async () => {
+      const [, created] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+        allocations: [{
+          label: 'Reserva',
+          target: 50000,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          realizationMode: 'manual',
+          scheduledMovements: [],
+        }],
+      });
+      const allocationId = created!.allocations[0].id;
+      const [error, updated] = await service.updateAllocation(
+        allocationId,
+        testVaultId,
+        { label: 'Reserva de Emergência', target: 60000 },
+      );
+      expect(error).toBeNull();
+      expect(updated!.label).toBe('Reserva de Emergência');
+      expect(updated!.target).toBe(60000);
+    });
+
+    it('should update monthlyAmount', async () => {
+      const [, created] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+        allocations: [{
+          label: 'Reserva',
+          target: 50000,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          realizationMode: 'manual',
+          scheduledMovements: [],
+        }],
+      });
+      const allocationId = created!.allocations[0].id;
+      const [error, updated] = await service.updateAllocation(
+        allocationId,
+        testVaultId,
+        { monthlyAmount: [{ month: 0, amount: 1500 }] },
+      );
+      expect(error).toBeNull();
+      expect(updated!.monthlyAmount).toEqual([{ month: 0, amount: 1500 }]);
+    });
+
+    it('should reject negative target', async () => {
+      const [, created] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+        allocations: [{
+          label: 'Reserva',
+          target: 50000,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          realizationMode: 'manual',
+          scheduledMovements: [],
+        }],
+      });
+      const allocationId = created!.allocations[0].id;
+      const [error] = await service.updateAllocation(
+        allocationId,
+        testVaultId,
+        { target: -1 },
+      );
+      expect(error).not.toBeNull();
+    });
+
+    it('should reject allocation not found', async () => {
+      const [error] = await service.updateAllocation(
+        'nonexistent',
+        testVaultId,
+        { label: 'New' },
+      );
+      expect(error).not.toBeNull();
+    });
+
+    it('should reject wrong vault', async () => {
+      const [, created] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+        allocations: [{
+          label: 'Reserva',
+          target: 50000,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          realizationMode: 'manual',
+          scheduledMovements: [],
+        }],
+      });
+      const allocationId = created!.allocations[0].id;
+      const [error] = await service.updateAllocation(
+        allocationId,
+        'other-vault',
+        { label: 'New' },
+      );
+      expect(error).not.toBeNull();
+    });
+  });
+
   describe('bindAllocationToEstrato', () => {
     async function createPlanWithAllocation(
       realizationMode: 'immediate' | 'manual' | 'onCompletion',

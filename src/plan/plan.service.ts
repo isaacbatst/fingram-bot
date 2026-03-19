@@ -312,6 +312,58 @@ export class PlanService {
     return right(allocation);
   }
 
+  async updateAllocation(
+    allocationId: string,
+    vaultId: string,
+    updates: {
+      label?: string;
+      target?: number;
+      monthlyAmount?: ChangePoint[];
+      yieldRate?: number;
+    },
+  ): Promise<Either<string, Allocation>> {
+    if (
+      updates.label === undefined &&
+      updates.target === undefined &&
+      updates.monthlyAmount === undefined &&
+      updates.yieldRate === undefined
+    ) {
+      return left('Pelo menos um campo deve ser fornecido');
+    }
+
+    const allocation = await this.planQuery.findAllocationById(allocationId);
+    if (!allocation) return left('Alocação não encontrada');
+
+    const plan = await this.planQuery.findPlanById(allocation.planId);
+    if (!plan || plan.vaultId !== vaultId)
+      return left('Alocação não pertence a este vault');
+
+    if (updates.label !== undefined) {
+      if (!updates.label.trim()) return left('Label da alocação é obrigatória');
+      allocation.label = updates.label.trim();
+    }
+
+    if (updates.target !== undefined) {
+      if (updates.target < 0) return left('Target da alocação não pode ser negativo');
+      allocation.target = updates.target;
+    }
+
+    if (updates.monthlyAmount !== undefined) {
+      allocation.monthlyAmount = updates.monthlyAmount;
+    }
+
+    if (updates.yieldRate !== undefined) {
+      if (updates.yieldRate < 0) return left('Taxa de rendimento não pode ser negativa');
+      if (allocation.realizationMode === 'immediate') {
+        return left('Taxa de rendimento só pode ser definida para alocações que retêm fundos');
+      }
+      allocation.yieldRate = updates.yieldRate;
+    }
+
+    await this.allocationRepo.update(allocation);
+    return right(allocation);
+  }
+
   async getByVaultId(vaultId: string): Promise<Plan[]> {
     return this.planQuery.listPlansByVaultId(vaultId);
   }
