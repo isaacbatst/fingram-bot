@@ -364,6 +364,21 @@ export class PlanService {
     return right(allocation);
   }
 
+  async removeAllocation(
+    allocationId: string,
+    vaultId: string,
+  ): Promise<Either<string, true>> {
+    const allocation = await this.planQuery.findAllocationById(allocationId);
+    if (!allocation) return left('Alocação não encontrada');
+
+    const plan = await this.planQuery.findPlanById(allocation.planId);
+    if (!plan || plan.vaultId !== vaultId)
+      return left('Alocação não pertence a este vault');
+
+    await this.allocationRepo.delete(allocationId);
+    return right(true);
+  }
+
   async getByVaultId(vaultId: string): Promise<Plan[]> {
     return this.planQuery.listPlansByVaultId(vaultId);
   }

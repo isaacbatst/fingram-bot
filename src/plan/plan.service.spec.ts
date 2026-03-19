@@ -725,6 +725,53 @@ describe('PlanService', () => {
     });
   });
 
+  describe('removeAllocation', () => {
+    it('should remove an allocation', async () => {
+      const [, created] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+        allocations: [{
+          label: 'Reserva',
+          target: 50000,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          realizationMode: 'manual',
+          scheduledMovements: [],
+        }],
+      });
+      const allocationId = created!.allocations[0].id;
+      const [error] = await service.removeAllocation(allocationId, testVaultId);
+      expect(error).toBeNull();
+      const allocations = await allocationRepository.findByPlanId(created!.plan.id);
+      expect(allocations).toHaveLength(0);
+    });
+
+    it('should reject allocation not found', async () => {
+      const [error] = await service.removeAllocation('nonexistent', testVaultId);
+      expect(error).not.toBeNull();
+    });
+
+    it('should reject wrong vault', async () => {
+      const [, created] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+        allocations: [{
+          label: 'Reserva',
+          target: 50000,
+          monthlyAmount: [{ month: 0, amount: 1000 }],
+          realizationMode: 'manual',
+          scheduledMovements: [],
+        }],
+      });
+      const allocationId = created!.allocations[0].id;
+      const [error] = await service.removeAllocation(allocationId, 'other-vault');
+      expect(error).not.toBeNull();
+    });
+  });
+
   describe('bindAllocationToEstrato', () => {
     async function createPlanWithAllocation(
       realizationMode: 'immediate' | 'manual' | 'onCompletion',
