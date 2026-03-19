@@ -6,7 +6,9 @@ export interface FinancingState {
   remainingTermMonths: number;
 }
 
-export function initFinancingState(financing: AllocationFinancing): FinancingState {
+export function initFinancingState(
+  financing: AllocationFinancing,
+): FinancingState {
   const constructionMonths = financing.constructionMonths ?? 0;
   const graceMonths = financing.gracePeriodMonths ?? 0;
   return {

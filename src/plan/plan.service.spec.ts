@@ -23,7 +23,10 @@ describe('PlanService', () => {
   beforeEach(() => {
     planRepository = new PlanInMemoryRepository();
     allocationRepository = new AllocationInMemoryRepository();
-    planQueryService = new PlanQueryService(planRepository, allocationRepository);
+    planQueryService = new PlanQueryService(
+      planRepository,
+      allocationRepository,
+    );
     vaultQueryService = {
       findBoxById: vi.fn().mockResolvedValue({
         id: 'box-1',
@@ -373,7 +376,9 @@ describe('PlanService', () => {
   });
 
   describe('bindAllocationToEstrato', () => {
-    async function createPlanWithAllocation(realizationMode: 'immediate' | 'manual' | 'onCompletion') {
+    async function createPlanWithAllocation(
+      realizationMode: 'immediate' | 'manual' | 'onCompletion',
+    ) {
       const [, result] = await service.create({
         vaultId: testVaultId,
         name: 'Test Plan',
@@ -424,7 +429,11 @@ describe('PlanService', () => {
       const allocation = allocations[0];
 
       // First bind
-      await service.bindAllocationToEstrato(allocation.id, 'box-1', testVaultId);
+      await service.bindAllocationToEstrato(
+        allocation.id,
+        'box-1',
+        testVaultId,
+      );
 
       // Then unbind
       const [error, updated] = await service.bindAllocationToEstrato(

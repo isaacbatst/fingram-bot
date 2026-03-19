@@ -19,7 +19,9 @@ export class VaultAgentController {
   @Post('agent')
   async agent(@Body() data: any, @VaultSession() vaultId: string) {
     const [error, result] = await this.vaultAgentService.execute({
-      ...data,
+      message: data.message,
+      decisions: data.decisions ?? {},
+      conversationId: data.conversationId ?? '',
       vaultId,
     });
     if (error) {

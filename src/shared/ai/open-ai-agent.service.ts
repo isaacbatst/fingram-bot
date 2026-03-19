@@ -1,12 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import {
   Agent,
-  AgentInputItem,
+  MemorySession,
   run,
   RunContext,
   RunState,
   RunToolApprovalItem,
-  setDefaultOpenAIClient,
   setDefaultOpenAIKey,
   tool,
 } from '@openai/agents';
@@ -15,7 +14,6 @@ import z from 'zod';
 import { left, right } from '../../vault/domain/either';
 import { CategoryRepository } from '../../vault/repositories/category.repository';
 import { VaultService } from '../../vault/vault.service';
-import { AgentConversationsStore } from '../cache/agent-conversations-store';
 import { OpenAiClient } from './open-ai.client';
 
 type AgentContext = {
@@ -26,6 +24,9 @@ type AgentContext = {
 export class OpenAiAgentService {
   private readonly logger = new Logger(OpenAiAgentService.name);
   private readonly agent: Agent<AgentContext>;
+  private readonly sessions = new Map<string, MemorySession>();
+  private readonly pendingStates = new Map<string, string>();
+
   constructor(
     private readonly openAiClient: OpenAiClient,
     private readonly categoryRepository: CategoryRepository,
@@ -58,7 +59,7 @@ export class OpenAiAgentService {
         - Sua resposta deverá ter quebras de linha apropriadas para serem renderizadas no HTML com white-space: pre-wrap;
         - Sua resposta não deve conter observações técnicas como sobre estar formatando corret
         - Considere a data atual ${new Date().toISOString()} caso o usuário não forneça uma data.
-        - Infira o tipo de transação (income ou expense) de acordo com a descrição da transação. 
+        - Infira o tipo de transação (income ou expense) de acordo com a descrição da transação.
         - A categoria deve ser uma das categorias disponíveis para o usuário. Use a ferramenta getCategories para obter as categorias disponíveis.
         - Você deve ser ágil, não fique confirmando, justifique as suas ações e use as ferramentas para adicionar a transação. A exceção é caso o usuário não forneça o valor da transação, nesse caso, pergunte ao usuário para fornecer o valor da transação.
         - Nunca sugira uma categoria que não está na lista de categorias disponíveis.
@@ -86,39 +87,36 @@ export class OpenAiAgentService {
   }
 
   async execute(params: {
-    messages: AgentInputItem[];
+    message?: string;
     decisions: Record<string, 'approved' | 'rejected'>;
     conversationId: string;
     vaultId: string;
   }) {
-    const { messages = [], decisions = null } = params;
     let conversationId = params.conversationId;
     if (!conversationId) {
       conversationId = this.generateConversationId();
     }
-    this.logger.log(
-      `Executing agent with messages ${JSON.stringify(messages)} and decisions ${JSON.stringify(decisions)} and conversationId ${conversationId}`,
-    );
-    let input: AgentInputItem[] | RunState<AgentContext, Agent<AgentContext>>;
 
+    const session = this.getOrCreateSession(conversationId);
+
+    this.logger.log(
+      `Executing agent with message "${params.message ?? ''}" and decisions ${JSON.stringify(params.decisions)} and conversationId ${conversationId}`,
+    );
+
+    // Handle approval decisions
     if (
-      decisions &&
-      Object.keys(decisions).length > 0 &&
-      params.conversationId /* original conversationId */
+      params.decisions &&
+      Object.keys(params.decisions).length > 0 &&
+      params.conversationId
     ) {
       this.logger.log(
-        `Executing agent with decisions ${JSON.stringify(decisions)}`,
+        `Executing agent with decisions ${JSON.stringify(params.decisions)}`,
       );
-      // If we receive a new request with decisions, we will look up the current state in the database
-      const stateString = AgentConversationsStore.store.get(
-        params.conversationId,
-      );
-
+      const stateString = this.pendingStates.get(params.conversationId);
       if (!stateString) {
         return left('Conversation not found');
       }
 
-      // We then deserialize the state so we can manipulate it and continue the run
       const state: RunState<
         AgentContext,
         Agent<AgentContext>
@@ -129,53 +127,58 @@ export class OpenAiAgentService {
       interruptions.forEach((item: RunToolApprovalItem) => {
         if (item.type === 'tool_approval_item' && 'callId' in item.rawItem) {
           const callId = item.rawItem.callId;
-
-          if (decisions[callId] === 'approved') {
+          if (params.decisions[callId] === 'approved') {
             state.approve(item);
-          } else if (decisions[callId] === 'rejected') {
+          } else if (params.decisions[callId] === 'rejected') {
             state.reject(item);
           }
         }
       });
 
-      input = state;
-    } else {
-      input = messages;
+      const result = await run(this.agent, state, {
+        context: { vaultId: params.vaultId },
+        session,
+      });
+
+      return this.handleResult(result, conversationId);
     }
 
-    const result = await run(this.agent, input, {
-      context: {
-        vaultId: params.vaultId,
-      },
+    // Normal message
+    const result = await run(this.agent, params.message ?? '', {
+      context: { vaultId: params.vaultId },
+      session,
     });
 
+    return this.handleResult(result, conversationId);
+  }
+
+  private handleResult(result: any, conversationId: string) {
     if (result.interruptions.length > 0) {
-      // If the run resulted in one or more interruptions, we will store the current state in the database
-
-      // store the state in the database
-      AgentConversationsStore.store.set(
-        conversationId,
-        JSON.stringify(result.state),
-      );
-
-      // We will return all the interruptions as approval requests to the UI/client so it can generate
-      // the UI for approvals
-      // We will also still return the history that contains the tool calls and potentially any interim
-      // text response the agent might have generated (like announcing that it's calling a function)
+      this.pendingStates.set(conversationId, JSON.stringify(result.state));
       return right({
         conversationId,
         approvals: result.interruptions
-          .filter((item) => item.type === 'tool_approval_item')
-          .map((item) => item.toJSON()),
+          .filter((item: any) => item.type === 'tool_approval_item')
+          .map((item: any) => item.toJSON()),
         history: result.history,
       });
     }
 
+    this.pendingStates.delete(conversationId);
     return right({
       response: result.finalOutput as string,
       history: result.history,
       conversationId,
     });
+  }
+
+  private getOrCreateSession(conversationId: string): MemorySession {
+    let session = this.sessions.get(conversationId);
+    if (!session) {
+      session = new MemorySession();
+      this.sessions.set(conversationId, session);
+    }
+    return session;
   }
 
   private generateConversationId() {

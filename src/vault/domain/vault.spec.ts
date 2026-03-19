@@ -538,22 +538,49 @@ describe('Vault - Boxes', () => {
   describe('totalSpentAmount with allocationId', () => {
     it('should exclude expenses with allocationId from totalSpentAmount', () => {
       const vault = new Vault();
-      const box = Box.create({ name: 'Principal', type: 'spending', isDefault: true, vaultId: vault.id });
+      const box = Box.create({
+        name: 'Principal',
+        type: 'spending',
+        isDefault: true,
+        vaultId: vault.id,
+      });
       vault.addBox(box);
 
-      vault.addTransaction(Transaction.restore({
-        id: 'spent-t1', code: 'b1', vaultId: vault.id, boxId: box.id,
-        transferId: null, allocationId: null,
-        amount: 500, isCommitted: true, description: 'Supermercado',
-        createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
-      }));
+      vault.addTransaction(
+        Transaction.restore({
+          id: 'spent-t1',
+          code: 'b1',
+          vaultId: vault.id,
+          boxId: box.id,
+          transferId: null,
+          allocationId: null,
+          amount: 500,
+          isCommitted: true,
+          description: 'Supermercado',
+          createdAt: new Date(),
+          date: new Date('2026-03-15'),
+          categoryId: null,
+          type: 'expense',
+        }),
+      );
 
-      vault.addTransaction(Transaction.restore({
-        id: 'spent-t2', code: 'b2', vaultId: vault.id, boxId: box.id,
-        transferId: null, allocationId: 'alloc-1',
-        amount: 1893, isCommitted: true, description: 'Parcela terreno',
-        createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
-      }));
+      vault.addTransaction(
+        Transaction.restore({
+          id: 'spent-t2',
+          code: 'b2',
+          vaultId: vault.id,
+          boxId: box.id,
+          transferId: null,
+          allocationId: 'alloc-1',
+          amount: 1893,
+          isCommitted: true,
+          description: 'Parcela terreno',
+          createdAt: new Date(),
+          date: new Date('2026-03-15'),
+          categoryId: null,
+          type: 'expense',
+        }),
+      );
 
       expect(vault.totalSpentAmount({ month: 3, year: 2026 })).toBe(500);
     });
@@ -565,27 +592,54 @@ describe('Vault - Boxes', () => {
       const category = new Category('cat-alloc-1', 'Moradia', '1');
       vault.setBudget(category, 1000);
 
-      const box = Box.create({ name: 'Principal', type: 'spending', isDefault: true, vaultId: vault.id });
+      const box = Box.create({
+        name: 'Principal',
+        type: 'spending',
+        isDefault: true,
+        vaultId: vault.id,
+      });
       vault.addBox(box);
 
       // Regular expense — should count
-      vault.addTransaction(Transaction.restore({
-        id: 'alloc-t1', code: 'a1', vaultId: vault.id, boxId: box.id,
-        transferId: null, allocationId: null,
-        amount: 300, isCommitted: true, description: 'Aluguel',
-        createdAt: new Date(), date: new Date('2026-03-15'), categoryId: 'cat-alloc-1', type: 'expense',
-      }));
+      vault.addTransaction(
+        Transaction.restore({
+          id: 'alloc-t1',
+          code: 'a1',
+          vaultId: vault.id,
+          boxId: box.id,
+          transferId: null,
+          allocationId: null,
+          amount: 300,
+          isCommitted: true,
+          description: 'Aluguel',
+          createdAt: new Date(),
+          date: new Date('2026-03-15'),
+          categoryId: 'cat-alloc-1',
+          type: 'expense',
+        }),
+      );
 
       // Allocation-tagged expense — should NOT count
-      vault.addTransaction(Transaction.restore({
-        id: 'alloc-t2', code: 'a2', vaultId: vault.id, boxId: box.id,
-        transferId: null, allocationId: 'alloc-1',
-        amount: 1893, isCommitted: true, description: 'Parcela terreno',
-        createdAt: new Date(), date: new Date('2026-03-15'), categoryId: 'cat-alloc-1', type: 'expense',
-      }));
+      vault.addTransaction(
+        Transaction.restore({
+          id: 'alloc-t2',
+          code: 'a2',
+          vaultId: vault.id,
+          boxId: box.id,
+          transferId: null,
+          allocationId: 'alloc-1',
+          amount: 1893,
+          isCommitted: true,
+          description: 'Parcela terreno',
+          createdAt: new Date(),
+          date: new Date('2026-03-15'),
+          categoryId: 'cat-alloc-1',
+          type: 'expense',
+        }),
+      );
 
       const summary = vault.getBudgetsSummary(3, 2026);
-      const moradia = summary.find(s => s.category.id === 'cat-alloc-1')!;
+      const moradia = summary.find((s) => s.category.id === 'cat-alloc-1')!;
       expect(moradia.spent).toBe(300);
       expect(moradia.percentageUsed).toBe(30);
     });
@@ -594,44 +648,98 @@ describe('Vault - Boxes', () => {
   describe('totalPlannedExpenses', () => {
     it('should return sum of expenses with allocationId from totalPlannedExpenses', () => {
       const vault = new Vault();
-      const box = Box.create({ name: 'Principal', type: 'spending', isDefault: true, vaultId: vault.id });
+      const box = Box.create({
+        name: 'Principal',
+        type: 'spending',
+        isDefault: true,
+        vaultId: vault.id,
+      });
       vault.addBox(box);
 
-      vault.addTransaction(Transaction.restore({
-        id: 'planned-t1', code: 'c1', vaultId: vault.id, boxId: box.id,
-        transferId: null, allocationId: null,
-        amount: 500, isCommitted: true, description: 'Supermercado',
-        createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
-      }));
+      vault.addTransaction(
+        Transaction.restore({
+          id: 'planned-t1',
+          code: 'c1',
+          vaultId: vault.id,
+          boxId: box.id,
+          transferId: null,
+          allocationId: null,
+          amount: 500,
+          isCommitted: true,
+          description: 'Supermercado',
+          createdAt: new Date(),
+          date: new Date('2026-03-15'),
+          categoryId: null,
+          type: 'expense',
+        }),
+      );
 
-      vault.addTransaction(Transaction.restore({
-        id: 'planned-t2', code: 'c2', vaultId: vault.id, boxId: box.id,
-        transferId: null, allocationId: 'alloc-1',
-        amount: 1893, isCommitted: true, description: 'Parcela terreno',
-        createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
-      }));
+      vault.addTransaction(
+        Transaction.restore({
+          id: 'planned-t2',
+          code: 'c2',
+          vaultId: vault.id,
+          boxId: box.id,
+          transferId: null,
+          allocationId: 'alloc-1',
+          amount: 1893,
+          isCommitted: true,
+          description: 'Parcela terreno',
+          createdAt: new Date(),
+          date: new Date('2026-03-15'),
+          categoryId: null,
+          type: 'expense',
+        }),
+      );
 
-      vault.addTransaction(Transaction.restore({
-        id: 'planned-t3', code: 'c3', vaultId: vault.id, boxId: box.id,
-        transferId: null, allocationId: 'alloc-2',
-        amount: 200, isCommitted: true, description: 'Seguro',
-        createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
-      }));
+      vault.addTransaction(
+        Transaction.restore({
+          id: 'planned-t3',
+          code: 'c3',
+          vaultId: vault.id,
+          boxId: box.id,
+          transferId: null,
+          allocationId: 'alloc-2',
+          amount: 200,
+          isCommitted: true,
+          description: 'Seguro',
+          createdAt: new Date(),
+          date: new Date('2026-03-15'),
+          categoryId: null,
+          type: 'expense',
+        }),
+      );
 
       expect(vault.totalPlannedExpenses({ month: 3, year: 2026 })).toBe(2093);
     });
 
     it('should include totalPlannedExpenses in toJSON serialization', () => {
       const vault = new Vault();
-      const box = Box.create({ name: 'Principal', type: 'spending', isDefault: true, vaultId: vault.id });
+      const box = Box.create({
+        name: 'Principal',
+        type: 'spending',
+        isDefault: true,
+        vaultId: vault.id,
+      });
       vault.addBox(box);
 
-      vault.addTransaction(Transaction.restore({
-        id: 'planned-t4', code: 'd1', vaultId: vault.id, boxId: box.id,
-        transferId: null, allocationId: 'alloc-1',
-        amount: 1000, isCommitted: true, description: 'Parcela',
-        createdAt: new Date(), date: new Date('2026-03-15'), categoryId: null, type: 'expense',
-      }));
+      vault.addTransaction(
+        Transaction.restore({
+          id: 'planned-t4',
+          code: 'd1',
+          vaultId: vault.id,
+          boxId: box.id,
+          transferId: null,
+          allocationId: 'alloc-1',
+          amount: 1000,
+          isCommitted: true,
+          description: 'Parcela',
+          createdAt: new Date(),
+          date: new Date('2026-03-15'),
+          categoryId: null,
+          type: 'expense',
+        }),
+      );
 
       const json = vault.toJSON({ date: { month: 3, year: 2026 } });
       expect(json.totalPlannedExpenses).toBe(1000);

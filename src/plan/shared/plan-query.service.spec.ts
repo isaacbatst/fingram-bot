@@ -152,9 +152,7 @@ describe('PlanQueryService', () => {
         planId: plan.id,
         label: 'Terreno',
         target: 100000,
-        monthlyAmount: overrides.monthlyAmount ?? [
-          { month: 0, amount: 2000 },
-        ],
+        monthlyAmount: overrides.monthlyAmount ?? [{ month: 0, amount: 2000 }],
         realizationMode: overrides.realizationMode ?? 'immediate',
         scheduledMovements: overrides.scheduledMovements ?? [],
       });

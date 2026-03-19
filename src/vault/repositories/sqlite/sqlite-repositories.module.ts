@@ -23,10 +23,6 @@ import { PersistenceModule } from '@/shared/persistence/persistence.module';
       useClass: ActionSqliteRepository,
     },
   ],
-  exports: [
-    CategoryRepository,
-    VaultRepository,
-    ActionRepository,
-  ],
+  exports: [CategoryRepository, VaultRepository, ActionRepository],
 })
 export class VaultSqliteRepositoriesModule {}

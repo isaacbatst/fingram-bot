@@ -20,7 +20,10 @@ describe('Allocation', () => {
   });
 
   it('creates Pagamento with realizationMode=immediate', () => {
-    const alloc = Allocation.create({ ...baseParams, realizationMode: 'immediate' });
+    const alloc = Allocation.create({
+      ...baseParams,
+      realizationMode: 'immediate',
+    });
     expect(alloc.type).toBe('pagamento');
   });
 
@@ -32,7 +35,10 @@ describe('Allocation', () => {
   });
 
   it('bindToEstrato fails for Pagamento', () => {
-    const alloc = Allocation.create({ ...baseParams, realizationMode: 'immediate' });
+    const alloc = Allocation.create({
+      ...baseParams,
+      realizationMode: 'immediate',
+    });
     const [error] = alloc.bindToEstrato('box-1');
     expect(error).not.toBeNull();
   });

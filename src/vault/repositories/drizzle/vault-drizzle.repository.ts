@@ -261,7 +261,10 @@ export class VaultDrizzleRepository extends VaultRepository {
           type: t.type as 'expense' | 'income',
           date: t.date ?? t.createdAt,
           allocationId: t.allocationId ?? null,
-          withdrawalType: (t.withdrawalType ?? null) as 'withdrawal' | 'realization' | null,
+          withdrawalType: (t.withdrawalType ?? null) as
+            | 'withdrawal'
+            | 'realization'
+            | null,
         }),
       );
     }
