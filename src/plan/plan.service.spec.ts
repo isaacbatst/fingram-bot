@@ -515,6 +515,110 @@ describe('PlanService', () => {
     });
   });
 
+  describe('addAllocation', () => {
+    it('should add an allocation to a plan', async () => {
+      const [, created] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+      });
+      const [error, allocation] = await service.addAllocation(
+        created!.plan.id,
+        testVaultId,
+        {
+          label: 'Viagem',
+          target: 6000,
+          monthlyAmount: [{ month: 0, amount: 500 }],
+          realizationMode: 'manual',
+          scheduledMovements: [],
+        },
+      );
+      expect(error).toBeNull();
+      expect(allocation!.label).toBe('Viagem');
+      expect(allocation!.target).toBe(6000);
+      expect(allocation!.planId).toBe(created!.plan.id);
+    });
+
+    it('should reject empty label', async () => {
+      const [, created] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+      });
+      const [error] = await service.addAllocation(
+        created!.plan.id,
+        testVaultId,
+        {
+          label: '',
+          target: 6000,
+          monthlyAmount: [{ month: 0, amount: 500 }],
+          realizationMode: 'manual',
+          scheduledMovements: [],
+        },
+      );
+      expect(error).not.toBeNull();
+    });
+
+    it('should reject negative target', async () => {
+      const [, created] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+      });
+      const [error] = await service.addAllocation(
+        created!.plan.id,
+        testVaultId,
+        {
+          label: 'Viagem',
+          target: -1,
+          monthlyAmount: [{ month: 0, amount: 500 }],
+          realizationMode: 'manual',
+          scheduledMovements: [],
+        },
+      );
+      expect(error).not.toBeNull();
+    });
+
+    it('should reject plan not found', async () => {
+      const [error] = await service.addAllocation(
+        'nonexistent',
+        testVaultId,
+        {
+          label: 'Viagem',
+          target: 6000,
+          monthlyAmount: [{ month: 0, amount: 500 }],
+          realizationMode: 'manual',
+          scheduledMovements: [],
+        },
+      );
+      expect(error).not.toBeNull();
+    });
+
+    it('should reject wrong vault', async () => {
+      const [, created] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2026-01-01'),
+        premises: defaultPremises,
+      });
+      const [error] = await service.addAllocation(
+        created!.plan.id,
+        'other-vault',
+        {
+          label: 'Viagem',
+          target: 6000,
+          monthlyAmount: [{ month: 0, amount: 500 }],
+          realizationMode: 'manual',
+          scheduledMovements: [],
+        },
+      );
+      expect(error).not.toBeNull();
+    });
+  });
+
   describe('bindAllocationToEstrato', () => {
     async function createPlanWithAllocation(
       realizationMode: 'immediate' | 'manual' | 'onCompletion',

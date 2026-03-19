@@ -287,6 +287,31 @@ export class PlanService {
     return right(plan);
   }
 
+  async addAllocation(
+    planId: string,
+    vaultId: string,
+    input: CreateAllocationInput,
+  ): Promise<Either<string, Allocation>> {
+    const plan = await this.planQuery.findPlanById(planId);
+    if (!plan || plan.vaultId !== vaultId) return left('Plano não encontrado');
+
+    if (!input.label?.trim()) return left('Label da alocação é obrigatória');
+    if (input.target < 0) return left('Target da alocação não pode ser negativo');
+    if (input.yieldRate !== undefined && input.yieldRate < 0) {
+      return left('Taxa de rendimento não pode ser negativa');
+    }
+    if (input.yieldRate !== undefined && input.realizationMode === 'immediate') {
+      return left('Taxa de rendimento só pode ser definida para alocações que retêm fundos');
+    }
+    if (input.realizationMode === 'onCompletion' && (!input.target || input.target <= 0)) {
+      return left('Modo onCompletion requer target > 0');
+    }
+
+    const allocation = Allocation.create({ ...input, planId });
+    await this.allocationRepo.create(allocation);
+    return right(allocation);
+  }
+
   async getByVaultId(vaultId: string): Promise<Plan[]> {
     return this.planQuery.listPlansByVaultId(vaultId);
   }
