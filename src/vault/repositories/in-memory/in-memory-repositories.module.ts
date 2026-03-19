@@ -23,10 +23,6 @@ import { VaultInMemoryRepository } from './vault-in-memory.repository';
       useClass: CategoryInMemoryRepository,
     },
   ],
-  exports: [
-    VaultRepository,
-    ActionRepository,
-    CategoryRepository,
-  ],
+  exports: [VaultRepository, ActionRepository, CategoryRepository],
 })
 export class VaultInMemoryRepositoriesModule {}

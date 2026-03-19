@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { OpenAiAgentService } from '../shared/ai/open-ai-agent.service';
-import { AgentInputItem } from '@openai/agents';
 import { left, right } from './domain/either';
 
 @Injectable()
@@ -8,7 +7,7 @@ export class VaultAgentService {
   constructor(private readonly agentService: OpenAiAgentService) {}
 
   async execute(params: {
-    messages: AgentInputItem[];
+    message?: string;
     decisions: Record<string, 'approved' | 'rejected'>;
     conversationId: string;
     vaultId: string;
@@ -18,5 +17,17 @@ export class VaultAgentService {
       return left(err);
     }
     return right(result);
+  }
+
+  async executeStream(
+    params: {
+      message?: string;
+      decisions: Record<string, 'approved' | 'rejected'>;
+      conversationId: string;
+      vaultId: string;
+    },
+    emit: (event: string, data: unknown) => void,
+  ) {
+    await this.agentService.executeStream(params, emit);
   }
 }

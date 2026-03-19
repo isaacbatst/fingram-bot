@@ -18,9 +18,7 @@ type AllocationRow = typeof schema.allocation.$inferSelect;
 
 @Injectable()
 export class AllocationDrizzleRepository extends AllocationRepository {
-  constructor(
-    @Inject(DRIZZLE_DATABASE) private readonly db: DrizzleDatabase,
-  ) {
+  constructor(@Inject(DRIZZLE_DATABASE) private readonly db: DrizzleDatabase) {
     super();
   }
 
@@ -95,9 +93,7 @@ export class AllocationDrizzleRepository extends AllocationRepository {
 
   async delete(id: string, tx?: unknown): Promise<void> {
     const db = this.getDb(tx);
-    await db
-      .delete(schema.allocation)
-      .where(eq(schema.allocation.id, id));
+    await db.delete(schema.allocation).where(eq(schema.allocation.id, id));
   }
 
   async findById(id: string): Promise<Allocation | null> {
