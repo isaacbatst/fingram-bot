@@ -18,4 +18,16 @@ export class VaultAgentService {
     }
     return right(result);
   }
+
+  async executeStream(
+    params: {
+      message?: string;
+      decisions: Record<string, 'approved' | 'rejected'>;
+      conversationId: string;
+      vaultId: string;
+    },
+    emit: (event: string, data: unknown) => void,
+  ) {
+    await this.agentService.executeStream(params, emit);
+  }
 }

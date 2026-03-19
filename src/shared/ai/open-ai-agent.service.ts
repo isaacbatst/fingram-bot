@@ -9,6 +9,7 @@ import {
   setDefaultOpenAIKey,
   tool,
 } from '@openai/agents';
+import type { RunStreamEvent } from '@openai/agents';
 import { randomUUID } from 'node:crypto';
 import z from 'zod';
 import { left, right } from '../../vault/domain/either';
@@ -37,7 +38,7 @@ export class OpenAiAgentService {
     setDefaultOpenAIKey(this.openAiClient.apiKey);
     this.agent = new Agent<AgentContext>({
       name: 'FinGram Agent',
-      model: 'gpt-4.1-nano',
+      model: 'gpt-5.4-nano',
       instructions: `Você é um agente que ajuda o usuário a gerenciar o Duna, seu copiloto financeiro.
         Caso o usuário pergunte sobre as categorias disponíveis, use a ferramenta getCategories para obter as categorias disponíveis.
         Caso o usuário queira adicionar uma transação, use a ferramenta addTransaction para adicionar a transação. Esse pedido normalmente será simplesmente uma descrição de uma transação, como "Salário de 1000 reais" ou "Aluguel 1000 reais", considere essas mensagens um pedido de adição de transação e chame a ferramenta addTransaction imediatamente.
@@ -58,7 +59,7 @@ export class OpenAiAgentService {
         ----
 
         - Sua resposta será enviada para o usuário final.
-        - Sua resposta deverá ter quebras de linha apropriadas para serem renderizadas no HTML com white-space: pre-wrap;
+        - Sua resposta será renderizada como Markdown. Use **negrito**, listas e quebras de linha quando apropriado.
         - Sua resposta não deve conter observações técnicas como sobre estar formatando corret
         - Considere a data atual ${new Date().toISOString()} caso o usuário não forneça uma data.
         - Infira o tipo de transação (income ou expense) de acordo com a descrição da transação.
@@ -103,6 +104,9 @@ export class OpenAiAgentService {
         - Diferencie dados reais (isReal: true) de projetados (isReal: false) quando relevante.
         - Se a projeção é grande demais, resuma: mostre apenas meses-chave (início, marcos, final) em vez de todos os 120 meses.
         - Use o campo allocations do resultado para identificar alocações por ID. Cruze com getPlan para obter labels legíveis.
+        - Nunca exponha IDs internos (UUIDs) para o usuário. Use apenas nomes legíveis.
+        - Traduza status internos: draft → "rascunho", active → "ativo", archived → "arquivado".
+        - Ao resumir um plano, mencione: nome, data de início, salário atual, custo de vida, alocações com labels e valores mensais.
         `,
       tools: this.getTools(),
     });
@@ -174,7 +178,144 @@ export class OpenAiAgentService {
     return this.handleResult(result, conversationId);
   }
 
+  async executeStream(
+    params: {
+      message?: string;
+      decisions: Record<string, 'approved' | 'rejected'>;
+      conversationId: string;
+      vaultId: string;
+    },
+    emit: (event: string, data: unknown) => void,
+  ) {
+    let conversationId = params.conversationId;
+    if (!conversationId) {
+      conversationId = this.generateConversationId();
+    }
+
+    const session = this.getOrCreateSession(conversationId);
+
+    this.logger.log(
+      `Executing stream agent with message "${params.message ?? ''}" and conversationId ${conversationId}`,
+    );
+
+    let input: string | RunState<AgentContext, Agent<AgentContext>>;
+
+    if (
+      params.decisions &&
+      Object.keys(params.decisions).length > 0 &&
+      params.conversationId
+    ) {
+      const stateString = this.pendingStates.get(params.conversationId);
+      if (!stateString) {
+        emit('error', { message: 'Conversation not found' });
+        return;
+      }
+
+      const state: RunState<AgentContext, Agent<AgentContext>> =
+        await RunState.fromString(this.agent, stateString);
+
+      const interruptions =
+        state.getInterruptions() as RunToolApprovalItem[];
+      interruptions.forEach((item: RunToolApprovalItem) => {
+        if (item.type === 'tool_approval_item' && 'callId' in item.rawItem) {
+          const callId = item.rawItem.callId;
+          if (params.decisions[callId] === 'approved') {
+            state.approve(item);
+          } else if (params.decisions[callId] === 'rejected') {
+            state.reject(item);
+          }
+        }
+      });
+
+      input = state;
+    } else {
+      input = params.message ?? '';
+    }
+
+    try {
+      const result = await run(this.agent, input, {
+        context: { vaultId: params.vaultId },
+        session,
+        stream: true,
+      });
+
+      for await (const event of result as AsyncIterable<RunStreamEvent>) {
+        if (
+          event.type === 'raw_model_stream_event' &&
+          event.data.type === 'output_text_delta'
+        ) {
+          emit('text_delta', { delta: event.data.delta });
+        }
+
+        if (event.type === 'run_item_stream_event') {
+          if (event.name === 'tool_called') {
+            const raw = event.item.rawItem as { callId?: string; name?: string };
+            emit('tool_called', {
+              name: raw.name ?? '',
+              callId: raw.callId ?? '',
+            });
+          }
+
+          if (event.name === 'tool_output') {
+            const item = event.item as { rawItem: { callId?: string }; output?: unknown };
+            emit('tool_output', {
+              callId: item.rawItem.callId ?? '',
+              output:
+                typeof item.output === 'string'
+                  ? item.output
+                  : JSON.stringify(item.output),
+            });
+          }
+
+          if (event.name === 'tool_approval_requested') {
+            // Will be handled after stream completes via interruptions
+          }
+        }
+      }
+
+      await result.completed;
+
+      if (result.interruptions && result.interruptions.length > 0) {
+        this.pendingStates.set(conversationId, JSON.stringify(result.state));
+        emit('approval_requested', {
+          approvals: result.interruptions
+            .filter((item: any) => item.type === 'tool_approval_item')
+            .map((item: any) => item.toJSON()),
+          conversationId,
+        });
+      } else {
+        this.pendingStates.delete(conversationId);
+        emit('done', {
+          conversationId,
+          history: result.history,
+        });
+      }
+    } catch (error) {
+      this.logger.error(`Stream error: ${error}`);
+      emit('error', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
   private handleResult(result: any, conversationId: string) {
+    if (result.rawResponses?.length) {
+      let totalInput = 0;
+      let totalOutput = 0;
+      let cachedInput = 0;
+      for (const resp of result.rawResponses) {
+        const u = resp.usage;
+        if (u) {
+          totalInput += u.inputTokens ?? 0;
+          totalOutput += u.outputTokens ?? 0;
+          cachedInput += u.inputTokensDetails?.[0]?.cached_tokens ?? 0;
+        }
+      }
+      this.logger.log(
+        `Token usage — input: ${totalInput} (cached: ${cachedInput}), output: ${totalOutput}, total: ${totalInput + totalOutput}, api_calls: ${result.rawResponses.length}`,
+      );
+    }
+
     if (result.interruptions.length > 0) {
       this.pendingStates.set(conversationId, JSON.stringify(result.state));
       return right({
@@ -329,7 +470,7 @@ export class OpenAiAgentService {
         planId: z.string().describe('ID do plano'),
         months: z
           .number()
-          .optional()
+          .default(120)
           .describe('Número de meses a projetar (padrão: 120)'),
       }),
       execute: async (
@@ -339,7 +480,7 @@ export class OpenAiAgentService {
         const [err, projection] = await this.planService.getProjection(
           planId,
           runContext.context.vaultId,
-          months ?? 120,
+          months,
         );
         if (err) return `Erro: ${err}`;
 
