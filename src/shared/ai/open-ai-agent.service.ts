@@ -14,6 +14,7 @@ import z from 'zod';
 import { left, right } from '../../vault/domain/either';
 import { CategoryRepository } from '../../vault/repositories/category.repository';
 import { VaultService } from '../../vault/vault.service';
+import { PlanService } from '../../plan/plan.service';
 import { OpenAiClient } from './open-ai.client';
 
 type AgentContext = {
@@ -31,6 +32,7 @@ export class OpenAiAgentService {
     private readonly openAiClient: OpenAiClient,
     private readonly categoryRepository: CategoryRepository,
     private readonly vaultService: VaultService,
+    private readonly planService: PlanService,
   ) {
     setDefaultOpenAIKey(this.openAiClient.apiKey);
     this.agent = new Agent<AgentContext>({
@@ -81,6 +83,26 @@ export class OpenAiAgentService {
         - Não chame a ferramenta de addTransaction se o usuário acabou de rejeitar sua execução, apenas informe que a ação foi rejeitada e pergunte ao usuário se ele deseja fazer outra ação.
         - Não diga que a transação foi adicionada se a execução da ferramenta addTransaction não for aprovada, apenas informe que a ação foi rejeitada e pergunte ao usuário se ele deseja fazer outra ação ou mudar alguma informação.
         - Se o uso da ferramenta não for aprovado, não diga que houve um erro, pois o próprio usuário rejeitou a ação.
+
+        ----
+
+        PLANOS FINANCEIROS:
+
+        O usuário pode ter planos financeiros de longo prazo. Use as ferramentas listPlans, getPlan e getProjection para responder perguntas sobre planos.
+
+        Fluxo típico:
+        - "Como está meu plano?" → listPlans → getPlan → resuma em linguagem natural
+        - "Quanto vou ter no mês 24?" → listPlans → getProjection → responda com o valor
+        - "Quando atinjo a meta da reserva?" → getProjection → encontre o mês onde o saldo da alocação atinge o target
+
+        Regras:
+        - Se o usuário tem apenas 1 plano, use-o automaticamente sem perguntar qual.
+        - Se tem múltiplos planos, pergunte qual plano o usuário quer consultar.
+        - Formate valores monetários em R$ com 2 casas decimais.
+        - Formate datas para o usuário final como "janeiro de 2026", nunca ISO 8601.
+        - Diferencie dados reais (isReal: true) de projetados (isReal: false) quando relevante.
+        - Se a projeção é grande demais, resuma: mostre apenas meses-chave (início, marcos, final) em vez de todos os 120 meses.
+        - Use o campo allocations do resultado para identificar alocações por ID. Cruze com getPlan para obter labels legíveis.
         `,
       tools: this.getTools(),
     });
@@ -239,6 +261,115 @@ export class OpenAiAgentService {
         return `A transação de ${transaction.amount} reais foi registrada com sucesso na categoria ${transaction.categoryName}. Saldo atual: ${vault?.vault.getBalance()}`;
       },
     });
-    return [getCategories, addTransaction];
+    const listPlans = tool({
+      name: 'listPlans',
+      description: 'Lista os planos financeiros do usuário',
+      parameters: z.object({}),
+      execute: async (_, runContext: RunContext<AgentContext>) => {
+        const plans = await this.planService.getByVaultId(
+          runContext.context.vaultId,
+        );
+        if (plans.length === 0) {
+          return 'O usuário não possui nenhum plano financeiro.';
+        }
+        return JSON.stringify(
+          plans.map((p) => ({
+            id: p.id,
+            name: p.name,
+            status: p.status,
+            startDate: p.startDate.toISOString(),
+            salaryChangePoints: p.premises.salaryChangePoints,
+            costOfLivingChangePoints: p.premises.costOfLivingChangePoints,
+          })),
+        );
+      },
+    });
+
+    const getPlan = tool({
+      name: 'getPlan',
+      description:
+        'Obtém detalhes completos de um plano, incluindo premissas, alocações e marcos',
+      parameters: z.object({
+        planId: z.string().describe('ID do plano'),
+      }),
+      execute: async ({ planId }, runContext: RunContext<AgentContext>) => {
+        const [err, data] = await this.planService.getById(
+          planId,
+          runContext.context.vaultId,
+        );
+        if (err) return `Erro: ${err}`;
+        return JSON.stringify({
+          plan: {
+            id: data.plan.id,
+            name: data.plan.name,
+            status: data.plan.status,
+            startDate: data.plan.startDate.toISOString(),
+            premises: data.plan.premises,
+            milestones: data.plan.milestones,
+          },
+          allocations: data.allocations.map((a) => ({
+            id: a.id,
+            label: a.label,
+            target: a.target,
+            monthlyAmount: a.monthlyAmount,
+            realizationMode: a.realizationMode,
+            yieldRate: a.yieldRate,
+            financing: a.financing,
+            estratoId: a.estratoId,
+          })),
+        });
+      },
+    });
+
+    const getProjection = tool({
+      name: 'getProjection',
+      description:
+        'Calcula a projeção financeira mês a mês de um plano. Retorna patrimônio total, caixa, saldo por alocação e marcos atingidos.',
+      parameters: z.object({
+        planId: z.string().describe('ID do plano'),
+        months: z
+          .number()
+          .optional()
+          .describe('Número de meses a projetar (padrão: 120)'),
+      }),
+      execute: async (
+        { planId, months },
+        runContext: RunContext<AgentContext>,
+      ) => {
+        const [err, projection] = await this.planService.getProjection(
+          planId,
+          runContext.context.vaultId,
+          months ?? 120,
+        );
+        if (err) return `Erro: ${err}`;
+
+        const summary = projection.map((m) => ({
+          month: m.month,
+          date: m.date.toISOString().slice(0, 7),
+          income: m.income,
+          costOfLiving: m.costOfLiving,
+          surplus: m.surplus,
+          cash: Math.round(m.cash * 100) / 100,
+          totalWealth: Math.round(m.totalWealth * 100) / 100,
+          allocations: Object.fromEntries(
+            Object.entries(m.allocations).map(([k, v]) => [
+              k,
+              Math.round(v * 100) / 100,
+            ]),
+          ),
+          isReal: m.isReal,
+        }));
+
+        return JSON.stringify(summary);
+      },
+    });
+
+    return [
+      getCategories,
+      addTransaction,
+      listPlans,
+      getPlan,
+      getProjection,
+    ];
   }
 }
