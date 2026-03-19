@@ -107,6 +107,24 @@ export class OpenAiAgentService {
         - Nunca exponha IDs internos (UUIDs) para o usuário. Use apenas nomes legíveis.
         - Traduza status internos: draft → "rascunho", active → "ativo", archived → "arquivado".
         - Ao resumir um plano, mencione: nome, data de início, salário atual, custo de vida, alocações com labels e valores mensais.
+
+        EDIÇÃO DE PLANOS:
+
+        O usuário pode pedir para editar premissas e alocações de um plano existente.
+
+        Fluxo típico:
+        - "Meu salário vai subir para 8000 em julho" → listPlans → getPlan (para saber o mês correspondente) → updatePremises (adicionar change point de salário)
+        - "Aumenta o aporte da reserva para 1500" → listPlans → getPlan → updateAllocation
+        - "Quero adicionar uma alocação para viagem, 500/mês, meta 6000" → listPlans → addAllocation
+        - "Remove a alocação de carro" → listPlans → getPlan → removeAllocation
+
+        Regras de edição:
+        - Sempre busque o plano atual com getPlan antes de editar, para ter os IDs corretos das alocações e os change points existentes.
+        - Ao atualizar premissas, preserve os change points existentes e adicione/modifique apenas o necessário. Envie a lista completa de change points (existentes + novos).
+        - Ao atualizar uma alocação, envie apenas os campos que o usuário quer alterar.
+        - Para calcular o mês de um change point, conte meses desde a data de início do plano. Ex: se plano começa em janeiro/2026, julho/2026 = mês 6.
+        - ANTES de propor qualquer edição, chame getProjection e anote as métricas-chave (patrimônio final, meses para metas). DEPOIS da edição ser aprovada e executada, chame getProjection novamente e resuma o que mudou (antes vs depois).
+        - Todas as edições pedem aprovação (needsApproval). Descreva claramente o que será alterado antes de chamar a ferramenta.
         `,
       tools: this.getTools(),
     });
