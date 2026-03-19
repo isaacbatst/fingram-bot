@@ -532,12 +532,12 @@ export class OpenAiAgentService {
         planId: z.string().describe('ID do plano'),
         salaryChangePoints: z
           .array(z.object({ month: z.number(), amount: z.number() }))
-          .optional()
-          .describe('Novos change points de salário (substitui todos)'),
+          .nullable()
+          .describe('Novos change points de salário (substitui todos). Null para não alterar.'),
         costOfLivingChangePoints: z
           .array(z.object({ month: z.number(), amount: z.number() }))
-          .optional()
-          .describe('Novos change points de custo de vida (substitui todos)'),
+          .nullable()
+          .describe('Novos change points de custo de vida (substitui todos). Null para não alterar.'),
       }),
       execute: async (
         { planId, salaryChangePoints, costOfLivingChangePoints },
@@ -546,7 +546,10 @@ export class OpenAiAgentService {
         const [err, plan] = await this.planService.updatePremises(
           planId,
           runContext.context.vaultId,
-          { salaryChangePoints, costOfLivingChangePoints },
+          {
+            salaryChangePoints: salaryChangePoints ?? undefined,
+            costOfLivingChangePoints: costOfLivingChangePoints ?? undefined,
+          },
         );
         if (err) return `Erro: ${err}`;
         return `Premissas atualizadas com sucesso. Salário: ${JSON.stringify(plan.premises.salaryChangePoints)}, Custo de vida: ${JSON.stringify(plan.premises.costOfLivingChangePoints)}`;
@@ -589,22 +592,27 @@ export class OpenAiAgentService {
       needsApproval: true,
       parameters: z.object({
         allocationId: z.string().describe('ID da alocação'),
-        label: z.string().optional().describe('Novo nome'),
-        target: z.number().optional().describe('Nova meta em R$'),
+        label: z.string().nullable().describe('Novo nome. Null para não alterar.'),
+        target: z.number().nullable().describe('Nova meta em R$. Null para não alterar.'),
         monthlyAmount: z
           .array(z.object({ month: z.number(), amount: z.number() }))
-          .optional()
-          .describe('Novo valor mensal (change points)'),
-        yieldRate: z.number().optional().describe('Nova taxa de rendimento anual'),
+          .nullable()
+          .describe('Novo valor mensal (change points). Null para não alterar.'),
+        yieldRate: z.number().nullable().describe('Nova taxa de rendimento anual. Null para não alterar.'),
       }),
       execute: async (
-        { allocationId, ...updates },
+        { allocationId, label, target, monthlyAmount, yieldRate },
         runContext: RunContext<AgentContext>,
       ) => {
         const [err, allocation] = await this.planService.updateAllocation(
           allocationId,
           runContext.context.vaultId,
-          updates,
+          {
+            label: label ?? undefined,
+            target: target ?? undefined,
+            monthlyAmount: monthlyAmount ?? undefined,
+            yieldRate: yieldRate ?? undefined,
+          },
         );
         if (err) return `Erro: ${err}`;
         return `Alocação "${allocation.label}" atualizada. Meta: R$ ${allocation.target}, Aporte mensal: R$ ${allocation.monthlyAmount[0]?.amount ?? 0}`;
