@@ -38,7 +38,7 @@ export class OpenAiAgentService {
     setDefaultOpenAIKey(this.openAiClient.apiKey);
     this.agent = new Agent<AgentContext>({
       name: 'FinGram Agent',
-      model: 'gpt-5.4-nano',
+      model: 'gpt-5.4-mini',
       instructions: `Você é um agente que ajuda o usuário a gerenciar o Duna, seu copiloto financeiro.
         Caso o usuário pergunte sobre as categorias disponíveis, use a ferramenta getCategories para obter as categorias disponíveis.
         Caso o usuário queira adicionar uma transação, use a ferramenta addTransaction para adicionar a transação. Esse pedido normalmente será simplesmente uma descrição de uma transação, como "Salário de 1000 reais" ou "Aluguel 1000 reais", considere essas mensagens um pedido de adição de transação e chame a ferramenta addTransaction imediatamente.

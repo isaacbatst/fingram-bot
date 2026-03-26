@@ -74,6 +74,25 @@ JS:    new Date('2026-01-01T00:00:00.000Z')
 
 **Where this applies:** Plan month calculations, period ranges, scheduled movement matching, cost-of-living lookups — anywhere a stored `startDate`/`createdAt` is compared to `new Date()`.
 
+## OpenAI Agents SDK — Tool Schema Constraints
+
+**CRITICAL: Use `.nullable()` instead of `.optional()` for optional tool parameters.**
+
+The OpenAI API requires all properties to be listed in the JSON Schema `required` array. Zod's `.optional()` removes the property from `required`, causing a 400 error: `'required' is required to be supplied and to be an array including every key in properties`.
+
+**Pattern for partial-update tools:**
+```typescript
+parameters: z.object({
+  id: z.string(),
+  name: z.string().nullable().describe('New name. Null to skip.'),
+}),
+execute: async ({ id, name }) => {
+  await service.update(id, { name: name ?? undefined });
+},
+```
+
+Use `?? undefined` to convert `null` back to `undefined` before passing to service methods that use `undefined` to mean "don't change".
+
 ## Verification Commands
 
 ```bash
