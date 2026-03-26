@@ -132,6 +132,8 @@ export function runProjection(
       for (const ar of rd.allocationRealizations) {
         allocationRealized[ar.allocationId] =
           (allocationRealized[ar.allocationId] ?? 0) + ar.amount;
+        allocationBalances[ar.allocationId] =
+          (allocationBalances[ar.allocationId] ?? 0) - ar.amount;
       }
     }
 
@@ -260,6 +262,7 @@ export function runProjection(
         const available = allocationBalances[id] ?? 0;
         const deduction = Math.min(out.amount, available);
         allocationBalances[id] -= deduction;
+        allocationAccumulated[id] -= deduction;
 
         if (out.destinationBoxId) {
           const destAllocation = allocations.find(
@@ -271,6 +274,8 @@ export function runProjection(
           } else {
             allocationBalances[out.destinationBoxId] =
               (allocationBalances[out.destinationBoxId] ?? 0) + deduction;
+            allocationAccumulated[out.destinationBoxId] =
+              (allocationAccumulated[out.destinationBoxId] ?? 0) + deduction;
           }
         } else {
           allocationOutflows -= deduction;
