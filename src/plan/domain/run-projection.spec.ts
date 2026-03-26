@@ -1723,4 +1723,139 @@ describe('runProjection', () => {
       expect(result[2].allocationYields[alloc.id]).toBe(0);
     });
   });
+
+  describe('realizations and scheduled outs interaction', () => {
+    const startDate = new Date('2026-01-01');
+
+    it('real realizations reduce allocationBalances', () => {
+      const alloc = makeAllocation({
+        id: 'casamento',
+        realizationMode: 'onCompletion',
+        target: 30000,
+        monthlyAmount: [{ month: 0, amount: 0 }],
+        initialBalance: 2500,
+      });
+
+      const realData: RealMonthData[] = [
+        {
+          month: 0,
+          realIncome: 10000,
+          realCostOfLiving: 6000,
+          allocationPayments: [],
+          allocationRealizations: [{ allocationId: 'casamento', amount: 1650 }],
+        },
+      ];
+
+      const result = runProjection(defaultPremises, [alloc], startDate, 2, realData, 1);
+
+      // Balance should reflect the realization
+      expect(result[0].allocations['casamento']).toBe(2500 - 1650);
+      expect(result[0].allocationAccumulated['casamento']).toBe(2500);
+      expect(result[0].allocationRealized['casamento']).toBe(1650);
+    });
+
+    it('scheduled out reduces allocationAccumulated', () => {
+      const alloc = makeAllocation({
+        id: 'reserva',
+        realizationMode: 'manual',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 0 }],
+        initialBalance: 2500,
+        scheduledMovements: [
+          { month: 1, amount: 2500, label: 'Saque', type: 'out' },
+        ],
+      });
+
+      const result = runProjection(defaultPremises, [alloc], startDate, 3);
+
+      // After scheduled out, accumulated should be reduced
+      expect(result[1].allocations['reserva']).toBe(0);
+      expect(result[1].allocationAccumulated['reserva']).toBe(0);
+    });
+
+    it('scheduled out transfer increases destination accumulated', () => {
+      const source = makeAllocation({
+        id: 'source',
+        realizationMode: 'manual',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 0 }],
+        initialBalance: 5000,
+        scheduledMovements: [
+          { month: 1, amount: 3000, label: 'Transfer', type: 'out', destinationBoxId: 'dest' },
+        ],
+      });
+      const dest = makeAllocation({
+        id: 'dest',
+        realizationMode: 'manual',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 0 }],
+        initialBalance: 1000,
+      });
+
+      const result = runProjection(defaultPremises, [source, dest], startDate, 3);
+
+      // Source accumulated reduced, dest accumulated increased
+      expect(result[1].allocationAccumulated['source']).toBe(5000 - 3000);
+      expect(result[1].allocationAccumulated['dest']).toBe(1000 + 3000);
+      expect(result[1].allocations['source']).toBe(2000);
+      expect(result[1].allocations['dest']).toBe(4000);
+    });
+
+    it('combined: realization + scheduled out caps deduction at available balance', () => {
+      const alloc = makeAllocation({
+        id: 'casamento',
+        realizationMode: 'onCompletion',
+        target: 30000,
+        monthlyAmount: [{ month: 0, amount: 0 }],
+        initialBalance: 2500,
+        scheduledMovements: [
+          { month: 3, amount: 2500, label: 'Saque para entrada terreno', type: 'out' },
+        ],
+      });
+
+      const realData: RealMonthData[] = [
+        {
+          month: 0,
+          realIncome: 10000,
+          realCostOfLiving: 6000,
+          allocationPayments: [],
+          allocationRealizations: [{ allocationId: 'casamento', amount: 1650 }],
+        },
+        {
+          month: 1,
+          realIncome: 10000,
+          realCostOfLiving: 6000,
+          allocationPayments: [],
+          allocationRealizations: [],
+        },
+        {
+          month: 2,
+          realIncome: 10000,
+          realCostOfLiving: 6000,
+          allocationPayments: [],
+          allocationRealizations: [],
+        },
+      ];
+
+      const result = runProjection(defaultPremises, [alloc], startDate, 5, realData, 3);
+
+      // Month 0: balance = 2500 - 1650 = 850, accumulated = 2500, realized = 1650
+      expect(result[0].allocations['casamento']).toBe(850);
+      expect(result[0].allocationAccumulated['casamento']).toBe(2500);
+      expect(result[0].allocationRealized['casamento']).toBe(1650);
+
+      // Month 3: scheduled out tries 2500 but only 850 available
+      // deduction = min(2500, 850) = 850
+      // accumulated = 2500 - 850 = 1650, realized = 1650, emMaos = 0
+      expect(result[3].allocations['casamento']).toBe(0);
+      expect(result[3].allocationAccumulated['casamento']).toBe(1650);
+      expect(result[3].allocationRealized['casamento']).toBe(1650);
+
+      // Cash at month 3 should have received only 850, not 2500
+      // Months 0-2: cash accumulates surplus (10000-6000=4000/mo, minus 0 alloc outflow)
+      // Month 3: cash = prev_cash + 4000 + 850 (from scheduled out)
+      const cashMonth2 = result[2].cash;
+      expect(result[3].cash).toBe(cashMonth2 + 4000 + 850);
+    });
+  });
 });

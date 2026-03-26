@@ -246,6 +246,139 @@ export class PlanService {
     return right(true);
   }
 
+  async updatePremises(
+    planId: string,
+    vaultId: string,
+    updates: {
+      salaryChangePoints?: ChangePoint[];
+      costOfLivingChangePoints?: ChangePoint[];
+    },
+  ): Promise<Either<string, Plan>> {
+    if (!updates.salaryChangePoints && !updates.costOfLivingChangePoints) {
+      return left('Pelo menos um campo deve ser fornecido');
+    }
+
+    const plan = await this.planQuery.findPlanById(planId);
+    if (!plan || plan.vaultId !== vaultId) return left('Plano não encontrado');
+
+    if (updates.salaryChangePoints !== undefined) {
+      if (updates.salaryChangePoints.length === 0) {
+        return left('Premissas devem ter pelo menos um change point de salário');
+      }
+      for (const cp of updates.salaryChangePoints) {
+        if (cp.amount < 0) return left('Valor do change point de salário não pode ser negativo');
+        if (cp.month < 0) return left('Mês do change point não pode ser negativo');
+      }
+      plan.premises.salaryChangePoints = updates.salaryChangePoints;
+    }
+
+    if (updates.costOfLivingChangePoints !== undefined) {
+      if (updates.costOfLivingChangePoints.length === 0) {
+        return left('Premissas devem ter pelo menos um change point de custo de vida');
+      }
+      for (const cp of updates.costOfLivingChangePoints) {
+        if (cp.amount < 0) return left('Valor do change point de custo de vida não pode ser negativo');
+        if (cp.month < 0) return left('Mês do change point não pode ser negativo');
+      }
+      plan.premises.costOfLivingChangePoints = updates.costOfLivingChangePoints;
+    }
+
+    await this.planRepository.update(plan);
+    return right(plan);
+  }
+
+  async addAllocation(
+    planId: string,
+    vaultId: string,
+    input: CreateAllocationInput,
+  ): Promise<Either<string, Allocation>> {
+    const plan = await this.planQuery.findPlanById(planId);
+    if (!plan || plan.vaultId !== vaultId) return left('Plano não encontrado');
+
+    if (!input.label?.trim()) return left('Label da alocação é obrigatória');
+    if (input.target < 0) return left('Target da alocação não pode ser negativo');
+    if (input.yieldRate !== undefined && input.yieldRate < 0) {
+      return left('Taxa de rendimento não pode ser negativa');
+    }
+    if (input.yieldRate !== undefined && input.realizationMode === 'immediate') {
+      return left('Taxa de rendimento só pode ser definida para alocações que retêm fundos');
+    }
+    if (input.realizationMode === 'onCompletion' && (!input.target || input.target <= 0)) {
+      return left('Modo onCompletion requer target > 0');
+    }
+
+    const allocation = Allocation.create({ ...input, planId });
+    await this.allocationRepo.create(allocation);
+    return right(allocation);
+  }
+
+  async updateAllocation(
+    allocationId: string,
+    vaultId: string,
+    updates: {
+      label?: string;
+      target?: number;
+      monthlyAmount?: ChangePoint[];
+      yieldRate?: number;
+    },
+  ): Promise<Either<string, Allocation>> {
+    if (
+      updates.label === undefined &&
+      updates.target === undefined &&
+      updates.monthlyAmount === undefined &&
+      updates.yieldRate === undefined
+    ) {
+      return left('Pelo menos um campo deve ser fornecido');
+    }
+
+    const allocation = await this.planQuery.findAllocationById(allocationId);
+    if (!allocation) return left('Alocação não encontrada');
+
+    const plan = await this.planQuery.findPlanById(allocation.planId);
+    if (!plan || plan.vaultId !== vaultId)
+      return left('Alocação não pertence a este vault');
+
+    if (updates.label !== undefined) {
+      if (!updates.label.trim()) return left('Label da alocação é obrigatória');
+      allocation.label = updates.label.trim();
+    }
+
+    if (updates.target !== undefined) {
+      if (updates.target < 0) return left('Target da alocação não pode ser negativo');
+      allocation.target = updates.target;
+    }
+
+    if (updates.monthlyAmount !== undefined) {
+      allocation.monthlyAmount = updates.monthlyAmount;
+    }
+
+    if (updates.yieldRate !== undefined) {
+      if (updates.yieldRate < 0) return left('Taxa de rendimento não pode ser negativa');
+      if (allocation.realizationMode === 'immediate') {
+        return left('Taxa de rendimento só pode ser definida para alocações que retêm fundos');
+      }
+      allocation.yieldRate = updates.yieldRate;
+    }
+
+    await this.allocationRepo.update(allocation);
+    return right(allocation);
+  }
+
+  async removeAllocation(
+    allocationId: string,
+    vaultId: string,
+  ): Promise<Either<string, true>> {
+    const allocation = await this.planQuery.findAllocationById(allocationId);
+    if (!allocation) return left('Alocação não encontrada');
+
+    const plan = await this.planQuery.findPlanById(allocation.planId);
+    if (!plan || plan.vaultId !== vaultId)
+      return left('Alocação não pertence a este vault');
+
+    await this.allocationRepo.delete(allocationId);
+    return right(true);
+  }
+
   async getByVaultId(vaultId: string): Promise<Plan[]> {
     return this.planQuery.listPlansByVaultId(vaultId);
   }

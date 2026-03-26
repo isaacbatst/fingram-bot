@@ -107,6 +107,24 @@ export class OpenAiAgentService {
         - Nunca exponha IDs internos (UUIDs) para o usuário. Use apenas nomes legíveis.
         - Traduza status internos: draft → "rascunho", active → "ativo", archived → "arquivado".
         - Ao resumir um plano, mencione: nome, data de início, salário atual, custo de vida, alocações com labels e valores mensais.
+
+        EDIÇÃO DE PLANOS:
+
+        O usuário pode pedir para editar premissas e alocações de um plano existente.
+
+        Fluxo típico:
+        - "Meu salário vai subir para 8000 em julho" → listPlans → getPlan (para saber o mês correspondente) → updatePremises (adicionar change point de salário)
+        - "Aumenta o aporte da reserva para 1500" → listPlans → getPlan → updateAllocation
+        - "Quero adicionar uma alocação para viagem, 500/mês, meta 6000" → listPlans → addAllocation
+        - "Remove a alocação de carro" → listPlans → getPlan → removeAllocation
+
+        Regras de edição:
+        - Sempre busque o plano atual com getPlan antes de editar, para ter os IDs corretos das alocações e os change points existentes.
+        - Ao atualizar premissas, preserve os change points existentes e adicione/modifique apenas o necessário. Envie a lista completa de change points (existentes + novos).
+        - Ao atualizar uma alocação, envie apenas os campos que o usuário quer alterar.
+        - Para calcular o mês de um change point, conte meses desde a data de início do plano. Ex: se plano começa em janeiro/2026, julho/2026 = mês 6.
+        - ANTES de propor qualquer edição, chame getProjection e anote as métricas-chave (patrimônio final, meses para metas). DEPOIS da edição ser aprovada e executada, chame getProjection novamente e resuma o que mudou (antes vs depois).
+        - Todas as edições pedem aprovação (needsApproval). Descreva claramente o que será alterado antes de chamar a ferramenta.
         `,
       tools: this.getTools(),
     });
@@ -505,12 +523,133 @@ export class OpenAiAgentService {
       },
     });
 
+    const updatePremises = tool({
+      name: 'updatePremises',
+      description:
+        'Atualiza premissas de um plano (change points de salário e/ou custo de vida). Envie apenas os campos que deseja alterar.',
+      needsApproval: true,
+      parameters: z.object({
+        planId: z.string().describe('ID do plano'),
+        salaryChangePoints: z
+          .array(z.object({ month: z.number(), amount: z.number() }))
+          .nullable()
+          .describe('Novos change points de salário (substitui todos). Null para não alterar.'),
+        costOfLivingChangePoints: z
+          .array(z.object({ month: z.number(), amount: z.number() }))
+          .nullable()
+          .describe('Novos change points de custo de vida (substitui todos). Null para não alterar.'),
+      }),
+      execute: async (
+        { planId, salaryChangePoints, costOfLivingChangePoints },
+        runContext: RunContext<AgentContext>,
+      ) => {
+        const [err, plan] = await this.planService.updatePremises(
+          planId,
+          runContext.context.vaultId,
+          {
+            salaryChangePoints: salaryChangePoints ?? undefined,
+            costOfLivingChangePoints: costOfLivingChangePoints ?? undefined,
+          },
+        );
+        if (err) return `Erro: ${err}`;
+        return `Premissas atualizadas com sucesso. Salário: ${JSON.stringify(plan.premises.salaryChangePoints)}, Custo de vida: ${JSON.stringify(plan.premises.costOfLivingChangePoints)}`;
+      },
+    });
+
+    const addAllocation = tool({
+      name: 'addAllocation',
+      description: 'Adiciona uma nova alocação a um plano existente.',
+      needsApproval: true,
+      parameters: z.object({
+        planId: z.string().describe('ID do plano'),
+        label: z.string().describe('Nome da alocação'),
+        target: z.number().describe('Meta em R$ (0 se não houver meta)'),
+        monthlyAmount: z
+          .array(z.object({ month: z.number(), amount: z.number() }))
+          .describe('Valor mensal (change points)'),
+        realizationMode: z
+          .enum(['immediate', 'manual', 'onCompletion', 'never'])
+          .describe('Modo de realização: immediate=pagamento mensal, manual=reserva com saque manual, onCompletion=reserva saque ao atingir meta, never=reserva sem saque'),
+      }),
+      execute: async (
+        { planId, label, target, monthlyAmount, realizationMode },
+        runContext: RunContext<AgentContext>,
+      ) => {
+        const [err, allocation] = await this.planService.addAllocation(
+          planId,
+          runContext.context.vaultId,
+          { label, target, monthlyAmount, realizationMode, scheduledMovements: [] },
+        );
+        if (err) return `Erro: ${err}`;
+        return `Alocação "${allocation.label}" adicionada com sucesso. Meta: R$ ${allocation.target}, Aporte mensal: R$ ${allocation.monthlyAmount[0]?.amount ?? 0}`;
+      },
+    });
+
+    const updateAllocation = tool({
+      name: 'updateAllocation',
+      description:
+        'Atualiza uma alocação existente (label, target, monthlyAmount, yieldRate). Envie apenas os campos que deseja alterar.',
+      needsApproval: true,
+      parameters: z.object({
+        allocationId: z.string().describe('ID da alocação'),
+        label: z.string().nullable().describe('Novo nome. Null para não alterar.'),
+        target: z.number().nullable().describe('Nova meta em R$. Null para não alterar.'),
+        monthlyAmount: z
+          .array(z.object({ month: z.number(), amount: z.number() }))
+          .nullable()
+          .describe('Novo valor mensal (change points). Null para não alterar.'),
+        yieldRate: z.number().nullable().describe('Nova taxa de rendimento anual. Null para não alterar.'),
+      }),
+      execute: async (
+        { allocationId, label, target, monthlyAmount, yieldRate },
+        runContext: RunContext<AgentContext>,
+      ) => {
+        const [err, allocation] = await this.planService.updateAllocation(
+          allocationId,
+          runContext.context.vaultId,
+          {
+            label: label ?? undefined,
+            target: target ?? undefined,
+            monthlyAmount: monthlyAmount ?? undefined,
+            yieldRate: yieldRate ?? undefined,
+          },
+        );
+        if (err) return `Erro: ${err}`;
+        return `Alocação "${allocation.label}" atualizada. Meta: R$ ${allocation.target}, Aporte mensal: R$ ${allocation.monthlyAmount[0]?.amount ?? 0}`;
+      },
+    });
+
+    const removeAllocation = tool({
+      name: 'removeAllocation',
+      description: 'Remove uma alocação de um plano.',
+      needsApproval: true,
+      parameters: z.object({
+        allocationId: z.string().describe('ID da alocação'),
+        allocationLabel: z.string().describe('Nome da alocação (para confirmação)'),
+      }),
+      execute: async (
+        { allocationId, allocationLabel },
+        runContext: RunContext<AgentContext>,
+      ) => {
+        const [err] = await this.planService.removeAllocation(
+          allocationId,
+          runContext.context.vaultId,
+        );
+        if (err) return `Erro: ${err}`;
+        return `Alocação "${allocationLabel}" removida com sucesso.`;
+      },
+    });
+
     return [
       getCategories,
       addTransaction,
       listPlans,
       getPlan,
       getProjection,
+      updatePremises,
+      addAllocation,
+      updateAllocation,
+      removeAllocation,
     ];
   }
 }
