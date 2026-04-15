@@ -30,6 +30,22 @@ npm run test:integration  # Integration tests (testcontainers + real PostgreSQL)
 - **Migrations:** `drizzle/` folder — SQL files + `meta/_journal.json`. Snapshots (`meta/NNNN_snapshot.json`) are used by `drizzle-kit generate` for diffing but NOT required by `migrate()` at runtime.
 - **Dev sync:** `db:push` applies schema.ts directly to DB (bypasses migration journal). Use this in dev to avoid journal desync. Migrations are for prod deployment.
 
+### Creating a new migration for prod (CRITICAL)
+
+**Prod deploy auto-runs migrations** via `node dist/migrate.js && node dist/main` (see `Dockerfile`). The runtime `migrate()` reads `drizzle/meta/_journal.json` — **SQL files not registered there are silently ignored**. Writing a `drizzle/NNNN_*.sql` file by hand without updating the journal will ship the schema change to prod code but leave the DB untouched, producing a "column does not exist" incident on startup.
+
+**Correct workflow:**
+
+1. Edit `src/shared/persistence/drizzle/schema.ts`.
+2. Run `npm run db:generate`. This creates both `drizzle/NNNN_*.sql` **and** the matching entry in `drizzle/meta/_journal.json` (plus a snapshot under `drizzle/meta/NNNN_snapshot.json`).
+3. Review the generated SQL. If it uses `ADD COLUMN` / `DROP COLUMN` / `CREATE TABLE`, prefer making it idempotent (`ADD COLUMN IF NOT EXISTS`, `DROP TABLE IF EXISTS`) so a hotfix that applies the change out-of-band in prod stays safe when the migration later runs.
+4. Apply locally in dev: `npm run db:push` (bypasses journal, syncs schema — safe for dev even with journal gaps).
+5. Commit the new SQL file, the updated `_journal.json`, and the new snapshot together. **Do not commit them separately.**
+
+**Do not hand-write migration SQL files.** Even if the SQL is trivial, use `db:generate` so the journal stays in sync. If you must hand-write (e.g., data backfill), still add the entry to `_journal.json` in the same commit.
+
+**Verification before pushing:** ensure `drizzle/meta/_journal.json` has an entry for every `drizzle/NNNN_*.sql` file you are committing. Mismatches break prod migration.
+
 ### Plan Domain
 
 - **Types:** `src/plan/domain/plan.ts` — Box, MonthData, Plan interfaces

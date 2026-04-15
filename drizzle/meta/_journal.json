@@ -57,6 +57,13 @@
       "when": 1773600000000,
       "tag": "0007_realization_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1776290400000,
+      "tag": "0008_budget_start_day_overrides",
+      "breakpoints": true
     }
   ]
 }
