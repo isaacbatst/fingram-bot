@@ -1,5 +1,13 @@
 import * as crypto from 'crypto';
 import { Box, BoxType } from './box';
+import {
+  BudgetStartDayOverride,
+  BudgetStartDaySchedule,
+  getBudgetPeriod as getBudgetPeriodFromSchedule,
+  getCurrentBudgetPeriod as getCurrentBudgetPeriodFromSchedule,
+  isDateInBudgetPeriod as isDateInBudgetPeriodFromSchedule,
+  validateSchedule,
+} from './budget-period';
 import { Category } from './category';
 import { Either, left, right } from './either';
 import { Transaction } from './transaction';
@@ -52,6 +60,7 @@ export interface SerializedVault {
   totalPlannedExpenses: number;
   budgetsSummary: BudgetSummary[];
   budgetStartDay: number;
+  budgetStartDayOverrides: BudgetStartDayOverride[];
 }
 
 export type BudgetSummary = {
@@ -88,60 +97,45 @@ export class Vault {
     > = new Map(),
     public readonly boxes: Map<string, Box> = new Map(),
     private customPrompt = '',
-    private _budgetStartDay = 1,
+    private _schedule: BudgetStartDaySchedule = {
+      defaultDay: 1,
+      overrides: [],
+    },
   ) {}
 
+  get schedule(): BudgetStartDaySchedule {
+    return this._schedule;
+  }
+
   get budgetStartDay(): number {
-    return this._budgetStartDay;
+    return this._schedule.defaultDay;
   }
 
-  setBudgetStartDay(day: number): Either<string, number> {
-    if (day < 1 || day > 28) {
-      return left('O dia de início do orçamento deve estar entre 1 e 28');
-    }
-    this._budgetStartDay = day;
+  get budgetStartDayOverrides(): BudgetStartDayOverride[] {
+    return this._schedule.overrides;
+  }
+
+  setSchedule(input: unknown): Either<string, BudgetStartDaySchedule> {
+    const [err, schedule] = validateSchedule(input);
+    if (err !== null) return left(err);
+    this._schedule = schedule;
     this.isDirty = true;
-    return right(day);
+    return right(schedule);
   }
 
-  /**
-   * Calculate the budget period based on the configured budgetStartDay
-   * For example, if budgetStartDay = 10 and month = 1 (January) 2026:
-   * - Start: January 10, 2026
-   * - End: February 9, 2026
-   */
   getBudgetPeriod(
     month: number,
     year: number,
   ): { startDate: Date; endDate: Date } {
-    const startDate = new Date(year, month - 1, this._budgetStartDay);
-    // End date is the day before the start day of the next month
-    const endDate = new Date(year, month, this._budgetStartDay - 1);
-    // Set end date to end of day
-    endDate.setHours(23, 59, 59, 999);
-    return { startDate, endDate };
+    return getBudgetPeriodFromSchedule(this._schedule, year, month);
   }
 
-  /**
-   * Check if a date falls within the budget period for a given month/year
-   */
   isDateInBudgetPeriod(date: Date, month: number, year: number): boolean {
-    const { startDate, endDate } = this.getBudgetPeriod(month, year);
-    return date >= startDate && date <= endDate;
+    return isDateInBudgetPeriodFromSchedule(this._schedule, date, year, month);
   }
 
-  getCurrentBudgetPeriod(): { month: number; year: number } {
-    const now = new Date();
-    let month = now.getMonth() + 1;
-    let year = now.getFullYear();
-    if (now.getDate() < this._budgetStartDay) {
-      month -= 1;
-      if (month < 1) {
-        month = 12;
-        year -= 1;
-      }
-    }
-    return { month, year };
+  getCurrentBudgetPeriod(now?: Date): { month: number; year: number } {
+    return getCurrentBudgetPeriodFromSchedule(this._schedule, now);
   }
 
   static create(): Vault {
@@ -672,7 +666,8 @@ export class Vault {
         options.date?.month,
         options.date?.year,
       ),
-      budgetStartDay: this._budgetStartDay,
+      budgetStartDay: this._schedule.defaultDay,
+      budgetStartDayOverrides: this._schedule.overrides,
     };
   }
 }

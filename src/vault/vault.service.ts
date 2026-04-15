@@ -1,6 +1,7 @@
 import { AiService } from '@/shared/ai/ai.service';
 import { CsvParser } from '@/shared/csv-parser';
 import { Action, ActionStatus, ActionType } from '@/vault/domain/action';
+import { BudgetStartDaySchedule } from '@/vault/domain/budget-period';
 import { Either, left, right } from '@/vault/domain/either';
 import { Transaction } from '@/vault/domain/transaction';
 import { ActionRepository } from '@/vault/repositories/action.repository';
@@ -618,38 +619,39 @@ export class VaultService {
     return right(vault.getCustomPrompt());
   }
 
-  async setBudgetStartDay(input: {
+  async setBudgetStartDayConfig(input: {
     vaultId: string;
-    day: number;
-  }): Promise<Either<string, number>> {
+    config: unknown;
+  }): Promise<Either<string, BudgetStartDaySchedule>> {
     this.logger.log(
-      `Setting budget start day for vault: ${input.vaultId} to day: ${input.day}`,
+      `Setting budget start day config for vault: ${input.vaultId}`,
     );
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
       return left(`Dados não encontrados`);
     }
-    const [err, day] = vault.setBudgetStartDay(input.day);
+    const [err, schedule] = vault.setSchedule(input.config);
     if (err !== null) {
-      this.logger.error(`Failed to set budget start day: ${err}`);
+      this.logger.error(`Failed to set budget start day config: ${err}`);
       return left(err);
     }
     await this.vaultRepository.update(vault);
-    this.logger.log(`Budget start day set successfully to: ${day}`);
-    return right(day);
+    return right(schedule);
   }
 
-  async getBudgetStartDay(input: {
+  async getBudgetStartDayConfig(input: {
     vaultId: string;
-  }): Promise<Either<string, number>> {
-    this.logger.log(`Getting budget start day for vault: ${input.vaultId}`);
+  }): Promise<Either<string, BudgetStartDaySchedule>> {
+    this.logger.log(
+      `Getting budget start day config for vault: ${input.vaultId}`,
+    );
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
       return left(`Dados não encontrados`);
     }
-    return right(vault.budgetStartDay);
+    return right(vault.schedule);
   }
 
   async getBoxes(vaultId: string) {

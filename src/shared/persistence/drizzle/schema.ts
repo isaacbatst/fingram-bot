@@ -26,6 +26,9 @@ export const vault = pgTable('vault', {
   customPrompt: text('custom_prompt').default(''),
   createdAt: timestamp('created_at').notNull(),
   budgetStartDay: integer('budget_start_day').default(1).notNull(),
+  budgetStartDayOverrides: jsonb('budget_start_day_overrides')
+    .notNull()
+    .default(sql`'[]'::jsonb`),
 });
 
 // Vault-specific categories - copies of base categories that can be edited per vault
