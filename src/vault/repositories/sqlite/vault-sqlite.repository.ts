@@ -171,7 +171,7 @@ export class VaultSqliteRepository extends VaultRepository {
       budgets,
       new Map(),
       row.custom_prompt,
-      row.budget_start_day,
+      { defaultDay: row.budget_start_day, overrides: [] },
     );
     vault.transactionsTracker.clearChanges();
     vault.budgetsTracker.clearChanges();
@@ -240,7 +240,7 @@ export class VaultSqliteRepository extends VaultRepository {
       budgets,
       new Map(),
       row.custom_prompt,
-      row.budget_start_day,
+      { defaultDay: row.budget_start_day, overrides: [] },
     );
     vault.transactionsTracker.clearChanges();
     vault.budgetsTracker.clearChanges();

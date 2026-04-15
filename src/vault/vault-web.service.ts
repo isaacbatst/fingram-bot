@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import { ChatService } from '../bot/modules/chat/chat.service';
 import { PlanQueryService } from '@/plan/shared/plan-query.service';
 import { AccessTokenStore } from '../shared/cache/access-token-store';
+import { BudgetStartDaySchedule } from './domain/budget-period';
 import { Either, left, right } from './domain/either';
 import { Paginated } from './domain/paginated';
 import { BudgetSummary, SerializedVault, Vault } from './domain/vault';
@@ -471,42 +472,40 @@ export class VaultWebService {
     }
   }
 
-  async setBudgetStartDay(
+  async setBudgetStartDayConfig(
     vaultId: string,
-    day: number,
-  ): Promise<Either<VaultError, number>> {
+    config: unknown,
+  ): Promise<Either<VaultError, BudgetStartDaySchedule>> {
     try {
-      this.logger.log(
-        `Setting budget start day for vault: ${vaultId} to day: ${day}`,
-      );
-      const [error, result] = await this.vaultService.setBudgetStartDay({
+      this.logger.log(`Setting budget start day config for vault: ${vaultId}`);
+      const [error, result] = await this.vaultService.setBudgetStartDayConfig({
         vaultId,
-        day,
+        config,
       });
       if (error !== null) {
         return left({
-          type: VaultErrorType.INTERNAL_ERROR,
+          type: VaultErrorType.BAD_REQUEST,
           message: error,
         });
       }
       return right(result);
     } catch (error) {
       this.logger.error(
-        `Error setting budget start day for vault ${vaultId}: ${error}`,
+        `Error setting budget start day config for vault ${vaultId}: ${error}`,
       );
       return left({
         type: VaultErrorType.INTERNAL_ERROR,
-        message: 'Erro interno ao definir dia de início do orçamento',
+        message: 'Erro interno ao definir configuração do dia de início',
       });
     }
   }
 
-  async getBudgetStartDay(
+  async getBudgetStartDayConfig(
     vaultId: string,
-  ): Promise<Either<VaultError, number>> {
+  ): Promise<Either<VaultError, BudgetStartDaySchedule>> {
     try {
-      this.logger.log(`Getting budget start day for vault: ${vaultId}`);
-      const [error, result] = await this.vaultService.getBudgetStartDay({
+      this.logger.log(`Getting budget start day config for vault: ${vaultId}`);
+      const [error, result] = await this.vaultService.getBudgetStartDayConfig({
         vaultId,
       });
       if (error !== null) {
@@ -518,11 +517,11 @@ export class VaultWebService {
       return right(result);
     } catch (error) {
       this.logger.error(
-        `Error getting budget start day for vault ${vaultId}: ${error}`,
+        `Error getting budget start day config for vault ${vaultId}: ${error}`,
       );
       return left({
         type: VaultErrorType.INTERNAL_ERROR,
-        message: 'Erro interno ao obter dia de início do orçamento',
+        message: 'Erro interno ao obter configuração do dia de início',
       });
     }
   }

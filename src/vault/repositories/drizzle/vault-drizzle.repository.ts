@@ -17,6 +17,10 @@ import {
 } from '@/shared/persistence/drizzle/schema';
 import * as schema from '@/shared/persistence/drizzle/schema';
 import { Box, BoxType } from '../../domain/box';
+import {
+  BudgetStartDayOverride,
+  BudgetStartDaySchedule,
+} from '../../domain/budget-period';
 import { Category } from '../../domain/category';
 import { Transaction } from '../../domain/transaction';
 import { Vault } from '../../domain/vault';
@@ -39,6 +43,7 @@ export class VaultDrizzleRepository extends VaultRepository {
       token: vaultEntity.token,
       createdAt: vaultEntity.createdAt,
       budgetStartDay: vaultEntity.budgetStartDay,
+      budgetStartDayOverrides: vaultEntity.budgetStartDayOverrides,
     });
   }
 
@@ -52,6 +57,7 @@ export class VaultDrizzleRepository extends VaultRepository {
           .set({
             customPrompt: vaultEntity.getCustomPrompt(),
             budgetStartDay: vaultEntity.budgetStartDay,
+            budgetStartDayOverrides: vaultEntity.budgetStartDayOverrides,
           })
           .where(eq(vault.id, vaultEntity.id)),
       );
@@ -236,6 +242,7 @@ export class VaultDrizzleRepository extends VaultRepository {
     customPrompt: string | null;
     createdAt: Date;
     budgetStartDay: number;
+    budgetStartDayOverrides: unknown;
   }): Promise<Vault> {
     // Load transactions
     const transactionRows = await this.db
@@ -317,6 +324,16 @@ export class VaultDrizzleRepository extends VaultRepository {
       );
     }
 
+    const overrides: BudgetStartDayOverride[] = Array.isArray(
+      row.budgetStartDayOverrides,
+    )
+      ? (row.budgetStartDayOverrides as BudgetStartDayOverride[])
+      : [];
+    const schedule: BudgetStartDaySchedule = {
+      defaultDay: row.budgetStartDay,
+      overrides,
+    };
+
     const vaultEntity = new Vault(
       row.id,
       row.token,
@@ -325,7 +342,7 @@ export class VaultDrizzleRepository extends VaultRepository {
       budgets,
       boxes,
       row.customPrompt ?? '',
-      row.budgetStartDay,
+      schedule,
     );
     vaultEntity.transactionsTracker.clearChanges();
     vaultEntity.budgetsTracker.clearChanges();

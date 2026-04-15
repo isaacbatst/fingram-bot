@@ -7,6 +7,7 @@ import {
   Logger,
   NotFoundException,
   Post,
+  Put,
   Query,
   Res,
   UnauthorizedException,
@@ -407,40 +408,34 @@ export class VaultWebController {
   }
 
   @UseGuards(VaultAccessTokenGuard)
-  @Post('budget-start-day')
-  async setBudgetStartDay(
+  @Put('budget-start-day')
+  async setBudgetStartDayConfig(
     @VaultSession() vaultId: string,
-    @Body() data: { day: number },
+    @Body() data: unknown,
   ) {
-    if (typeof data.day !== 'number' || data.day < 1 || data.day > 28) {
-      throw new BadRequestException(
-        'O dia de início do orçamento deve ser um número entre 1 e 28',
-      );
-    }
-
-    const [error, result] = await this.vaultWebService.setBudgetStartDay(
+    const [error, result] = await this.vaultWebService.setBudgetStartDayConfig(
       vaultId,
-      data.day,
+      data,
     );
 
     if (error !== null) {
       this.handleError(error.type, error.message);
     }
 
-    return { budgetStartDay: result };
+    return result;
   }
 
   @UseGuards(VaultAccessTokenGuard)
   @Get('budget-start-day')
-  async getBudgetStartDay(@VaultSession() vaultId: string) {
+  async getBudgetStartDayConfig(@VaultSession() vaultId: string) {
     const [error, result] =
-      await this.vaultWebService.getBudgetStartDay(vaultId);
+      await this.vaultWebService.getBudgetStartDayConfig(vaultId);
 
     if (error !== null) {
       this.handleError(error.type, error.message);
     }
 
-    return { budgetStartDay: result };
+    return result;
   }
 
   @UseGuards(VaultAccessTokenGuard)
