@@ -218,6 +218,7 @@ export class VaultService {
     boxId?: string;
     page?: number;
     pageSize?: number;
+    ignorePeriod?: boolean;
   }) {
     this.logger.log(
       `Getting transactions for vault: ${input.vaultId} with page size: ${input.pageSize ?? 10}`,
@@ -228,14 +229,17 @@ export class VaultService {
       return left(`Dados não encontrados`);
     }
 
-    const date = input.date ?? vault.getCurrentBudgetPeriod();
-    const { startDate, endDate } = vault.getBudgetPeriod(date.month, date.year);
+    let dateRange: { startDate: Date; endDate: Date } | undefined;
+    if (!input.ignorePeriod) {
+      const date = input.date ?? vault.getCurrentBudgetPeriod();
+      dateRange = vault.getBudgetPeriod(date.month, date.year);
+    }
 
     const transactions =
       await this.transactionRepository.findTransactionsByVaultId(
         input.vaultId,
         {
-          dateRange: { startDate, endDate },
+          dateRange,
           categoryId: input.categoryId,
           description: input.description,
           boxId: input.boxId,

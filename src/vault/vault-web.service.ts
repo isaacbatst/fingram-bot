@@ -237,6 +237,7 @@ export class VaultWebService {
       date?: { year: number; month: number };
       page: number;
       pageSize?: number;
+      ignorePeriod?: boolean;
     },
   ): Promise<Either<VaultError, Paginated<TransactionDTO>>> {
     try {
@@ -253,6 +254,7 @@ export class VaultWebService {
         description: params.description,
         boxId: params.boxId,
         pageSize: params.pageSize ?? 5,
+        ignorePeriod: params.ignorePeriod,
       });
 
       if (error !== null) {
