@@ -63,6 +63,7 @@ export class VaultWebController {
     @Query('year') year?: string,
     @Query('month') month?: string,
     @Query('page') page?: string,
+    @Query('allPeriods') allPeriods?: string,
   ) {
     const pageNumber = page ? parseInt(page, 10) : 1;
     const date =
@@ -81,6 +82,7 @@ export class VaultWebController {
         date,
         page: pageNumber,
         pageSize: 15,
+        ignorePeriod: allPeriods === 'true',
       },
     );
     if (error !== null) {
