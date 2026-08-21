@@ -1,0 +1,341 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+import * as schema from '@/shared/persistence/drizzle/schema';
+import { INestApplication } from '@nestjs/common';
+import { eq } from 'drizzle-orm';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import request from 'supertest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import {
+  createTestVault,
+  startTestApp,
+  stopTestApp,
+  truncateAll,
+} from './setup';
+
+type Line = { fitId: string; amount: string; memo: string; date?: string };
+
+/** OFX 1.x SGML em ISO-8859-1, como os bancos brasileiros emitem. */
+function ofxBase64(lines: Line[], accountId = '1234567-8'): string {
+  const transactions = lines
+    .map(
+      (line) => `<STMTTRN>
+<TRNTYPE>${line.amount.startsWith('-') ? 'DEBIT' : 'CREDIT'}
+<DTPOSTED>${line.date ?? '20260115'}000000[-3:BRT]
+<TRNAMT>${line.amount}
+<FITID>${line.fitId}
+<MEMO>${line.memo}
+</STMTTRN>`,
+    )
+    .join('\n');
+
+  const content = `OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+CHARSET:1252
+
+<OFX>
+<BANKMSGSRSV1>
+<STMTTRNRS>
+<STMTRS>
+<CURDEF>BRL
+<BANKACCTFROM>
+<BANKID>0260
+<ACCTID>${accountId}
+<ACCTTYPE>CHECKING
+</BANKACCTFROM>
+<BANKTRANLIST>
+<DTSTART>20260101
+<DTEND>20260131
+${transactions}
+</BANKTRANLIST>
+<LEDGERBAL>
+<BALAMT>1000.00
+<DTASOF>20260131
+</LEDGERBAL>
+</STMTRS>
+</STMTTRNRS>
+</BANKMSGSRSV1>
+</OFX>`;
+
+  return Buffer.from(content, 'latin1').toString('base64');
+}
+
+describe('Import API (integration)', () => {
+  let app: INestApplication;
+  let db: NodePgDatabase<typeof schema>;
+  let vaultToken: string;
+  let vaultId: string;
+  let boxId: string;
+
+  const auth = (req: request.Test) =>
+    req.set('Cookie', `vault_access_token=${vaultToken}`);
+
+  const upload = async (lines: Line[], accountId?: string) => {
+    const response = await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/upload')
+        .send({
+          contentBase64: ofxBase64(lines, accountId),
+          fileName: 'extrato.ofx',
+          boxId,
+        }),
+    );
+    expect(response.status).toBe(201);
+    return response.body.batches[0];
+  };
+
+  const review = async (batchId: string) => {
+    const response = await auth(
+      request(app.getHttpServer()).get(`/vault/import/batch/${batchId}`),
+    );
+    expect(response.status).toBe(200);
+    return response.body;
+  };
+
+  beforeAll(async () => {
+    const result = await startTestApp();
+    app = result.app;
+    db = result.db;
+  }, 60_000);
+
+  afterAll(async () => {
+    await stopTestApp();
+  });
+
+  beforeEach(async () => {
+    await truncateAll(db);
+    const vault = await createTestVault(db);
+    vaultToken = vault.token;
+    vaultId = vault.id;
+
+    boxId = crypto.randomUUID();
+    await db.insert(schema.box).values({
+      id: boxId,
+      vaultId,
+      name: 'Nubank',
+      isDefault: true,
+      type: 'spending',
+      createdAt: new Date(),
+    });
+  });
+
+  it('should reject an unauthenticated upload', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/vault/import/upload')
+      .send({ contentBase64: ofxBase64([]) });
+    expect(response.status).toBe(401);
+  });
+
+  it('should stage the statement without creating any transaction', async () => {
+    const batch = await upload([
+      { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD 1234' },
+      { fitId: 'F2', amount: '7500.00', memo: 'SALARIO' },
+    ]);
+
+    expect(batch.accountKey).toBe('0260:1234567-8:CHECKING');
+    expect(batch.ledgerBalance).toBe(1000);
+
+    const body = await review(batch.id);
+    expect(body.counts.pending).toBe(2);
+    expect(body.entries.items).toHaveLength(2);
+
+    const transactions = await db
+      .select()
+      .from(schema.transaction)
+      .where(eq(schema.transaction.vaultId, vaultId));
+    expect(transactions).toHaveLength(0);
+  });
+
+  it('should preserve latin1 accents through the whole round trip', async () => {
+    const batch = await upload([
+      { fitId: 'F1', amount: '-1200.00', memo: 'CONDOMÍNIO ÁGUAS & JARDIM' },
+    ]);
+    const body = await review(batch.id);
+    expect(body.entries.items[0].description).toBe(
+      'CONDOMÍNIO ÁGUAS & JARDIM',
+    );
+  });
+
+  it('should be idempotent when the same file is uploaded twice', async () => {
+    const lines: Line[] = [
+      { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD' },
+      { fitId: 'F2', amount: '7500.00', memo: 'SALARIO' },
+    ];
+    await upload(lines);
+    const second = await upload(lines);
+
+    expect(second.duplicateCount).toBe(2);
+    const body = await review(second.id);
+    expect(body.counts.pending).toBe(0);
+
+    const entries = await db.select().from(schema.importEntry);
+    expect(entries).toHaveLength(2);
+  });
+
+  it('should bring only the new lines of an overlapping period', async () => {
+    await upload([
+      { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD' },
+      { fitId: 'F2', amount: '7500.00', memo: 'SALARIO' },
+    ]);
+    const second = await upload([
+      { fitId: 'F2', amount: '7500.00', memo: 'SALARIO' },
+      { fitId: 'F3', amount: '-12.00', memo: 'PADARIA' },
+    ]);
+
+    const body = await review(second.id);
+    expect(body.counts.pending).toBe(1);
+    expect(body.entries.items[0].fitId).toBe('F3');
+    expect(second.duplicateCount).toBe(1);
+  });
+
+  it('should accept the same FITID coming from another account', async () => {
+    await upload([{ fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD' }]);
+    const other = await upload(
+      [{ fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD' }],
+      '9999999-0',
+    );
+
+    expect(other.duplicateCount).toBe(0);
+    const body = await review(other.id);
+    expect(body.counts.pending).toBe(1);
+  });
+
+  it('should create a committed transaction on confirmation', async () => {
+    const batch = await upload([
+      { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD' },
+    ]);
+    const body = await review(batch.id);
+    const entryId = body.entries.items[0].id;
+
+    const response = await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/confirm')
+        .send({ entryIds: [entryId] }),
+    );
+    expect(response.status).toBe(201);
+    expect(response.body.confirmed).toBe(1);
+
+    const transactions = await db
+      .select()
+      .from(schema.transaction)
+      .where(eq(schema.transaction.vaultId, vaultId));
+    expect(transactions).toHaveLength(1);
+    expect(transactions[0].committed).toBe(true);
+    expect(transactions[0].amount).toBe(45.9);
+    expect(transactions[0].type).toBe('expense');
+    expect(transactions[0].boxId).toBe(boxId);
+
+    const [entry] = await db
+      .select()
+      .from(schema.importEntry)
+      .where(eq(schema.importEntry.id, entryId));
+    expect(entry.status).toBe('confirmed');
+    expect(entry.transactionId).toBe(transactions[0].id);
+  });
+
+  it('should carry an edit into the created transaction', async () => {
+    const batch = await upload([
+      { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD' },
+    ]);
+    const body = await review(batch.id);
+    const entryId = body.entries.items[0].id;
+
+    const edited = await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/entry/edit')
+        .send({ entryId, amount: 60, description: 'Almoço com cliente' }),
+    );
+    expect(edited.status).toBe(201);
+    // O bruto continua intacto — é a chave de deduplicação.
+    expect(edited.body.rawAmount).toBe(-45.9);
+    expect(edited.body.rawDescription).toBe('PAG*IFOOD');
+
+    await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/confirm')
+        .send({ entryIds: [entryId] }),
+    );
+
+    const transactions = await db
+      .select()
+      .from(schema.transaction)
+      .where(eq(schema.transaction.vaultId, vaultId));
+    expect(transactions[0].amount).toBe(60);
+    expect(transactions[0].description).toBe('Almoço com cliente');
+  });
+
+  it('should confirm a whole batch at once', async () => {
+    const batch = await upload([
+      { fitId: 'F1', amount: '-10.00', memo: 'A' },
+      { fitId: 'F2', amount: '-20.00', memo: 'B' },
+      { fitId: 'F3', amount: '-30.00', memo: 'C' },
+    ]);
+
+    const response = await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/batch/confirm')
+        .send({ batchId: batch.id }),
+    );
+    expect(response.status).toBe(201);
+    expect(response.body.confirmed).toBe(3);
+
+    const transactions = await db
+      .select()
+      .from(schema.transaction)
+      .where(eq(schema.transaction.vaultId, vaultId));
+    expect(transactions).toHaveLength(3);
+  });
+
+  it('should not resurrect a dismissed line on a re-upload', async () => {
+    const lines: Line[] = [{ fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD' }];
+    const batch = await upload(lines);
+    const body = await review(batch.id);
+    const entryId = body.entries.items[0].id;
+
+    const dismissed = await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/entry/dismiss')
+        .send({ entryId }),
+    );
+    expect(dismissed.status).toBe(201);
+
+    const transactions = await db
+      .select()
+      .from(schema.transaction)
+      .where(eq(schema.transaction.vaultId, vaultId));
+    expect(transactions).toHaveLength(0);
+
+    const second = await upload(lines);
+    expect(second.duplicateCount).toBe(1);
+    const secondBody = await review(second.id);
+    expect(secondBody.counts.pending).toBe(0);
+  });
+
+  it('should not expose a batch belonging to another vault', async () => {
+    const batch = await upload([
+      { fitId: 'F1', amount: '-10.00', memo: 'A' },
+    ]);
+    const other = await createTestVault(db);
+
+    const response = await request(app.getHttpServer())
+      .get(`/vault/import/batch/${batch.id}`)
+      .set('Cookie', `vault_access_token=${other.token}`);
+    expect(response.status).toBe(404);
+  });
+
+  it('should reject a file that is not an OFX', async () => {
+    const response = await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/upload')
+        .send({
+          contentBase64: Buffer.from('data,valor\n01/01/2026,10').toString(
+            'base64',
+          ),
+        }),
+    );
+    expect(response.status).toBe(400);
+  });
+});

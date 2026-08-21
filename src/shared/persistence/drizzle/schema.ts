@@ -141,3 +141,75 @@ export const allocation = pgTable(
       .where(sql`${table.estratoId} IS NOT NULL`),
   ],
 );
+
+// One imported statement file. Holds the account identity so every entry can be
+// deduplicated per account, and the estrato the account is bound to.
+export const importBatch = pgTable('import_batch', {
+  id: text('id').primaryKey(),
+  vaultId: text('vault_id')
+    .notNull()
+    .references(() => vault.id),
+  accountKey: text('account_key').notNull(), // BANKID:ACCTID:ACCTTYPE
+  accountLabel: text('account_label'),
+  boxId: text('box_id').references(() => box.id),
+  kind: text('kind').notNull().default('bank'), // 'bank' | 'creditcard'
+  currency: text('currency'),
+  periodStart: timestamp('period_start'),
+  periodEnd: timestamp('period_end'),
+  ledgerBalance: doublePrecision('ledger_balance'),
+  fileName: text('file_name'),
+  status: text('status').notNull().default('reviewing'), // 'reviewing' | 'done'
+  // Lines skipped at ingestion for already-seen FITIDs. Persisted so the review
+  // summary still reports them after a reload — it is where dedup becomes visible.
+  duplicateCount: integer('duplicate_count').notNull().default(0),
+  createdAt: timestamp('created_at').notNull(),
+});
+
+// One line from an imported file. The `raw*` columns keep the file's own values and
+// are never overwritten — they are the key for deduplication and, from ISA-116 on,
+// for matching against previously confirmed descriptions. The remaining columns are
+// the editable working values that become a transaction on confirmation.
+export const importEntry = pgTable(
+  'import_entry',
+  {
+    id: text('id').primaryKey(),
+    batchId: text('batch_id')
+      .notNull()
+      .references(() => importBatch.id, { onDelete: 'cascade' }),
+    vaultId: text('vault_id')
+      .notNull()
+      .references(() => vault.id),
+    accountKey: text('account_key').notNull(),
+    fitId: text('fit_id').notNull(),
+    rawDate: timestamp('raw_date').notNull(),
+    rawAmount: doublePrecision('raw_amount').notNull(), // signed, as in the file
+    rawType: text('raw_type').notNull(), // 'income' | 'expense'
+    rawMemo: text('raw_memo'),
+    rawName: text('raw_name'),
+    date: timestamp('date').notNull(),
+    amount: doublePrecision('amount').notNull(), // always positive
+    type: text('type').notNull(), // 'income' | 'expense'
+    description: text('description').default(''),
+    categoryId: text('category_id').references(() => vaultCategory.id),
+    boxId: text('box_id').references(() => box.id),
+    suggestedCategoryId: text('suggested_category_id').references(
+      () => vaultCategory.id,
+    ),
+    suggestionSource: text('suggestion_source').notNull().default('none'), // 'history' | 'ai' | 'none'
+    status: text('status').notNull().default('pending'), // 'pending' | 'confirmed' | 'dismissed'
+    transactionId: text('transaction_id').references(() => transaction.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (table) => [
+    // FITID is unique per account, not globally: two banks can emit the same value.
+    // Leaving accountKey out would silently discard a legitimate line from a second
+    // account as if it were a duplicate.
+    uniqueIndex('import_entry_dedup_unique').on(
+      table.vaultId,
+      table.accountKey,
+      table.fitId,
+    ),
+  ],
+);

@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { RepositoriesModule } from './shared/persistence/repositories.module';
 import { VaultAgentModule } from './vault/vault-agent.module';
+import { ImportModule } from './vault/import.module';
 import { PlanModule } from './plan/plan.module';
 
 @Module({})
@@ -20,6 +21,7 @@ export class AppModule {
         EventEmitterModule.forRoot(),
         BotModule.register(),
         VaultAgentModule.register(),
+        ImportModule.register(),
         PlanModule.register(),
       ],
       controllers: [AppController],

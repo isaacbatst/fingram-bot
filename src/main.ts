@@ -12,6 +12,10 @@ async function bootstrap() {
     AppModule.register({ persistence: 'drizzle' }),
   );
   const logger = new Logger('Bootstrap');
+  // O import de extrato envia o arquivo OFX em base64 no corpo JSON, para que os
+  // bytes cheguem intactos ao parser. O default de 100kb do Express não comporta
+  // um extrato de período longo.
+  app.useBodyParser('json', { limit: '5mb' });
   const configService = app.get(ConfigService);
   app.enableCors({
     origin: (requestOrigin, cb) => {
