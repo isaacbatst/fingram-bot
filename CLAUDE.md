@@ -46,6 +46,21 @@ npm run test:integration  # Integration tests (testcontainers + real PostgreSQL)
 
 **Verification before pushing:** ensure `drizzle/meta/_journal.json` has an entry for every `drizzle/NNNN_*.sql` file you are committing. Mismatches break prod migration.
 
+### Snapshot gaps: what to do when `db:generate` reemits old changes
+
+Snapshots `0004`, `0007` and `0008` do not exist — those migrations were hand-written. If `db:generate` starts asking to disambiguate an old column (e.g. `realization_mode`) or emits `ALTER TABLE` statements that are already in production, this is why.
+
+**`drizzle-kit generate` only diffs against the most recent snapshot.** The historical ones are never read. So a gap only matters until the next snapshot exists — repairing it means making sure the newest migration has a correct snapshot, not reconstructing the missing ones. That was done in `0009`, so generation works normally again.
+
+If a gap ever reappears:
+
+1. Run `db:generate` and let it write SQL, snapshot and journal entry together.
+2. **Review the SQL and delete the statements that are already applied in production.** Running them again breaks the deploy — duplicate column, or `DROP COLUMN` on a column that no longer exists.
+3. Keep the generated snapshot as-is: it represents `schema.ts` and is what fixes the diffing.
+4. Confirm the repair by running `db:generate` again — it must answer `No schema changes, nothing to migrate` with no prompt.
+
+**The prompts need a real TTY.** `drizzle-kit` uses an interactive select; piping into it does nothing and the command hangs forever. Run it in a terminal, or drive it through a pty (`script -qec "npx drizzle-kit generate" /dev/null`) feeding Enter only after the prompt has rendered.
+
 ### Plan Domain
 
 - **Types:** `src/plan/domain/plan.ts` — Box, MonthData, Plan interfaces
