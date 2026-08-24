@@ -64,7 +64,7 @@ export async function truncateAll(
   testDb: NodePgDatabase<typeof schema>,
 ): Promise<void> {
   await testDb.execute(sql`
-    TRUNCATE plan, budget, transaction, box, vault_category, chat, vault, action, allocation CASCADE
+    TRUNCATE plan, budget, import_entry, import_batch, transaction, box, vault_category, chat, vault, action, allocation CASCADE
   `);
 }
 

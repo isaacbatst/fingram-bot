@@ -1,0 +1,240 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Logger,
+  NotFoundException,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { VaultAccessTokenGuard } from './vault-access-token.guard';
+import { VaultSession } from './vault-session.decorator';
+import { ImportService } from './import.service';
+import { ImportBatch } from './domain/import-batch';
+import { ImportEntry, ImportEntryStatus } from './domain/import-entry';
+
+const STATUSES: ImportEntryStatus[] = ['pending', 'confirmed', 'dismissed'];
+
+@UseGuards(VaultAccessTokenGuard)
+@Controller('vault/import')
+export class ImportController {
+  private readonly logger = new Logger(ImportController.name);
+
+  constructor(private readonly importService: ImportService) {}
+
+  /**
+   * The file arrives base64-encoded rather than as multipart on purpose: the OFX
+   * bytes must reach the parser untouched. Sending it as text would let the browser
+   * re-encode latin1 content and corrupt the accents before the server ever sees it.
+   */
+  @Post('upload')
+  async upload(
+    @VaultSession() vaultId: string,
+    @Body()
+    data: { contentBase64?: string; fileName?: string; boxId?: string },
+  ) {
+    if (!data.contentBase64?.trim()) {
+      throw new BadRequestException('O arquivo é obrigatório');
+    }
+
+    const file = Buffer.from(data.contentBase64, 'base64');
+    if (file.length === 0) {
+      throw new BadRequestException('O arquivo está vazio');
+    }
+
+    const [error, batches] = await this.importService.ingest({
+      vaultId,
+      file,
+      fileName: data.fileName,
+      boxId: data.boxId,
+    });
+    if (error !== null) throw new BadRequestException(error);
+
+    return { batches: batches.map((batch) => this.batchToDTO(batch)) };
+  }
+
+  @Get('batches')
+  async listBatches(@VaultSession() vaultId: string) {
+    const batches = await this.importService.listBatches(vaultId);
+    return { batches: batches.map((batch) => this.batchToDTO(batch)) };
+  }
+
+  @Get('batch/:batchId')
+  async getReview(
+    @VaultSession() vaultId: string,
+    @Param('batchId') batchId: string,
+    @Query('status') status?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    if (status && !STATUSES.includes(status as ImportEntryStatus)) {
+      throw new BadRequestException('Status inválido');
+    }
+
+    const [error, review] = await this.importService.getReview({
+      vaultId,
+      batchId,
+      status: status as ImportEntryStatus | undefined,
+      page: page ? parseInt(page, 10) : undefined,
+      pageSize: pageSize ? parseInt(pageSize, 10) : undefined,
+    });
+    if (error !== null) throw new NotFoundException(error);
+
+    return {
+      batch: this.batchToDTO(review.batch),
+      counts: review.counts,
+      duplicateCount: review.duplicateCount,
+      entries: {
+        ...review.entries,
+        items: review.entries.items.map((entry) => this.entryToDTO(entry)),
+      },
+    };
+  }
+
+  @Post('entry/edit')
+  async editEntry(
+    @VaultSession() vaultId: string,
+    @Body()
+    data: {
+      entryId?: string;
+      date?: string;
+      amount?: number;
+      type?: 'income' | 'expense';
+      description?: string;
+      categoryId?: string | null;
+      boxId?: string | null;
+    },
+  ) {
+    if (!data.entryId) throw new BadRequestException('entryId é obrigatório');
+    if (data.type && !['income', 'expense'].includes(data.type)) {
+      throw new BadRequestException('Tipo inválido');
+    }
+
+    const [error, entry] = await this.importService.editEntry({
+      vaultId,
+      entryId: data.entryId,
+      changes: {
+        date: data.date ? new Date(data.date) : undefined,
+        amount: data.amount,
+        type: data.type,
+        description: data.description,
+        categoryId: data.categoryId,
+        boxId: data.boxId,
+      },
+    });
+    if (error !== null) throw new BadRequestException(error);
+
+    return this.entryToDTO(entry);
+  }
+
+  @Post('entry/dismiss')
+  async dismissEntry(
+    @VaultSession() vaultId: string,
+    @Body() data: { entryId?: string },
+  ) {
+    if (!data.entryId) throw new BadRequestException('entryId é obrigatório');
+
+    const [error, entry] = await this.importService.dismissEntry({
+      vaultId,
+      entryId: data.entryId,
+    });
+    if (error !== null) throw new BadRequestException(error);
+
+    return this.entryToDTO(entry);
+  }
+
+  /** Confirms the entries the user reviewed — typically the visible batch. */
+  @Post('confirm')
+  async confirm(
+    @VaultSession() vaultId: string,
+    @Body() data: { entryIds?: string[] },
+  ) {
+    if (!data.entryIds?.length) {
+      throw new BadRequestException('Nenhum lançamento informado');
+    }
+
+    const [error, result] = await this.importService.confirmEntries({
+      vaultId,
+      entryIds: data.entryIds,
+    });
+    if (error !== null) throw new BadRequestException(error);
+
+    return result;
+  }
+
+  @Post('batch/confirm')
+  async confirmBatch(
+    @VaultSession() vaultId: string,
+    @Body() data: { batchId?: string },
+  ) {
+    if (!data.batchId) throw new BadRequestException('batchId é obrigatório');
+
+    const [error, result] = await this.importService.confirmBatch({
+      vaultId,
+      batchId: data.batchId,
+    });
+    if (error !== null) throw new BadRequestException(error);
+
+    return result;
+  }
+
+  @Post('batch/close')
+  async closeBatch(
+    @VaultSession() vaultId: string,
+    @Body() data: { batchId?: string },
+  ) {
+    if (!data.batchId) throw new BadRequestException('batchId é obrigatório');
+
+    const [error, batch] = await this.importService.closeBatch({
+      vaultId,
+      batchId: data.batchId,
+    });
+    if (error !== null) throw new NotFoundException(error);
+
+    return this.batchToDTO(batch);
+  }
+
+  private batchToDTO(batch: ImportBatch) {
+    return {
+      id: batch.id,
+      accountKey: batch.accountKey,
+      accountLabel: batch.accountLabel,
+      boxId: batch.boxId,
+      kind: batch.kind,
+      currency: batch.currency,
+      periodStart: batch.periodStart,
+      periodEnd: batch.periodEnd,
+      ledgerBalance: batch.ledgerBalance,
+      fileName: batch.fileName,
+      status: batch.status,
+      duplicateCount: batch.duplicateCount,
+      createdAt: batch.createdAt,
+    };
+  }
+
+  private entryToDTO(entry: ImportEntry) {
+    return {
+      id: entry.id,
+      batchId: entry.batchId,
+      fitId: entry.fitId,
+      date: entry.date,
+      amount: entry.amount,
+      type: entry.type,
+      description: entry.description,
+      categoryId: entry.categoryId,
+      boxId: entry.boxId,
+      suggestedCategoryId: entry.suggestedCategoryId,
+      suggestionSource: entry.suggestionSource,
+      status: entry.status,
+      transactionId: entry.transactionId,
+      // O texto original do banco, preservado para o usuário conferir contra o extrato
+      // mesmo depois de editar a descrição.
+      rawDescription: entry.rawMemo ?? entry.rawName,
+      rawAmount: entry.rawAmount,
+      rawDate: entry.rawDate,
+    };
+  }
+}
