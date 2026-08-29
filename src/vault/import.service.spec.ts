@@ -241,6 +241,182 @@ describe('ImportService', () => {
     });
   });
 
+  describe('agrupamento por estabelecimento', () => {
+    const groupsOf = async (batchId: string) => {
+      const [error, groups] = await service.getGroups({
+        vaultId: vault.id,
+        batchId,
+      });
+      expect(error).toBeNull();
+      return groups!;
+    };
+
+    it('should collapse repeated purchases at the same establishment', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD 1234' },
+        { fitId: 'F2', amount: '-32.10', memo: 'PAG*IFOOD 5678' },
+        { fitId: 'F3', amount: '-19.00', memo: 'PAG*IFOOD 9012' },
+      ]);
+
+      const groups = await groupsOf(batch.id);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].count).toBe(3);
+      expect(groups[0].entryIds).toHaveLength(3);
+    });
+
+    it('should keep different establishments apart', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD 1234' },
+        { fitId: 'F2', amount: '-12.00', memo: 'PADARIA CENTRAL' },
+      ]);
+      expect(await groupsOf(batch.id)).toHaveLength(2);
+    });
+
+    it('should never mix income and expense in one group', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-100.00', memo: 'TRANSFERENCIA JOAO' },
+        { fitId: 'F2', amount: '100.00', memo: 'TRANSFERENCIA JOAO' },
+      ]);
+
+      const groups = await groupsOf(batch.id);
+      expect(groups).toHaveLength(2);
+      expect(groups.map((g) => g.type).sort()).toEqual(['expense', 'income']);
+    });
+
+    it('should put the biggest group first', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-10.00', memo: 'PADARIA CENTRAL' },
+        { fitId: 'F2', amount: '-45.90', memo: 'PAG*IFOOD 1234' },
+        { fitId: 'F3', amount: '-32.10', memo: 'PAG*IFOOD 5678' },
+      ]);
+
+      const groups = await groupsOf(batch.id);
+      expect(groups[0].count).toBe(2);
+      expect(groups[0].description).toContain('IFOOD');
+    });
+
+    it('should report the total and the date range of the group', async () => {
+      const [batch] = await ingest([
+        {
+          fitId: 'F1',
+          amount: '-45.90',
+          memo: 'PAG*IFOOD 1234',
+          date: '20260105',
+        },
+        {
+          fitId: 'F2',
+          amount: '-32.10',
+          memo: 'PAG*IFOOD 5678',
+          date: '20260120',
+        },
+      ]);
+
+      const [group] = await groupsOf(batch.id);
+      expect(group.totalAmount).toBeCloseTo(78, 2);
+      expect(group.firstDate.toISOString()).toBe('2026-01-05T00:00:00.000Z');
+      expect(group.lastDate.toISOString()).toBe('2026-01-20T00:00:00.000Z');
+    });
+
+    it('should leave a group once its entries are no longer pending', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD 1234' },
+        { fitId: 'F2', amount: '-12.00', memo: 'PADARIA CENTRAL' },
+      ]);
+      const groups = await groupsOf(batch.id);
+      const ifood = groups.find((g) => g.description.includes('IFOOD'))!;
+
+      await service.confirmEntries({
+        vaultId: vault.id,
+        entryIds: ifood.entryIds,
+      });
+
+      const after = await groupsOf(batch.id);
+      expect(after).toHaveLength(1);
+      expect(after[0].description).toContain('PADARIA');
+    });
+  });
+
+  describe('categorização em lote', () => {
+    it('should set the category on every entry of the group without confirming', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD 1234' },
+        { fitId: 'F2', amount: '-32.10', memo: 'PAG*IFOOD 5678' },
+      ]);
+      const ids = await pendingIds(batch.id);
+
+      const [error, result] = await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: ids,
+        categoryId: 'cat-alimentacao',
+      });
+      expect(error).toBeNull();
+      expect(result!.updated).toBe(2);
+
+      const entries = await entryRepo.findPendingByBatchId(batch.id);
+      expect(entries).toHaveLength(2);
+      expect(entries.every((e) => e.categoryId === 'cat-alimentacao')).toBe(true);
+      // Continua pendente: categorizar não é confirmar.
+      expect(entries.every((e) => e.status === 'pending')).toBe(true);
+
+      const stored = await vaultRepo.findById(vault.id);
+      expect(stored!.transactions.size).toBe(0);
+    });
+
+    it('should be reversible while nothing is confirmed', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD 1234' },
+      ]);
+      const ids = await pendingIds(batch.id);
+
+      await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: ids,
+        categoryId: 'cat-errada',
+      });
+      await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: ids,
+        categoryId: 'cat-certa',
+      });
+
+      const [entry] = await entryRepo.findPendingByBatchId(batch.id);
+      expect(entry.categoryId).toBe('cat-certa');
+    });
+
+    it('should skip entries that are already confirmed', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD 1234' },
+      ]);
+      const ids = await pendingIds(batch.id);
+      await service.confirmEntries({ vaultId: vault.id, entryIds: ids });
+
+      const [, result] = await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: ids,
+        categoryId: 'cat-nova',
+      });
+      expect(result!.updated).toBe(0);
+    });
+
+    it('should carry the category into the transaction on confirmation', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD 1234' },
+      ]);
+      const ids = await pendingIds(batch.id);
+
+      await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: ids,
+        categoryId: 'cat-alimentacao',
+      });
+      await service.confirmEntries({ vaultId: vault.id, entryIds: ids });
+
+      const stored = await vaultRepo.findById(vault.id);
+      const [transaction] = [...stored!.transactions.values()];
+      expect(transaction.categoryId).toBe('cat-alimentacao');
+    });
+  });
+
   describe('confirmação', () => {
     it('should create a committed transaction that moves the balance', async () => {
       const [batch] = await ingest([

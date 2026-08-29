@@ -4,6 +4,24 @@ import { Either, left, right } from './either';
 export type ImportEntryStatus = 'pending' | 'confirmed' | 'dismissed';
 export type SuggestionSource = 'history' | 'ai' | 'none';
 
+/**
+ * Reduces a bank description to the establishment behind it.
+ *
+ * Banks append a terminal or store number to each purchase, so the same place
+ * arrives as "PAG*IFOOD 1234" one day and "PAG*IFOOD 5678" the next. Without
+ * dropping that suffix the review would show one group per purchase, which defeats
+ * the point of grouping.
+ *
+ * Deliberately conservative: only a single trailing numeric token is removed, and
+ * only when something meaningful is left. Merging two different establishments is a
+ * worse failure than leaving two groups for the same one.
+ */
+export function normalizeDescription(value: string): string {
+  const collapsed = value.trim().toUpperCase().replace(/\s+/g, ' ');
+  const withoutTrailingNumber = collapsed.replace(/\s+[\d.\-/]+$/, '');
+  return withoutTrailingNumber.length >= 3 ? withoutTrailingNumber : collapsed;
+}
+
 /** Values copied from the file. Never overwritten — see `docs/product/spec-operational.md` §9. */
 type RawParams = {
   fitId: string;
@@ -124,12 +142,12 @@ export class ImportEntry {
   }
 
   /**
-   * The key used both for deduplication and, from ISA-116 on, for matching a
-   * description against previously confirmed ones. Derived from the raw values so
-   * that editing the description never changes it.
+   * The key that groups lines from the same establishment, and — from ISA-116 on —
+   * matches a description against previously confirmed ones. Derived from the raw
+   * values so that editing the description never changes it.
    */
   get matchKey(): string {
-    return (this.rawName ?? this.rawMemo ?? '').trim().toUpperCase();
+    return normalizeDescription(this.rawName ?? this.rawMemo ?? '');
   }
 
   edit(changes: ImportEntryEdit): Either<string, boolean> {

@@ -107,6 +107,46 @@ export class ImportController {
     };
   }
 
+  /** Os lançamentos pendentes do lote, colapsados por estabelecimento. */
+  @Get('batch/:batchId/groups')
+  async getGroups(
+    @VaultSession() vaultId: string,
+    @Param('batchId') batchId: string,
+  ) {
+    const [error, groups] = await this.importService.getGroups({
+      vaultId,
+      batchId,
+    });
+    if (error !== null) throw new NotFoundException(error);
+
+    return { groups };
+  }
+
+  /**
+   * Define a categoria de vários lançamentos sem confirmá-los.
+   *
+   * Separar categorizar de confirmar é o que deixa a triagem rápida: nada vira
+   * transação até o confirmar final, então voltar e mudar de ideia não custa nada.
+   */
+  @Post('entries/categorize')
+  async categorizeEntries(
+    @VaultSession() vaultId: string,
+    @Body() data: { entryIds?: string[]; categoryId?: string | null },
+  ) {
+    if (!data.entryIds?.length) {
+      throw new BadRequestException('Nenhum lançamento informado');
+    }
+
+    const [error, result] = await this.importService.categorizeEntries({
+      vaultId,
+      entryIds: data.entryIds,
+      categoryId: data.categoryId ?? null,
+    });
+    if (error !== null) throw new BadRequestException(error);
+
+    return result;
+  }
+
   @Post('entry/edit')
   async editEntry(
     @VaultSession() vaultId: string,

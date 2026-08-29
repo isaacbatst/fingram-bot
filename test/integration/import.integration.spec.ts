@@ -371,6 +371,61 @@ describe('Import API (integration)', () => {
     expect(response.status).toBe(400);
   });
 
+  it('should group pending lines by establishment and categorise a whole group', async () => {
+    const categoryId = crypto.randomUUID();
+    await db.insert(schema.vaultCategory).values({
+      id: categoryId,
+      vaultId,
+      name: 'Alimentação',
+      code: 'alim',
+      transactionType: 'expense',
+    });
+
+    const batch = await upload([
+      { fitId: 'F1', amount: '-45.90', memo: 'PAG*IFOOD 1234' },
+      { fitId: 'F2', amount: '-32.10', memo: 'PAG*IFOOD 5678' },
+      { fitId: 'F3', amount: '-12.00', memo: 'PADARIA CENTRAL' },
+    ]);
+
+    const grouped = await auth(
+      request(app.getHttpServer()).get(`/vault/import/batch/${batch.id}/groups`),
+    );
+    expect(grouped.status).toBe(200);
+    expect(grouped.body.groups).toHaveLength(2);
+
+    const [biggest] = grouped.body.groups;
+    expect(biggest.count).toBe(2);
+    expect(biggest.description).toContain('IFOOD');
+
+    const categorized = await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/entries/categorize')
+        .send({ entryIds: biggest.entryIds, categoryId }),
+    );
+    expect(categorized.status).toBe(201);
+    expect(categorized.body.updated).toBe(2);
+
+    // Categorizar não confirma: nada virou transação ainda.
+    const transactions = await db
+      .select()
+      .from(schema.transaction)
+      .where(eq(schema.transaction.vaultId, vaultId));
+    expect(transactions).toHaveLength(0);
+
+    await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/confirm')
+        .send({ entryIds: biggest.entryIds }),
+    );
+
+    const created = await db
+      .select()
+      .from(schema.transaction)
+      .where(eq(schema.transaction.vaultId, vaultId));
+    expect(created).toHaveLength(2);
+    expect(created.every((t) => t.categoryId === categoryId)).toBe(true);
+  });
+
   it('should reject a file that is not an OFX', async () => {
     const response = await auth(
       request(app.getHttpServer())

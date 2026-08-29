@@ -28,6 +28,18 @@ export type ImportReview = {
   entries: Paginated<ImportEntry>;
 };
 
+/** Pending lines of one establishment — the unit the user actually decides on. */
+export type ImportGroup = {
+  key: string;
+  description: string;
+  type: 'income' | 'expense';
+  count: number;
+  totalAmount: number;
+  firstDate: Date;
+  lastDate: Date;
+  entryIds: string[];
+};
+
 @Injectable()
 export class ImportService {
   private readonly logger = new Logger(ImportService.name);
@@ -213,6 +225,84 @@ export class ImportService {
 
   async listBatches(vaultId: string): Promise<ImportBatch[]> {
     return this.importBatchRepository.findByVaultId(vaultId);
+  }
+
+  /**
+   * The pending lines of a batch, collapsed by establishment.
+   *
+   * Classifying a statement line by line is the wrong unit of work: the same place
+   * shows up many times in a month, and each repetition is not a new decision. One
+   * group is one decision, which is what makes the review tractable.
+   *
+   * Type is part of the key so a group is never a mix of income and expense — the
+   * category list differs between the two.
+   */
+  async getGroups(input: {
+    vaultId: string;
+    batchId: string;
+  }): Promise<Either<string, ImportGroup[]>> {
+    const batch = await this.importBatchRepository.findById(input.batchId);
+    if (!batch || batch.vaultId !== input.vaultId) {
+      return left('Importação não encontrada');
+    }
+
+    const pending = await this.importEntryRepository.findPendingByBatchId(
+      batch.id,
+    );
+
+    const byKey = new Map<string, ImportEntry[]>();
+    for (const entry of pending) {
+      const key = `${entry.type}::${entry.matchKey}`;
+      const bucket = byKey.get(key);
+      if (bucket) bucket.push(entry);
+      else byKey.set(key, [entry]);
+    }
+
+    const groups = [...byKey.entries()].map(([key, entries]) => {
+      const dates = entries.map((e) => e.date.getTime());
+      return {
+        key,
+        // The raw text of the first line, kept readable instead of the normalized key.
+        description: entries[0].rawMemo ?? entries[0].rawName ?? '',
+        type: entries[0].type,
+        count: entries.length,
+        totalAmount: entries.reduce((sum, e) => sum + e.amount, 0),
+        firstDate: new Date(Math.min(...dates)),
+        lastDate: new Date(Math.max(...dates)),
+        entryIds: entries.map((e) => e.id),
+      };
+    });
+
+    // Biggest groups first: the user clears the most lines with the fewest decisions,
+    // and sees the count drop quickly.
+    groups.sort((a, b) => b.count - a.count || b.totalAmount - a.totalAmount);
+    return right(groups);
+  }
+
+  /**
+   * Sets a category on several entries at once, without confirming them.
+   *
+   * Keeping categorisation separate from confirmation is what makes the triage screen
+   * safe to move fast in: nothing becomes a transaction until the user confirms at the
+   * end, so going back and changing an answer costs nothing.
+   */
+  async categorizeEntries(input: {
+    vaultId: string;
+    entryIds: string[];
+    categoryId: string | null;
+  }): Promise<Either<string, { updated: number }>> {
+    let updated = 0;
+    for (const entryId of input.entryIds) {
+      const entry = await this.loadEntry(input.vaultId, entryId);
+      if (entry === null || entry.status !== 'pending') continue;
+
+      const [error] = entry.edit({ categoryId: input.categoryId });
+      if (error !== null) continue;
+
+      await this.importEntryRepository.update(entry);
+      updated++;
+    }
+    return right({ updated });
   }
 
   async editEntry(input: {

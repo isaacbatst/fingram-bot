@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ImportEntry } from './import-entry';
+import { ImportEntry, normalizeDescription } from './import-entry';
 
 const baseParams = {
   vaultId: 'vault-1',
@@ -51,13 +51,45 @@ describe('ImportEntry.create', () => {
   });
 });
 
+describe('normalizeDescription', () => {
+  it('should upcase and collapse whitespace', () => {
+    expect(normalizeDescription('  supermercado   sao   jose ')).toBe(
+      'SUPERMERCADO SAO JOSE',
+    );
+  });
+
+  it('should drop the terminal number banks append to each purchase', () => {
+    // É o que faz duas compras no mesmo lugar caírem no mesmo grupo.
+    expect(normalizeDescription('PAG*IFOOD 1234')).toBe('PAG*IFOOD');
+    expect(normalizeDescription('PAG*IFOOD 5678')).toBe('PAG*IFOOD');
+  });
+
+  it('should keep a trailing word that is not a number', () => {
+    expect(normalizeDescription('POSTO 24 HORAS')).toBe('POSTO 24 HORAS');
+    expect(normalizeDescription('UBER *TRIP HELP.UBER.COM')).toBe(
+      'UBER *TRIP HELP.UBER.COM',
+    );
+  });
+
+  it('should not strip away the whole description', () => {
+    // Sem a guarda, "TED 12345" viraria "TED" e "123" viraria vazio.
+    expect(normalizeDescription('12345')).toBe('12345');
+  });
+});
+
 describe('ImportEntry.matchKey', () => {
-  it('should normalize the raw description', () => {
-    const entry = ImportEntry.create({
+  it('should group two purchases at the same establishment', () => {
+    const first = ImportEntry.create({
       ...baseParams,
       rawMemo: '  pag*ifood 1234  ',
     });
-    expect(entry.matchKey).toBe('PAG*IFOOD 1234');
+    const second = ImportEntry.create({
+      ...baseParams,
+      fitId: 'FIT-2',
+      rawMemo: 'PAG*IFOOD 5678',
+    });
+    expect(first.matchKey).toBe('PAG*IFOOD');
+    expect(second.matchKey).toBe(first.matchKey);
   });
 
   it('should not change when the user edits the description', () => {
