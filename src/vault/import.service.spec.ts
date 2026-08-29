@@ -80,16 +80,25 @@ describe('ImportService', () => {
     service = new ImportService(vaultRepo, boxRepo, batchRepo, entryRepo);
   });
 
-  const ingest = async (lines: Line[], accountId?: string) => {
+  const ingest = async (
+    lines: Line[],
+    accountId?: string,
+    fromDate?: Date,
+  ) => {
     const [error, batches] = await service.ingest({
       vaultId: vault.id,
       file: ofxFile(lines, accountId),
       fileName: 'extrato.ofx',
       boxId: box.id,
+      fromDate,
     });
     expect(error).toBeNull();
     return batches!;
   };
+
+  /** Meia-noite UTC do dia, como o corte é interpretado. */
+  const day = (year: number, month: number, dayOfMonth: number) =>
+    new Date(Date.UTC(year, month - 1, dayOfMonth));
 
   const pendingIds = async (batchId: string) =>
     (await entryRepo.findPendingByBatchId(batchId)).map((e) => e.id);
@@ -173,6 +182,62 @@ describe('ImportService', () => {
       const pending = await entryRepo.findPendingByBatchId(other.id);
       expect(pending).toHaveLength(1);
       expect(other.duplicateCount).toBe(0);
+    });
+  });
+
+  describe('data inicial opcional', () => {
+    const maio: Line[] = [
+      { fitId: 'F02', amount: '-10.00', memo: 'DIA 02', date: '20260502' },
+      { fitId: 'F06', amount: '-20.00', memo: 'DIA 06', date: '20260506' },
+      { fitId: 'F10', amount: '-30.00', memo: 'DIA 10', date: '20260510' },
+    ];
+
+    it('should import the whole file when no cutoff is given', async () => {
+      const [batch] = await ingest(maio);
+      expect(await entryRepo.findPendingByBatchId(batch.id)).toHaveLength(3);
+      expect(batch.outOfRangeCount).toBe(0);
+      expect(batch.fromDate).toBeNull();
+    });
+
+    it('should drop the lines before the cutoff', async () => {
+      const [batch] = await ingest(maio, undefined, day(2026, 5, 6));
+      const pending = await entryRepo.findPendingByBatchId(batch.id);
+      expect(pending.map((e) => e.fitId)).toEqual(['F06', 'F10']);
+    });
+
+    it('should include a line falling exactly on the cutoff', async () => {
+      const [batch] = await ingest(maio, undefined, day(2026, 5, 6));
+      const pending = await entryRepo.findPendingByBatchId(batch.id);
+      expect(pending.map((e) => e.fitId)).toContain('F06');
+    });
+
+    it('should record the cutoff and how many lines it dropped', async () => {
+      const [batch] = await ingest(maio, undefined, day(2026, 5, 6));
+      expect(batch.outOfRangeCount).toBe(1);
+      expect(batch.fromDate!.toISOString()).toBe('2026-05-06T00:00:00.000Z');
+    });
+
+    it('should not count the dropped lines as duplicates', async () => {
+      const [batch] = await ingest(maio, undefined, day(2026, 5, 6));
+      expect(batch.duplicateCount).toBe(0);
+    });
+
+    it('should bring a dropped line back when re-imported without a cutoff', async () => {
+      // O corte é uma escolha do momento, não um descarte permanente: a linha
+      // fora do período não registra FITID, então continua disponível depois.
+      await ingest(maio, undefined, day(2026, 5, 6));
+      const [second] = await ingest(maio);
+
+      const pending = await entryRepo.findPendingByBatchId(second.id);
+      expect(pending.map((e) => e.fitId)).toEqual(['F02']);
+      expect(second.duplicateCount).toBe(2);
+    });
+
+    it('should still dedup the lines that were inside the cutoff', async () => {
+      await ingest(maio, undefined, day(2026, 5, 6));
+      const [second] = await ingest(maio, undefined, day(2026, 5, 6));
+      expect(await entryRepo.findPendingByBatchId(second.id)).toHaveLength(0);
+      expect(second.duplicateCount).toBe(2);
     });
   });
 

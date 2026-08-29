@@ -73,7 +73,11 @@ describe('Import API (integration)', () => {
   const auth = (req: request.Test) =>
     req.set('Cookie', `vault_access_token=${vaultToken}`);
 
-  const upload = async (lines: Line[], accountId?: string) => {
+  const upload = async (
+    lines: Line[],
+    accountId?: string,
+    fromDate?: string,
+  ) => {
     const response = await auth(
       request(app.getHttpServer())
         .post('/vault/import/upload')
@@ -81,6 +85,7 @@ describe('Import API (integration)', () => {
           contentBase64: ofxBase64(lines, accountId),
           fileName: 'extrato.ofx',
           boxId,
+          fromDate,
         }),
     );
     expect(response.status).toBe(201);
@@ -324,6 +329,46 @@ describe('Import API (integration)', () => {
       .get(`/vault/import/batch/${batch.id}`)
       .set('Cookie', `vault_access_token=${other.token}`);
     expect(response.status).toBe(404);
+  });
+
+  it('should honour the optional start date and keep the dropped lines recoverable', async () => {
+    const maio: Line[] = [
+      { fitId: 'F02', amount: '-10.00', memo: 'DIA 02', date: '20260502' },
+      { fitId: 'F06', amount: '-20.00', memo: 'DIA 06', date: '20260506' },
+      { fitId: 'F10', amount: '-30.00', memo: 'DIA 10', date: '20260510' },
+    ];
+
+    const batch = await upload(maio, undefined, '2026-05-06');
+    expect(batch.outOfRangeCount).toBe(1);
+    expect(batch.fromDate).toBe('2026-05-06T00:00:00.000Z');
+
+    const body = await review(batch.id);
+    expect(body.counts.pending).toBe(2);
+    expect(body.outOfRangeCount).toBe(1);
+    expect(body.entries.items.map((e: { fitId: string }) => e.fitId)).toEqual([
+      'F06',
+      'F10',
+    ]);
+
+    // A linha cortada nao registrou FITID, entao volta num reimport sem corte.
+    const second = await upload(maio);
+    const secondBody = await review(second.id);
+    expect(secondBody.counts.pending).toBe(1);
+    expect(secondBody.entries.items[0].fitId).toBe('F02');
+  });
+
+  it('should reject an invalid start date', async () => {
+    const response = await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/upload')
+        .send({
+          contentBase64: ofxBase64([
+            { fitId: 'F1', amount: '-10.00', memo: 'A' },
+          ]),
+          fromDate: '06/05/2026',
+        }),
+    );
+    expect(response.status).toBe(400);
   });
 
   it('should reject a file that is not an OFX', async () => {

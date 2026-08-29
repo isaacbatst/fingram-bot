@@ -35,6 +35,8 @@ export class ImportBatchDrizzleRepository extends ImportBatchRepository {
       fileName: row.fileName,
       status: row.status as ImportBatchStatus,
       duplicateCount: row.duplicateCount,
+      fromDate: row.fromDate,
+      outOfRangeCount: row.outOfRangeCount,
       createdAt: row.createdAt,
     });
   }
@@ -54,6 +56,8 @@ export class ImportBatchDrizzleRepository extends ImportBatchRepository {
       fileName: batch.fileName,
       status: batch.status,
       duplicateCount: batch.duplicateCount,
+      fromDate: batch.fromDate,
+      outOfRangeCount: batch.outOfRangeCount,
       createdAt: batch.createdAt,
     };
   }

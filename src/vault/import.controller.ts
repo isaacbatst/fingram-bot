@@ -34,7 +34,13 @@ export class ImportController {
   async upload(
     @VaultSession() vaultId: string,
     @Body()
-    data: { contentBase64?: string; fileName?: string; boxId?: string },
+    data: {
+      contentBase64?: string;
+      fileName?: string;
+      boxId?: string;
+      /** Data inicial opcional, no formato YYYY-MM-DD. */
+      fromDate?: string;
+    },
   ) {
     if (!data.contentBase64?.trim()) {
       throw new BadRequestException('O arquivo é obrigatório');
@@ -45,11 +51,17 @@ export class ImportController {
       throw new BadRequestException('O arquivo está vazio');
     }
 
+    const fromDate = this.parseDayOnly(data.fromDate);
+    if (data.fromDate && !fromDate) {
+      throw new BadRequestException('Data inicial inválida');
+    }
+
     const [error, batches] = await this.importService.ingest({
       vaultId,
       file,
       fileName: data.fileName,
       boxId: data.boxId,
+      fromDate,
     });
     if (error !== null) throw new BadRequestException(error);
 
@@ -87,6 +99,7 @@ export class ImportController {
       batch: this.batchToDTO(review.batch),
       counts: review.counts,
       duplicateCount: review.duplicateCount,
+      outOfRangeCount: review.outOfRangeCount,
       entries: {
         ...review.entries,
         items: review.entries.items.map((entry) => this.entryToDTO(entry)),
@@ -197,6 +210,23 @@ export class ImportController {
     return this.batchToDTO(batch);
   }
 
+  /**
+   * Lê uma data no formato YYYY-MM-DD como meia-noite UTC.
+   *
+   * Construir com `Date.UTC` em vez de `new Date(...)` local evita o deslocamento de
+   * um dia em UTC-3, que faria o corte "a partir de 06/05" incluir o dia 05/05.
+   */
+  private parseDayOnly(value?: string): Date | undefined {
+    if (!value) return undefined;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    if (!match) return undefined;
+    const [, year, month, day] = match;
+    const date = new Date(
+      Date.UTC(Number(year), Number(month) - 1, Number(day)),
+    );
+    return Number.isNaN(date.getTime()) ? undefined : date;
+  }
+
   private batchToDTO(batch: ImportBatch) {
     return {
       id: batch.id,
@@ -211,6 +241,8 @@ export class ImportController {
       fileName: batch.fileName,
       status: batch.status,
       duplicateCount: batch.duplicateCount,
+      fromDate: batch.fromDate,
+      outOfRangeCount: batch.outOfRangeCount,
       createdAt: batch.createdAt,
     };
   }

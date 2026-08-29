@@ -23,6 +23,8 @@ export type ImportReview = {
   counts: ImportEntryStatusCounts;
   /** Lines the file carried that this account had already seen. */
   duplicateCount: number;
+  /** Lines dropped for falling before the cutoff the user chose. */
+  outOfRangeCount: number;
   entries: Paginated<ImportEntry>;
 };
 
@@ -43,12 +45,18 @@ export class ImportService {
    * Nothing becomes a transaction here: balances, budgets and the estrato are only
    * touched once the user confirms. Lines whose FITID this account has already seen
    * are skipped, which is what makes re-importing an overlapping period safe.
+   *
+   * `fromDate` is an optional cutoff: lines before it are dropped without leaving an
+   * entry behind, so re-importing the same file without a cutoff brings them back.
+   * That is deliberate — the user asked to start from a date, not to discard the
+   * earlier days forever.
    */
   async ingest(input: {
     vaultId: string;
     file: Buffer;
     fileName?: string;
     boxId?: string;
+    fromDate?: Date;
   }): Promise<Either<string, ImportBatch[]>> {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) return left('Dados não encontrados');
@@ -77,19 +85,33 @@ export class ImportService {
   }
 
   private async ingestStatement(
-    input: { vaultId: string; fileName?: string; boxId?: string },
+    input: {
+      vaultId: string;
+      fileName?: string;
+      boxId?: string;
+      fromDate?: Date;
+    },
     statement: OfxStatement,
   ): Promise<ImportBatch> {
     const { accountKey } = statement.account;
     const boxId = await this.resolveBoxId(input.vaultId, accountKey, input.boxId);
 
-    const fitIds = statement.transactions.map((t) => t.fitId);
+    // The cutoff is applied before deduplication on purpose: a line dropped here
+    // must not register its FITID, otherwise a later import without a cutoff would
+    // treat it as already seen and never bring it back.
+    const inRange = input.fromDate
+      ? statement.transactions.filter(
+          (t) => t.datePosted.getTime() >= input.fromDate!.getTime(),
+        )
+      : statement.transactions;
+
+    const fitIds = inRange.map((t) => t.fitId);
     const known = await this.importEntryRepository.findExistingFitIds(
       input.vaultId,
       accountKey,
       fitIds,
     );
-    const fresh = statement.transactions.filter((t) => !known.has(t.fitId));
+    const fresh = inRange.filter((t) => !known.has(t.fitId));
 
     const batch = ImportBatch.create({
       vaultId: input.vaultId,
@@ -102,7 +124,9 @@ export class ImportService {
       periodEnd: statement.periodEnd,
       ledgerBalance: statement.ledgerBalance,
       fileName: input.fileName ?? null,
-      duplicateCount: statement.transactions.length - fresh.length,
+      duplicateCount: inRange.length - fresh.length,
+      fromDate: input.fromDate ?? null,
+      outOfRangeCount: statement.transactions.length - inRange.length,
     });
     await this.importBatchRepository.create(batch);
 
@@ -123,7 +147,8 @@ export class ImportService {
     await this.importEntryRepository.createMany(entries);
 
     this.logger.log(
-      `Lote ${batch.id}: ${entries.length} novos, ${batch.duplicateCount} já importados`,
+      `Lote ${batch.id}: ${entries.length} novos, ${batch.duplicateCount} já importados, ` +
+        `${batch.outOfRangeCount} fora do período`,
     );
     return batch;
   }
@@ -181,6 +206,7 @@ export class ImportService {
       batch,
       counts,
       duplicateCount: batch.duplicateCount,
+      outOfRangeCount: batch.outOfRangeCount,
       entries,
     });
   }

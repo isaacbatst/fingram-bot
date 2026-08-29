@@ -162,6 +162,12 @@ export const importBatch = pgTable('import_batch', {
   // Lines skipped at ingestion for already-seen FITIDs. Persisted so the review
   // summary still reports them after a reload — it is where dedup becomes visible.
   duplicateCount: integer('duplicate_count').notNull().default(0),
+  // Optional cutoff the user chose at upload: lines before it are not ingested.
+  // Null means the whole file was taken.
+  fromDate: timestamp('from_date'),
+  // Lines dropped for falling before `fromDate`. Unlike duplicates, these leave no
+  // entry behind, so re-importing without a cutoff brings them back.
+  outOfRangeCount: integer('out_of_range_count').notNull().default(0),
   createdAt: timestamp('created_at').notNull(),
 });
 

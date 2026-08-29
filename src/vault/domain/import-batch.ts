@@ -16,6 +16,10 @@ type CreateParams = {
   fileName?: string | null;
   /** Lines skipped at ingestion because their FITID was already seen on this account. */
   duplicateCount?: number;
+  /** Optional cutoff chosen at upload. Null means the whole file was taken. */
+  fromDate?: Date | null;
+  /** Lines dropped for falling before `fromDate`. */
+  outOfRangeCount?: number;
   createdAt?: Date;
 };
 
@@ -23,6 +27,7 @@ type RestoreParams = CreateParams & {
   id: string;
   status: ImportBatchStatus;
   duplicateCount: number;
+  outOfRangeCount: number;
   createdAt: Date;
 };
 
@@ -34,6 +39,7 @@ export class ImportBatch {
       id: crypto.randomUUID(),
       status: 'reviewing',
       duplicateCount: params.duplicateCount ?? 0,
+      outOfRangeCount: params.outOfRangeCount ?? 0,
       createdAt: params.createdAt ?? new Date(),
     });
   }
@@ -51,12 +57,14 @@ export class ImportBatch {
   readonly periodEnd: Date | null;
   readonly ledgerBalance: number | null;
   readonly fileName: string | null;
+  readonly fromDate: Date | null;
   readonly createdAt: Date;
 
   accountLabel: string | null;
   boxId: string | null;
   status: ImportBatchStatus;
   duplicateCount: number;
+  outOfRangeCount: number;
 
   private constructor(params: RestoreParams) {
     this.id = params.id;
@@ -70,8 +78,10 @@ export class ImportBatch {
     this.periodEnd = params.periodEnd ?? null;
     this.ledgerBalance = params.ledgerBalance ?? null;
     this.fileName = params.fileName ?? null;
+    this.fromDate = params.fromDate ?? null;
     this.status = params.status;
     this.duplicateCount = params.duplicateCount;
+    this.outOfRangeCount = params.outOfRangeCount;
     this.createdAt = params.createdAt;
   }
 
