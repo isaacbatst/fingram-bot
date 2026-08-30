@@ -185,6 +185,21 @@ export class ImportEntryDrizzleRepository extends ImportEntryRepository {
     return counts;
   }
 
+  async countPendingByVault(vaultId: string): Promise<Map<string, number>> {
+    const rows = await this.db
+      .select({ batchId: importEntry.batchId, value: count() })
+      .from(importEntry)
+      .where(
+        and(
+          eq(importEntry.vaultId, vaultId),
+          eq(importEntry.status, 'pending'),
+        ),
+      )
+      .groupBy(importEntry.batchId);
+
+    return new Map(rows.map((row) => [row.batchId, row.value]));
+  }
+
   async findByTransactionId(
     transactionId: string,
   ): Promise<ImportEntry | null> {

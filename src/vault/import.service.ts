@@ -223,8 +223,25 @@ export class ImportService {
     });
   }
 
-  async listBatches(vaultId: string): Promise<ImportBatch[]> {
-    return this.importBatchRepository.findByVaultId(vaultId);
+  /**
+   * Imports of a vault, each with how many lines are still awaiting a decision.
+   *
+   * The pending count is what lets the app offer a way back into a review left
+   * halfway. Without it such a batch is unreachable: re-uploading the file does not
+   * recover it, because deduplication refuses to recreate lines already seen.
+   */
+  async listBatches(
+    vaultId: string,
+  ): Promise<{ batch: ImportBatch; pendingCount: number }[]> {
+    const [batches, pendingByBatch] = await Promise.all([
+      this.importBatchRepository.findByVaultId(vaultId),
+      this.importEntryRepository.countPendingByVault(vaultId),
+    ]);
+
+    return batches.map((batch) => ({
+      batch,
+      pendingCount: pendingByBatch.get(batch.id) ?? 0,
+    }));
   }
 
   /**

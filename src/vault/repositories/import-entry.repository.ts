@@ -22,6 +22,14 @@ export abstract class ImportEntryRepository {
   ): Promise<Paginated<ImportEntry>>;
   abstract findPendingByBatchId(batchId: string): Promise<ImportEntry[]>;
   abstract countByStatus(batchId: string): Promise<ImportEntryStatusCounts>;
+  /**
+   * Pending lines per batch for a vault, in one query.
+   *
+   * Backs the "unfinished imports" list: without it a batch left mid-review becomes
+   * unreachable, and re-uploading the file cannot recover it — deduplication
+   * correctly refuses to recreate lines it has already seen.
+   */
+  abstract countPendingByVault(vaultId: string): Promise<Map<string, number>>;
   /** Used to detach an entry when the transaction it created is deleted. */
   abstract findByTransactionId(
     transactionId: string,

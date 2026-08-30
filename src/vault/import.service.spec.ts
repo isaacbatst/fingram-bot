@@ -571,6 +571,57 @@ describe('ImportService', () => {
     });
   });
 
+  describe('importações em aberto', () => {
+    it('should report how many lines each import still has pending', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-10.00', memo: 'A' },
+        { fitId: 'F2', amount: '-20.00', memo: 'B' },
+      ]);
+
+      const listed = await service.listBatches(vault.id);
+      expect(listed).toHaveLength(1);
+      expect(listed[0].batch.id).toBe(batch.id);
+      expect(listed[0].pendingCount).toBe(2);
+    });
+
+    it('should drop the count to zero once everything is decided', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-10.00', memo: 'A' },
+        { fitId: 'F2', amount: '-20.00', memo: 'B' },
+      ]);
+      await service.confirmBatch({ vaultId: vault.id, batchId: batch.id });
+
+      const listed = await service.listBatches(vault.id);
+      expect(listed[0].pendingCount).toBe(0);
+    });
+
+    it('should keep a half-reviewed import findable', async () => {
+      // É o caso que deixava trabalho preso: reenviar o arquivo não recupera,
+      // porque a deduplicação recusa recriar linhas já vistas.
+      const lines: Line[] = [
+        { fitId: 'F1', amount: '-10.00', memo: 'A' },
+        { fitId: 'F2', amount: '-20.00', memo: 'B' },
+      ];
+      const [first] = await ingest(lines);
+      const [oneId] = await pendingIds(first.id);
+      await service.confirmEntries({ vaultId: vault.id, entryIds: [oneId] });
+
+      // Reenviar o mesmo arquivo não traz nada de volta.
+      const [second] = await ingest(lines);
+      expect(await entryRepo.findPendingByBatchId(second.id)).toHaveLength(0);
+
+      // Mas o lote original continua listado, com a pendência restante.
+      const listed = await service.listBatches(vault.id);
+      const stranded = listed.find((l) => l.batch.id === first.id);
+      expect(stranded!.pendingCount).toBe(1);
+    });
+
+    it('should not leak imports from another vault', async () => {
+      await ingest([{ fitId: 'F1', amount: '-10.00', memo: 'A' }]);
+      expect(await service.listBatches('outro-vault')).toHaveLength(0);
+    });
+  });
+
   describe('revisão', () => {
     it('should report the counts and the duplicate lines of the batch', async () => {
       const lines: Line[] = [

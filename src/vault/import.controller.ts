@@ -71,7 +71,12 @@ export class ImportController {
   @Get('batches')
   async listBatches(@VaultSession() vaultId: string) {
     const batches = await this.importService.listBatches(vaultId);
-    return { batches: batches.map((batch) => this.batchToDTO(batch)) };
+    return {
+      batches: batches.map(({ batch, pendingCount }) => ({
+        ...this.batchToDTO(batch),
+        pendingCount,
+      })),
+    };
   }
 
   @Get('batch/:batchId')

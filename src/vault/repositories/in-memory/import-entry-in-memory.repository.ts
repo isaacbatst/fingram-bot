@@ -79,6 +79,15 @@ export class ImportEntryInMemoryRepository extends ImportEntryRepository {
     return counts;
   }
 
+  async countPendingByVault(vaultId: string): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    for (const entry of this.entries.values()) {
+      if (entry.vaultId !== vaultId || entry.status !== 'pending') continue;
+      counts.set(entry.batchId, (counts.get(entry.batchId) ?? 0) + 1);
+    }
+    return counts;
+  }
+
   async findByTransactionId(
     transactionId: string,
   ): Promise<ImportEntry | null> {
