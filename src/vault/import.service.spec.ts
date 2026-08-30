@@ -64,6 +64,7 @@ describe('ImportService', () => {
   let entryRepo: ImportEntryInMemoryRepository;
   let vault: Vault;
   let box: Box;
+  let reserva: Box;
 
   beforeEach(async () => {
     store = new InMemoryStore();
@@ -75,7 +76,13 @@ describe('ImportService', () => {
     vault = new Vault();
     await vaultRepo.create(vault);
     box = Box.create({ vaultId: vault.id, name: 'Nubank', isDefault: true });
+    reserva = Box.create({ vaultId: vault.id, name: 'Reserva', type: 'saving' });
     await boxRepo.create(box);
+    await boxRepo.create(reserva);
+    // O agregado também precisa conhecer os estratos: é contra ele que
+    // `createTransfer` valida origem e destino (o repositório drizzle os hidrata).
+    vault.addBox(box);
+    vault.addBox(reserva);
 
     service = new ImportService(vaultRepo, boxRepo, batchRepo, entryRepo);
   });
@@ -506,6 +513,125 @@ describe('ImportService', () => {
       expect(error).toBeNull();
       expect(result!.confirmed).toBe(0);
       expect(result!.skipped).toEqual(ids);
+    });
+  });
+
+  describe('confirmar como transferência', () => {
+    it('should create a pair and leave the total balance untouched', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-2000.00', memo: 'TED RESERVA' },
+      ]);
+      const ids = await pendingIds(batch.id);
+
+      const [error, result] = await service.confirmAsTransfer({
+        vaultId: vault.id,
+        entryIds: ids,
+        boxId: reserva.id,
+      });
+      expect(error).toBeNull();
+      expect(result!.confirmed).toBe(1);
+
+      const stored = await vaultRepo.findById(vault.id);
+      const transactions = [...stored!.transactions.values()];
+      expect(transactions).toHaveLength(2);
+      // O dinheiro continua sendo do usuário: sai de um estrato e entra no outro.
+      expect(stored!.getBalance({ includeAll: true })).toBe(0);
+    });
+
+    it('should move the money out of the account and into the chosen estrato', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-2000.00', memo: 'TED RESERVA' },
+      ]);
+      await service.confirmAsTransfer({
+        vaultId: vault.id,
+        entryIds: await pendingIds(batch.id),
+        boxId: reserva.id,
+      });
+
+      const stored = await vaultRepo.findById(vault.id);
+      const transactions = [...stored!.transactions.values()];
+      const saida = transactions.find((t) => t.type === 'expense')!;
+      const entrada = transactions.find((t) => t.type === 'income')!;
+      expect(saida.boxId).toBe(box.id);
+      expect(entrada.boxId).toBe(reserva.id);
+      expect(saida.transferId).toBe(entrada.transferId);
+    });
+
+    it('should invert the direction for an incoming line', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '2000.00', memo: 'RESGATE RESERVA' },
+      ]);
+      await service.confirmAsTransfer({
+        vaultId: vault.id,
+        entryIds: await pendingIds(batch.id),
+        boxId: reserva.id,
+      });
+
+      const stored = await vaultRepo.findById(vault.id);
+      const transactions = [...stored!.transactions.values()];
+      const saida = transactions.find((t) => t.type === 'expense')!;
+      const entrada = transactions.find((t) => t.type === 'income')!;
+      expect(saida.boxId).toBe(reserva.id);
+      expect(entrada.boxId).toBe(box.id);
+    });
+
+    it('should leave no category behind, so budgets are untouched', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-2000.00', memo: 'TED RESERVA' },
+      ]);
+      await service.confirmAsTransfer({
+        vaultId: vault.id,
+        entryIds: await pendingIds(batch.id),
+        boxId: reserva.id,
+      });
+
+      const stored = await vaultRepo.findById(vault.id);
+      const transactions = [...stored!.transactions.values()];
+      expect(transactions.every((t) => t.categoryId === null)).toBe(true);
+    });
+
+    it('should mark the entry confirmed so it does not come back', async () => {
+      const lines: Line[] = [
+        { fitId: 'F1', amount: '-2000.00', memo: 'TED RESERVA' },
+      ];
+      const [batch] = await ingest(lines);
+      await service.confirmAsTransfer({
+        vaultId: vault.id,
+        entryIds: await pendingIds(batch.id),
+        boxId: reserva.id,
+      });
+
+      const [second] = await ingest(lines);
+      expect(await entryRepo.findPendingByBatchId(second.id)).toHaveLength(0);
+      expect(second.duplicateCount).toBe(1);
+    });
+
+    it('should refuse an estrato that is not in the vault', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-2000.00', memo: 'TED RESERVA' },
+      ]);
+      const [error] = await service.confirmAsTransfer({
+        vaultId: vault.id,
+        entryIds: await pendingIds(batch.id),
+        boxId: 'estrato-de-outro-vault',
+      });
+      expect(error).not.toBeNull();
+    });
+
+    it('should skip a line whose estrato is the destination itself', async () => {
+      // Transferir para o mesmo estrato não é movimento nenhum.
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-2000.00', memo: 'TED' },
+      ]);
+      const [, result] = await service.confirmAsTransfer({
+        vaultId: vault.id,
+        entryIds: await pendingIds(batch.id),
+        boxId: box.id,
+      });
+      expect(result!.confirmed).toBe(0);
+
+      const stored = await vaultRepo.findById(vault.id);
+      expect(stored!.transactions.size).toBe(0);
     });
   });
 

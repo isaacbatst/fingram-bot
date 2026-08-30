@@ -223,6 +223,32 @@ export class ImportController {
     return result;
   }
 
+  /**
+   * Confirma lançamentos como transferência entre estratos do usuário, criando o
+   * par em vez de uma transação solta — o dinheiro continua sendo dele.
+   */
+  @Post('confirm-transfer')
+  async confirmTransfer(
+    @VaultSession() vaultId: string,
+    @Body() data: { entryIds?: string[]; boxId?: string },
+  ) {
+    if (!data.entryIds?.length) {
+      throw new BadRequestException('Nenhum lançamento informado');
+    }
+    if (!data.boxId) {
+      throw new BadRequestException('O estrato de destino é obrigatório');
+    }
+
+    const [error, result] = await this.importService.confirmAsTransfer({
+      vaultId,
+      entryIds: data.entryIds,
+      boxId: data.boxId,
+    });
+    if (error !== null) throw new BadRequestException(error);
+
+    return result;
+  }
+
   @Post('batch/confirm')
   async confirmBatch(
     @VaultSession() vaultId: string,

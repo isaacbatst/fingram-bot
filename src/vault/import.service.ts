@@ -393,6 +393,74 @@ export class ImportService {
     return right({ confirmed: confirmed.length, skipped });
   }
 
+  /**
+   * Confirms entries as a transfer between the user's own estratos, instead of as a
+   * plain transaction.
+   *
+   * A bank calls "transferência" both a PIX to another person and money moved to
+   * your own savings. Only the second is a transfer here: the money is still yours,
+   * so it must become a pair (out of one estrato, into the other) and leave the
+   * balance untouched. Booking it as an expense would inflate the month's spending
+   * and eat into a category budget for money that never left.
+   *
+   * Direction comes from the line itself: an expense leaves the account's estrato,
+   * an income arrives in it.
+   */
+  async confirmAsTransfer(input: {
+    vaultId: string;
+    entryIds: string[];
+    boxId: string;
+  }): Promise<Either<string, { confirmed: number; skipped: string[] }>> {
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) return left('Dados não encontrados');
+
+    const counterpart = await this.boxRepository.findById(input.boxId);
+    if (!counterpart || counterpart.vaultId !== input.vaultId) {
+      return left('Estrato não encontrado');
+    }
+
+    const confirmed: ImportEntry[] = [];
+    const skipped: string[] = [];
+
+    for (const entryId of input.entryIds) {
+      const entry = await this.loadEntry(input.vaultId, entryId);
+      if (entry === null || entry.status !== 'pending' || !entry.boxId) {
+        skipped.push(entryId);
+        continue;
+      }
+
+      const fromBoxId =
+        entry.type === 'expense' ? entry.boxId : input.boxId;
+      const toBoxId = entry.type === 'expense' ? input.boxId : entry.boxId;
+
+      const [error, transferId] = vault.createTransfer({
+        fromBoxId,
+        toBoxId,
+        amount: entry.amount,
+        date: entry.date,
+      });
+      if (error !== null) {
+        skipped.push(entryId);
+        continue;
+      }
+
+      // O par não expõe os ids das transações; vinculamos a entry ao lado que
+      // ficou no estrato da própria conta, que é o que ela representa.
+      const own = [...vault.transactions.values()].find(
+        (t) => t.transferId === transferId && t.boxId === entry.boxId,
+      );
+      entry.confirm(own?.id ?? transferId);
+      confirmed.push(entry);
+    }
+
+    await this.vaultRepository.update(vault);
+    for (const entry of confirmed) {
+      await this.importEntryRepository.update(entry);
+    }
+
+    return right({ confirmed: confirmed.length, skipped });
+  }
+
   /** Confirms every still-pending entry of a batch. */
   async confirmBatch(input: {
     vaultId: string;
