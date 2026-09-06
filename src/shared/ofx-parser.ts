@@ -41,21 +41,23 @@ export type OfxStatement = {
 
 export class OfxParseError extends Error {}
 
-const UTF8_HINT = /(?:CHARSET|ENCODING)\s*:\s*UTF-?8/i;
-const XML_UTF8_HINT = /encoding\s*=\s*["']UTF-?8["']/i;
-
 /**
- * Decodifica o arquivo respeitando o encoding declarado.
+ * Decodifica o arquivo detectando o encoding pelos bytes, não pelo cabeçalho.
  *
- * Bancos brasileiros emitem OFX 1.x em ISO-8859-1 / Windows-1252. Ler esses bytes
- * como UTF-8 corrompe a acentuação do MEMO, então latin1 é o default e UTF-8 só é
- * usado quando o cabeçalho declara explicitamente.
+ * O cabeçalho não é confiável: o Nubank declara `CHARSET:1252` e emite UTF-8, e
+ * confiar na declaração transforma "Pix no Crédito" em "Pix no CrÃ©dito". Outros
+ * bancos realmente emitem ISO-8859-1, então também não dá para fixar UTF-8.
+ *
+ * A detecção resolve os dois casos: UTF-8 tem estrutura verificável, e texto
+ * latin1 acentuado quase nunca forma uma sequência UTF-8 válida. Se decodificar
+ * como UTF-8 estrito sem erro, é UTF-8; senão, é latin1.
  */
 export function decodeOfx(buffer: Buffer): string {
-  // O cabeçalho é sempre ASCII, então é seguro inspecioná-lo como latin1.
-  const head = buffer.subarray(0, 1024).toString('latin1');
-  const isUtf8 = UTF8_HINT.test(head) || XML_UTF8_HINT.test(head);
-  return buffer.toString(isUtf8 ? 'utf8' : 'latin1');
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    return buffer.toString('latin1');
+  }
 }
 
 function decodeEntities(value: string): string {

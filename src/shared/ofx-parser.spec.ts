@@ -181,14 +181,46 @@ describe('parseOfxAmount', () => {
 });
 
 describe('decodeOfx', () => {
-  it('should decode as latin1 when the header does not declare UTF-8', () => {
+  it('should decode latin1 bytes as latin1', () => {
     const text = decodeOfx(latin1(OFX_ACENTOS));
     expect(text).toContain('CONDOMÍNIO ÁGUAS');
   });
 
-  it('should decode as UTF-8 when the XML declaration says so', () => {
+  it('should decode UTF-8 bytes as UTF-8', () => {
     const text = decodeOfx(utf8(OFX_2X.replace('P&amp;A', 'PÃO')));
     expect(text).toContain('PÃO');
+  });
+
+  it('should ignore a CHARSET header that contradicts the bytes', () => {
+    // Caso real: o Nubank declara CHARSET:1252 e emite UTF-8. Confiar no
+    // cabeçalho transformava "Pix no Crédito" em "Pix no CrÃ©dito".
+    const declaraLatin1 = `OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+ENCODING:USASCII
+CHARSET:1252
+
+<OFX>
+<CREDITCARDMSGSRSV1>
+<CCSTMTRS>
+<CCACCTFROM>
+<ACCTID>5c9e7de7</ACCTID>
+</CCACCTFROM>
+<BANKTRANLIST>
+<STMTTRN>
+<TRNTYPE>DEBIT</TRNTYPE>
+<DTPOSTED>20260813</DTPOSTED>
+<TRNAMT>-45.90</TRNAMT>
+<FITID>abc</FITID>
+<MEMO>Pix no Crédito - São Paulo</MEMO>
+</STMTTRN>
+</BANKTRANLIST>
+</CCSTMTRS>
+</CREDITCARDMSGSRSV1>
+</OFX>`;
+
+    const [statement] = parseOfx(utf8(declaraLatin1));
+    expect(statement.transactions[0].memo).toBe('Pix no Crédito - São Paulo');
   });
 });
 
