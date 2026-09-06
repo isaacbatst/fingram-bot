@@ -16,6 +16,28 @@ export type SuggestionSource = 'history' | 'ai' | 'none';
  * only when something meaningful is left. Merging two different establishments is a
  * worse failure than leaving two groups for the same one.
  */
+/**
+ * Reconhece a quitação de fatura de cartão, que aparece dos dois lados.
+ *
+ * No extrato do cartão ela vem como crédito ("Pagamento recebido"); na conta
+ * corrente, como débito ("PAGAMENTO FATURA"). Nenhum dos dois é gasto novo — são
+ * o mesmo evento, e as compras já foram contadas. Lançar qualquer um deles
+ * duplicaria: o débito infla a despesa, o crédito infla a receita.
+ *
+ * `kind` importa: "pagamento recebido" numa conta corrente pode ser alguém te
+ * pagando, o que é receita de verdade. Só num cartão isso é quitação.
+ */
+export function isSettlementDescription(
+  value: string,
+  kind: 'bank' | 'creditcard',
+): boolean {
+  const text = normalizeDescription(value);
+  if (/FATURA/.test(text)) return true;
+  if (/PAG(?:AMENTO|TO)?\s*(?:DE\s+)?CART[AÃ]O/.test(text)) return true;
+  if (kind === 'creditcard' && /PAGAMENTO\s+RECEBIDO/.test(text)) return true;
+  return false;
+}
+
 export function normalizeDescription(value: string): string {
   const collapsed = value.trim().toUpperCase().replace(/\s+/g, ' ');
   const withoutTrailingNumber = collapsed.replace(/\s+[\d.\-/]+$/, '');

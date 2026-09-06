@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { ImportEntry, normalizeDescription } from './import-entry';
+import {
+  ImportEntry,
+  isSettlementDescription,
+  normalizeDescription,
+} from './import-entry';
 
 const baseParams = {
   vaultId: 'vault-1',
@@ -74,6 +78,32 @@ describe('normalizeDescription', () => {
   it('should not strip away the whole description', () => {
     // Sem a guarda, "TED 12345" viraria "TED" e "123" viraria vazio.
     expect(normalizeDescription('12345')).toBe('12345');
+  });
+});
+
+describe('isSettlementDescription', () => {
+  it('should recognise the bill payment seen from the checking account', () => {
+    expect(isSettlementDescription('PAGAMENTO FATURA CARTAO', 'bank')).toBe(true);
+    expect(isSettlementDescription('Pagto de fatura', 'bank')).toBe(true);
+    expect(isSettlementDescription('PAGAMENTO CARTAO', 'bank')).toBe(true);
+  });
+
+  it('should recognise the bill payment seen from inside the card', () => {
+    expect(isSettlementDescription('Pagamento recebido', 'creditcard')).toBe(true);
+  });
+
+  it('should not treat an incoming payment on a checking account as settlement', () => {
+    // Numa conta corrente isso pode ser alguém te pagando, que é receita real.
+    expect(isSettlementDescription('Pagamento recebido', 'bank')).toBe(false);
+  });
+
+  it('should leave ordinary spending alone', () => {
+    expect(isSettlementDescription('PAGAMENTO ALUGUEL', 'bank')).toBe(false);
+    expect(isSettlementDescription('Ifd*Ifood Club', 'creditcard')).toBe(false);
+    expect(isSettlementDescription('Dl*Uberrides', 'creditcard')).toBe(false);
+    expect(isSettlementDescription('IOF de "Hostinger.Com"', 'creditcard')).toBe(
+      false,
+    );
   });
 });
 

@@ -57,6 +57,43 @@ ${transactions}
   );
 }
 
+/** Fatura de cartão: CCSTMTRS, como o Nubank emite. */
+function ofxCartao(lines: Line[]): Buffer {
+  const transactions = lines
+    .map(
+      (line) => `<STMTTRN>
+<TRNTYPE>${line.amount.startsWith('-') ? 'DEBIT' : 'CREDIT'}
+<DTPOSTED>${line.date ?? '20260115'}000000[-3:BRT]
+<TRNAMT>${line.amount}
+<FITID>${line.fitId}
+<MEMO>${line.memo}
+</STMTTRN>`,
+    )
+    .join('\n');
+
+  return Buffer.from(
+    `OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+<OFX>
+<CREDITCARDMSGSRSV1>
+<CCSTMTRS>
+<CURDEF>BRL
+<CCACCTFROM>
+<ACCTID>5c9e7de7-cartao
+</CCACCTFROM>
+<BANKTRANLIST>
+<DTSTART>20260101
+<DTEND>20260131
+${transactions}
+</BANKTRANLIST>
+</CCSTMTRS>
+</CREDITCARDMSGSRSV1>
+</OFX>`,
+    'utf8',
+  );
+}
+
 describe('ImportService', () => {
   let service: ImportService;
   let store: InMemoryStore;
@@ -340,6 +377,63 @@ describe('ImportService', () => {
       const after = await groupsOf(batch.id);
       expect(after).toHaveLength(1);
       expect(after[0].description).toContain('PADARIA');
+    });
+  });
+
+  describe('quitação de fatura', () => {
+    const groupsOf = async (batchId: string) => {
+      const [, groups] = await service.getGroups({
+        vaultId: vault.id,
+        batchId,
+      });
+      return groups!;
+    };
+
+    it('should flag the bill payment seen from the checking account', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-3847.00', memo: 'PAGAMENTO FATURA CARTAO' },
+        { fitId: 'F2', amount: '-45.90', memo: 'PADARIA CENTRAL' },
+      ]);
+
+      const groups = await groupsOf(batch.id);
+      const fatura = groups.find((g) => g.description.includes('FATURA'))!;
+      const padaria = groups.find((g) => g.description.includes('PADARIA'))!;
+      expect(fatura.looksLikeSettlement).toBe(true);
+      expect(padaria.looksLikeSettlement).toBe(false);
+    });
+
+    it('should flag the bill payment seen from inside the card statement', async () => {
+      const [error, batches] = await service.ingest({
+        vaultId: vault.id,
+        file: ofxCartao([
+          { fitId: 'C1', amount: '7133.47', memo: 'Pagamento recebido' },
+          { fitId: 'C2', amount: '-45.90', memo: 'Ifd*Ifood Club' },
+        ]),
+        boxId: box.id,
+      });
+      expect(error).toBeNull();
+      expect(batches![0].kind).toBe('creditcard');
+
+      const groups = await groupsOf(batches![0].id);
+      const quitacao = groups.find((g) => g.description.includes('Pagamento'))!;
+      const compra = groups.find((g) => g.description.includes('Ifood'))!;
+      // Sem a flag, esses R$ 7.133,47 entrariam como receita e inflariam os ganhos.
+      expect(quitacao.looksLikeSettlement).toBe(true);
+      expect(quitacao.type).toBe('income');
+      expect(compra.looksLikeSettlement).toBe(false);
+    });
+
+    it('should keep accents from a UTF-8 card statement', async () => {
+      const [, batches] = await service.ingest({
+        vaultId: vault.id,
+        file: ofxCartao([
+          { fitId: 'C1', amount: '-45.90', memo: 'Pix no Crédito - São Paulo' },
+        ]),
+        boxId: box.id,
+      });
+
+      const groups = await groupsOf(batches![0].id);
+      expect(groups[0].description).toBe('Pix no Crédito - São Paulo');
     });
   });
 

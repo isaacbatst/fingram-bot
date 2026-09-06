@@ -5,6 +5,7 @@ import {
   ImportEntry,
   ImportEntryEdit,
   ImportEntryStatus,
+  isSettlementDescription,
 } from './domain/import-entry';
 import { Transaction } from './domain/transaction';
 import { Paginated } from './domain/paginated';
@@ -38,6 +39,8 @@ export type ImportGroup = {
   firstDate: Date;
   lastDate: Date;
   entryIds: string[];
+  /** Parece a quitação de uma fatura — não é gasto novo, e sim o pagamento dela. */
+  looksLikeSettlement: boolean;
 };
 
 @Injectable()
@@ -287,6 +290,10 @@ export class ImportService {
         firstDate: new Date(Math.min(...dates)),
         lastDate: new Date(Math.max(...dates)),
         entryIds: entries.map((e) => e.id),
+        looksLikeSettlement: isSettlementDescription(
+          entries[0].rawMemo ?? entries[0].rawName ?? '',
+          batch.kind,
+        ),
       };
     });
 
