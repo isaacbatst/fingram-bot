@@ -4,6 +4,7 @@ import { InMemoryStore } from '@/shared/persistence/in-memory/in-memory-store';
 import {
   TransactionRepository,
   AggregationTransaction,
+  DailyActivity,
 } from '../transaction.repository';
 import { Paginated } from '../../domain/paginated';
 import { TransactionDTO } from '../../dto/transaction.dto,';
@@ -165,5 +166,30 @@ export class TransactionInMemoryRepository extends TransactionRepository {
         transferId: t.transferId ?? null,
         withdrawalType: t.withdrawalType ?? null,
       }));
+  }
+
+  async countByDay(
+    vaultId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<DailyActivity[]> {
+    const vault = this.store.vaults.get(vaultId);
+    if (!vault) return [];
+
+    const byDay = new Map<string, { count: number; expenseTotal: number }>();
+    for (const t of vault.transactions.values()) {
+      if (!t.isCommitted) continue;
+      const date = t.date ?? t.createdAt;
+      if (date < startDate || date >= endDate) continue;
+
+      // Dia em UTC, igual ao que a consulta do drizzle produz.
+      const key = date.toISOString().slice(0, 10);
+      const bucket = byDay.get(key) ?? { count: 0, expenseTotal: 0 };
+      bucket.count++;
+      if (t.type === 'expense') bucket.expenseTotal += t.amount;
+      byDay.set(key, bucket);
+    }
+
+    return [...byDay.entries()].map(([date, bucket]) => ({ date, ...bucket }));
   }
 }

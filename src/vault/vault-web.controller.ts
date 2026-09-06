@@ -19,6 +19,7 @@ import { VaultSession } from './vault-session.decorator';
 import { VaultErrorType, VaultWebService } from './vault-web.service';
 import { VaultService } from './vault.service';
 import { PlanQueryService } from '@/plan/shared/plan-query.service';
+import { VaultQueryService } from './shared/vault-query.service';
 
 @Controller('vault')
 export class VaultWebController {
@@ -27,7 +28,23 @@ export class VaultWebController {
     private readonly vaultWebService: VaultWebService,
     private readonly vaultService: VaultService,
     private readonly planQueryService: PlanQueryService,
+    private readonly vaultQueryService: VaultQueryService,
   ) {}
+
+  /** Atividade por dia, para o grid da tela inicial. */
+  @UseGuards(VaultAccessTokenGuard)
+  @Get('activity')
+  async getActivity(
+    @VaultSession() vaultId: string,
+    @Query('weeks') weeks?: string,
+  ) {
+    const parsed = weeks ? parseInt(weeks, 10) : NaN;
+    // Limite superior para a janela não virar uma varredura da tabela inteira.
+    const safe = Number.isFinite(parsed) && parsed > 0 && parsed <= 53
+      ? parsed
+      : undefined;
+    return this.vaultQueryService.getDailyActivity(vaultId, safe);
+  }
 
   @UseGuards(VaultAccessTokenGuard)
   @Get('summary')

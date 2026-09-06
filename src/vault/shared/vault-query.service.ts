@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { BoxRepository } from '@/vault/repositories/box.repository';
-import { TransactionRepository } from '@/vault/repositories/transaction.repository';
+import {
+  DailyActivity,
+  TransactionRepository,
+} from '@/vault/repositories/transaction.repository';
 import { BoxInfo } from './domain/box-info';
 import { RealMonthData } from '@/plan/domain/plan';
 import { RealizationMode } from '@/plan/shared/domain/allocation';
@@ -23,6 +26,40 @@ export class VaultQueryService {
     private readonly boxRepo: BoxRepository,
     private readonly transactionRepo: TransactionRepository,
   ) {}
+
+  /**
+   * Atividade diária das últimas `weeks` semanas, para o grid da tela inicial.
+   *
+   * A janela começa num domingo para que cada coluna do grid seja uma semana
+   * inteira, e vai até o fim de hoje. Todo o cálculo é em UTC: as datas são
+   * gravadas como meia-noite UTC e usar métodos locais em UTC-3 jogaria cada
+   * lançamento para o dia anterior.
+   */
+  async getDailyActivity(
+    vaultId: string,
+    weeks = 20,
+  ): Promise<{ startDate: Date; endDate: Date; days: DailyActivity[] }> {
+    const now = new Date();
+    const today = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+
+    const startDate = new Date(today);
+    startDate.setUTCDate(startDate.getUTCDate() - (weeks * 7 - 1));
+    // Recua até o domingo daquela semana.
+    startDate.setUTCDate(startDate.getUTCDate() - startDate.getUTCDay());
+
+    // Exclusivo: inclui tudo que caiu hoje.
+    const endDate = new Date(today);
+    endDate.setUTCDate(endDate.getUTCDate() + 1);
+
+    const days = await this.transactionRepo.countByDay(
+      vaultId,
+      startDate,
+      endDate,
+    );
+    return { startDate, endDate, days };
+  }
 
   async findBoxById(boxId: string): Promise<BoxInfo | null> {
     const box = await this.boxRepo.findById(boxId);

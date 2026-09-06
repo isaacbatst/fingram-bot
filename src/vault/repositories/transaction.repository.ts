@@ -31,4 +31,23 @@ export abstract class TransactionRepository {
     startDate: Date,
     endDate: Date,
   ): Promise<AggregationTransaction[]>;
+
+  /**
+   * Quantas transações e quanto foi gasto em cada dia do intervalo.
+   *
+   * Agrupado no banco em vez de trazer as transações: o grid cobre meses e só
+   * precisa de um número por dia.
+   */
+  abstract countByDay(
+    vaultId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<DailyActivity[]>;
+}
+
+export interface DailyActivity {
+  /** Dia em UTC, no formato YYYY-MM-DD. */
+  date: string;
+  count: number;
+  expenseTotal: number;
 }

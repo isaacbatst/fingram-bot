@@ -15,6 +15,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import {
   TransactionRepository,
   AggregationTransaction,
+  DailyActivity,
 } from '../transaction.repository';
 import {
   DRIZZLE_DATABASE,
@@ -198,6 +199,41 @@ export class TransactionDrizzleRepository extends TransactionRepository {
       allocationId: row.allocationId ?? null,
       transferId: row.transferId ?? null,
       withdrawalType: row.withdrawalType ?? null,
+    }));
+  }
+
+  async countByDay(
+    vaultId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<DailyActivity[]> {
+    // O dia sai do próprio timestamp, sem conversão de fuso: as datas são
+    // gravadas como `timestamp without time zone` e lidas como UTC. Aplicar o
+    // fuso do servidor aqui jogaria transações da meia-noite para o dia anterior.
+    const day = sql<string>`to_char(date_trunc('day', ${transaction.date}), 'YYYY-MM-DD')`;
+
+    const rows = await this.db
+      .select({
+        date: day,
+        value: count(),
+        expenseTotal: sql<string>`coalesce(sum(case when ${transaction.type} = 'expense' then ${transaction.amount} else 0 end), 0)`,
+      })
+      .from(transaction)
+      .where(
+        and(
+          eq(transaction.vaultId, vaultId),
+          eq(transaction.committed, true),
+          gte(transaction.date, startDate),
+          lt(transaction.date, endDate),
+        ),
+      )
+      .groupBy(day);
+
+    return rows.map((row) => ({
+      date: row.date,
+      count: row.value,
+      // `sum` volta como string no pg quando o driver não converte numeric.
+      expenseTotal: Number(row.expenseTotal),
     }));
   }
 }

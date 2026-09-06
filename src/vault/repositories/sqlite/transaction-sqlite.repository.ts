@@ -3,6 +3,7 @@ import { Injectable, Inject, Logger } from '@nestjs/common';
 import {
   TransactionRepository,
   AggregationTransaction,
+  DailyActivity,
 } from '../transaction.repository';
 import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
 import { Database } from 'better-sqlite3';
@@ -163,5 +164,14 @@ export class TransactionSqliteRepository extends TransactionRepository {
         | 'realization'
         | null,
     }));
+  }
+
+  /**
+   * O backend sqlite é legado e não recebeu as tabelas mais recentes; o grid de
+   * atividade só roda em drizzle e in-memory. Vazio em vez de erro para não
+   * derrubar a tela caso alguém rode nessa configuração.
+   */
+  async countByDay(): Promise<DailyActivity[]> {
+    return [];
   }
 }
