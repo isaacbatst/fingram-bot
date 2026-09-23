@@ -206,6 +206,12 @@ export const importEntry = pgTable(
     transactionId: text('transaction_id').references(() => transaction.id, {
       onDelete: 'set null',
     }),
+    // Pagamento planejado do plano (financiamento, parcela). Exclusivo com
+    // categoryId, como no formulário: o gasto conta para o plano, não para o
+    // orçamento do dia a dia.
+    allocationId: text('allocation_id').references(() => allocation.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at').notNull(),
   },
   (table) => [

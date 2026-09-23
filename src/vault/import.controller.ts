@@ -136,7 +136,13 @@ export class ImportController {
   @Post('entries/categorize')
   async categorizeEntries(
     @VaultSession() vaultId: string,
-    @Body() data: { entryIds?: string[]; categoryId?: string | null },
+    @Body()
+    data: {
+      entryIds?: string[];
+      categoryId?: string | null;
+      /** Pagamento planejado do plano, no lugar da categoria. */
+      allocationId?: string | null;
+    },
   ) {
     if (!data.entryIds?.length) {
       throw new BadRequestException('Nenhum lançamento informado');
@@ -146,6 +152,7 @@ export class ImportController {
       vaultId,
       entryIds: data.entryIds,
       categoryId: data.categoryId ?? null,
+      allocationId: data.allocationId ?? null,
     });
     if (error !== null) throw new BadRequestException(error);
 
@@ -328,6 +335,7 @@ export class ImportController {
       type: entry.type,
       description: entry.description,
       categoryId: entry.categoryId,
+      allocationId: entry.allocationId,
       boxId: entry.boxId,
       suggestedCategoryId: entry.suggestedCategoryId,
       suggestionSource: entry.suggestionSource,

@@ -7,6 +7,7 @@ import { ImportDrizzleRepositoriesModule } from './repositories/drizzle/import-d
 import { ImportInMemoryRepositoriesModule } from './repositories/in-memory/import-in-memory-repositories.module';
 import { VaultQueryModule } from './shared/vault-query.module';
 import { VaultAuthModule } from './vault-auth.module';
+import { PlanQueryModule } from '@/plan/shared/plan-query.module';
 import { ImportController } from './import.controller';
 import { ImportService } from './import.service';
 
@@ -26,6 +27,8 @@ export class ImportModule {
         VaultQueryModule.register(),
         // VaultAuthService, required by VaultAccessTokenGuard on every route here
         VaultAuthModule.register(),
+        // PlanQueryService: valida e sugere pagamento planejado na triagem
+        PlanQueryModule.register(),
         // sqlite has no import implementation and is a legacy backend here, so it
         // falls back to in-memory — same choice VaultQueryModule already makes.
         RepositoriesModule.forFeature({

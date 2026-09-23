@@ -79,77 +79,29 @@ export class PlanQueryService {
     amount: number,
     currentDate: Date,
   ): Promise<ScheduledMovementMatch | null> {
-    // 1. Get all allocations for this vault
-    const allocations = await this.allocationRepo.findByVaultId(vaultId);
+    const [match] = await this.findMatchingScheduledMovements(vaultId, [
+      { amount, date: currentDate },
+    ]);
+    return match;
+  }
 
-    // 2. Find the active plan to determine current plan month
+  /**
+   * Versão em lote de {@link findMatchingScheduledMovement}: carrega plano e
+   * alocações uma vez só. A triagem do import pergunta isso para dezenas de
+   * grupos de uma vez, e uma ida ao banco por grupo não escala.
+   */
+  async findMatchingScheduledMovements(
+    vaultId: string,
+    items: { amount: number; date: Date }[],
+  ): Promise<(ScheduledMovementMatch | null)[]> {
+    const allocations = await this.allocationRepo.findByVaultId(vaultId);
     const plans = await this.planRepo.findByVaultId(vaultId);
     const plan = plans.find((p) => p.status === 'active') ?? plans[0];
-    if (!plan) return null;
+    if (!plan) return items.map(() => null);
 
-    const currentPlanMonth = calcPlanMonth(plan.startDate, currentDate);
-
-    // 3. For each Pagamento allocation, check scheduled movements for current month
-    for (const allocation of allocations) {
-      if (allocation.realizationMode !== 'immediate') continue; // Only Pagamento
-
-      for (const sm of allocation.scheduledMovements) {
-        if (sm.month !== currentPlanMonth) continue;
-        if (sm.type !== 'in') continue; // Only incoming scheduled movements
-
-        const divergenceAmount = Math.abs(amount - sm.amount);
-        const divergencePercent =
-          sm.amount > 0 ? (divergenceAmount / sm.amount) * 100 : 0;
-
-        // Check if within tolerance: <=10% OR <=R$500 (whichever is smaller threshold)
-        const percentThreshold = sm.amount * 0.1; // 10% of expected
-        const absoluteThreshold = 500;
-        const threshold = Math.min(percentThreshold, absoluteThreshold);
-
-        if (divergenceAmount <= threshold || divergenceAmount === 0) {
-          return {
-            allocationId: allocation.id,
-            allocationLabel: allocation.label,
-            scheduledMovement: {
-              month: sm.month,
-              amount: sm.amount,
-              label: sm.label,
-            },
-            divergencePercent: Math.round(divergencePercent * 100) / 100,
-            divergenceAmount,
-          };
-        }
-      }
-
-      // Also check if amount matches the monthlyAmount for current month
-      const activeMonthly = getActiveValue(
-        allocation.monthlyAmount,
-        currentPlanMonth,
-      );
-      if (activeMonthly > 0) {
-        const divergenceAmount = Math.abs(amount - activeMonthly);
-        const divergencePercent = (divergenceAmount / activeMonthly) * 100;
-        const percentThreshold = activeMonthly * 0.1;
-        const absoluteThreshold = 500;
-        const threshold = Math.min(percentThreshold, absoluteThreshold);
-
-        if (divergenceAmount <= threshold) {
-          return {
-            allocationId: allocation.id,
-            allocationLabel: allocation.label,
-            scheduledMovement: {
-              month: currentPlanMonth,
-              amount: activeMonthly,
-              label: `Parcela mensal`,
-            },
-            divergencePercent: Math.round(divergencePercent * 100) / 100,
-            divergenceAmount,
-          };
-        }
-      }
-    }
-
-    return null;
+    return items.map(({ amount, date }) =>
+      matchScheduledMovement(allocations, plan, amount, date),
+    );
   }
 
   /**
@@ -235,4 +187,76 @@ export class PlanQueryService {
 
     return null;
   }
+}
+
+/** Casa um valor com a movimentação prevista (ou parcela) de uma alocação de Pagamento. */
+function matchScheduledMovement(
+  allocations: Allocation[],
+  plan: Plan,
+  amount: number,
+  currentDate: Date,
+): ScheduledMovementMatch | null {
+  const currentPlanMonth = calcPlanMonth(plan.startDate, currentDate);
+
+  // 3. For each Pagamento allocation, check scheduled movements for current month
+  for (const allocation of allocations) {
+    if (allocation.realizationMode !== 'immediate') continue; // Only Pagamento
+
+    for (const sm of allocation.scheduledMovements) {
+      if (sm.month !== currentPlanMonth) continue;
+      if (sm.type !== 'in') continue; // Only incoming scheduled movements
+
+      const divergenceAmount = Math.abs(amount - sm.amount);
+      const divergencePercent =
+        sm.amount > 0 ? (divergenceAmount / sm.amount) * 100 : 0;
+
+      // Check if within tolerance: <=10% OR <=R$500 (whichever is smaller threshold)
+      const percentThreshold = sm.amount * 0.1; // 10% of expected
+      const absoluteThreshold = 500;
+      const threshold = Math.min(percentThreshold, absoluteThreshold);
+
+      if (divergenceAmount <= threshold || divergenceAmount === 0) {
+        return {
+          allocationId: allocation.id,
+          allocationLabel: allocation.label,
+          scheduledMovement: {
+            month: sm.month,
+            amount: sm.amount,
+            label: sm.label,
+          },
+          divergencePercent: Math.round(divergencePercent * 100) / 100,
+          divergenceAmount,
+        };
+      }
+    }
+
+    // Also check if amount matches the monthlyAmount for current month
+    const activeMonthly = getActiveValue(
+      allocation.monthlyAmount,
+      currentPlanMonth,
+    );
+    if (activeMonthly > 0) {
+      const divergenceAmount = Math.abs(amount - activeMonthly);
+      const divergencePercent = (divergenceAmount / activeMonthly) * 100;
+      const percentThreshold = activeMonthly * 0.1;
+      const absoluteThreshold = 500;
+      const threshold = Math.min(percentThreshold, absoluteThreshold);
+
+      if (divergenceAmount <= threshold) {
+        return {
+          allocationId: allocation.id,
+          allocationLabel: allocation.label,
+          scheduledMovement: {
+            month: currentPlanMonth,
+            amount: activeMonthly,
+            label: `Parcela mensal`,
+          },
+          divergencePercent: Math.round(divergencePercent * 100) / 100,
+          divergenceAmount,
+        };
+      }
+    }
+  }
+
+  return null;
 }

@@ -94,6 +94,12 @@ ${transactions}
   );
 }
 
+import { PlanQueryService } from '@/plan/shared/plan-query.service';
+import { PlanInMemoryRepository } from '@/plan/repositories/in-memory/plan-in-memory.repository';
+import { AllocationInMemoryRepository } from '@/plan/shared/repositories/in-memory/allocation-in-memory.repository';
+import { Plan } from '@/plan/domain/plan';
+import { Allocation } from '@/plan/shared/domain/allocation';
+
 describe('ImportService', () => {
   let service: ImportService;
   let store: InMemoryStore;
@@ -102,6 +108,8 @@ describe('ImportService', () => {
   let vault: Vault;
   let box: Box;
   let reserva: Box;
+  let planRepo: PlanInMemoryRepository;
+  let allocationRepo: AllocationInMemoryRepository;
 
   beforeEach(async () => {
     store = new InMemoryStore();
@@ -113,7 +121,11 @@ describe('ImportService', () => {
     vault = new Vault();
     await vaultRepo.create(vault);
     box = Box.create({ vaultId: vault.id, name: 'Nubank', isDefault: true });
-    reserva = Box.create({ vaultId: vault.id, name: 'Reserva', type: 'saving' });
+    reserva = Box.create({
+      vaultId: vault.id,
+      name: 'Reserva',
+      type: 'saving',
+    });
     await boxRepo.create(box);
     await boxRepo.create(reserva);
     // O agregado também precisa conhecer os estratos: é contra ele que
@@ -121,14 +133,42 @@ describe('ImportService', () => {
     vault.addBox(box);
     vault.addBox(reserva);
 
-    service = new ImportService(vaultRepo, boxRepo, batchRepo, entryRepo);
+    planRepo = new PlanInMemoryRepository();
+    allocationRepo = new AllocationInMemoryRepository();
+    service = new ImportService(
+      vaultRepo,
+      boxRepo,
+      batchRepo,
+      entryRepo,
+      new PlanQueryService(planRepo, allocationRepo),
+    );
   });
 
-  const ingest = async (
-    lines: Line[],
-    accountId?: string,
-    fromDate?: Date,
-  ) => {
+  /** Plano ativo com uma alocação de Pagamento de parcela mensal fixa. */
+  const criarFinanciamento = async (parcela = 2340, vaultId = vault.id) => {
+    const plan = Plan.create({
+      vaultId,
+      name: 'Plano',
+      startDate: new Date(Date.UTC(2026, 0, 1)),
+      premises: {
+        salaryChangePoints: [{ month: 0, amount: 10000 }],
+        costOfLivingChangePoints: [{ month: 0, amount: 5000 }],
+      },
+    });
+    await planRepo.create(plan);
+    const allocation = Allocation.create({
+      planId: plan.id,
+      label: 'Financiamento Caixa',
+      target: 300000,
+      monthlyAmount: [{ month: 0, amount: parcela }],
+      realizationMode: 'immediate',
+      scheduledMovements: [],
+    });
+    await allocationRepo.create(allocation);
+    return allocation;
+  };
+
+  const ingest = async (lines: Line[], accountId?: string, fromDate?: Date) => {
     const [error, batches] = await service.ingest({
       vaultId: vault.id,
       file: ofxFile(lines, accountId),
@@ -437,6 +477,168 @@ describe('ImportService', () => {
     });
   });
 
+  describe('pagamento planejado', () => {
+    const groupsOf = async (batchId: string) => {
+      const [, groups] = await service.getGroups({
+        vaultId: vault.id,
+        batchId,
+      });
+      return groups!;
+    };
+
+    it('should suggest the payment whose installment matches the line', async () => {
+      const financiamento = await criarFinanciamento(2340);
+      const [batch] = await ingest([
+        {
+          fitId: 'F1',
+          amount: '-2340.00',
+          memo: 'CAIXA FINANCIAMENTO',
+          date: '20260305',
+        },
+        {
+          fitId: 'F2',
+          amount: '-45.90',
+          memo: 'PADARIA CENTRAL',
+          date: '20260305',
+        },
+      ]);
+
+      const groups = await groupsOf(batch.id);
+      const caixa = groups.find((g) => g.description.includes('CAIXA'))!;
+      const padaria = groups.find((g) => g.description.includes('PADARIA'))!;
+      expect(caixa.suggestedAllocation).toEqual({
+        allocationId: financiamento.id,
+        label: 'Financiamento Caixa',
+      });
+      expect(padaria.suggestedAllocation).toBeNull();
+    });
+
+    it('should not suggest anything when there is no plan', async () => {
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-2340.00', memo: 'CAIXA FINANCIAMENTO' },
+      ]);
+      const [group] = await groupsOf(batch.id);
+      expect(group.suggestedAllocation).toBeNull();
+    });
+
+    it('should not suggest a payment for income', async () => {
+      await criarFinanciamento(2340);
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '2340.00', memo: 'ESTORNO', date: '20260305' },
+      ]);
+      const [group] = await groupsOf(batch.id);
+      expect(group.suggestedAllocation).toBeNull();
+    });
+
+    it('should confirm into a transaction tied to the allocation and with no category', async () => {
+      const financiamento = await criarFinanciamento(2340);
+      const [batch] = await ingest([
+        {
+          fitId: 'F1',
+          amount: '-2340.00',
+          memo: 'CAIXA FINANCIAMENTO',
+          date: '20260305',
+        },
+      ]);
+      const ids = await pendingIds(batch.id);
+
+      const [error, result] = await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: ids,
+        allocationId: financiamento.id,
+      });
+      expect(error).toBeNull();
+      expect(result!.updated).toBe(1);
+
+      await service.confirmEntries({ vaultId: vault.id, entryIds: ids });
+      const stored = await vaultRepo.findById(vault.id);
+      const [transaction] = [...stored!.transactions.values()];
+      expect(transaction.allocationId).toBe(financiamento.id);
+      expect(transaction.categoryId).toBeNull();
+    });
+
+    it('should drop the category when a payment is chosen, and vice versa', async () => {
+      const financiamento = await criarFinanciamento();
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-2340.00', memo: 'CAIXA FINANCIAMENTO' },
+      ]);
+      const ids = await pendingIds(batch.id);
+
+      await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: ids,
+        categoryId: 'cat-1',
+      });
+      await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: ids,
+        allocationId: financiamento.id,
+      });
+      let [entry] = await entryRepo.findPendingByBatchId(batch.id);
+      expect(entry.allocationId).toBe(financiamento.id);
+      expect(entry.categoryId).toBeNull();
+
+      await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: ids,
+        categoryId: 'cat-1',
+      });
+      [entry] = await entryRepo.findPendingByBatchId(batch.id);
+      expect(entry.categoryId).toBe('cat-1');
+      expect(entry.allocationId).toBeNull();
+    });
+
+    it('should refuse a Reserva allocation', async () => {
+      const reservaAlloc = Allocation.create({
+        planId: (await criarFinanciamento()).planId,
+        label: 'Emergência',
+        target: 20000,
+        monthlyAmount: [{ month: 0, amount: 500 }],
+        realizationMode: 'manual',
+        scheduledMovements: [],
+      });
+      await allocationRepo.create(reservaAlloc);
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-500.00', memo: 'X' },
+      ]);
+
+      const [error] = await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: await pendingIds(batch.id),
+        allocationId: reservaAlloc.id,
+      });
+      expect(error).not.toBeNull();
+    });
+
+    it('should refuse an allocation from another vault', async () => {
+      const alheia = await criarFinanciamento(2340, 'outro-vault');
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-2340.00', memo: 'X' },
+      ]);
+
+      const [error] = await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: await pendingIds(batch.id),
+        allocationId: alheia.id,
+      });
+      expect(error).not.toBeNull();
+    });
+
+    it('should refuse category and payment at the same time', async () => {
+      const financiamento = await criarFinanciamento();
+      const [batch] = await ingest([
+        { fitId: 'F1', amount: '-2340.00', memo: 'X' },
+      ]);
+      const [error] = await service.categorizeEntries({
+        vaultId: vault.id,
+        entryIds: await pendingIds(batch.id),
+        categoryId: 'cat-1',
+        allocationId: financiamento.id,
+      });
+      expect(error).not.toBeNull();
+    });
+  });
+
   describe('categorização em lote', () => {
     it('should set the category on every entry of the group without confirming', async () => {
       const [batch] = await ingest([
@@ -455,7 +657,9 @@ describe('ImportService', () => {
 
       const entries = await entryRepo.findPendingByBatchId(batch.id);
       expect(entries).toHaveLength(2);
-      expect(entries.every((e) => e.categoryId === 'cat-alimentacao')).toBe(true);
+      expect(entries.every((e) => e.categoryId === 'cat-alimentacao')).toBe(
+        true,
+      );
       // Continua pendente: categorizar não é confirmar.
       expect(entries.every((e) => e.status === 'pending')).toBe(true);
 

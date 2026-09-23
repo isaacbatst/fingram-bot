@@ -426,6 +426,64 @@ describe('Import API (integration)', () => {
     expect(created.every((t) => t.categoryId === categoryId)).toBe(true);
   });
 
+  it('should suggest and confirm a planned payment tied to the plan allocation', async () => {
+    const hoje = new Date();
+    const plano = await auth(
+      request(app.getHttpServer())
+        .post('/plans')
+        .send({
+          name: 'Plano',
+          startDate: `${hoje.getUTCFullYear()}-01-01`,
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 10000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 5000 }],
+          },
+          allocations: [
+            {
+              label: 'Financiamento Caixa',
+              target: 300000,
+              monthlyAmount: [{ month: 0, amount: 2340 }],
+              realizationMode: 'immediate',
+              scheduledMovements: [],
+            },
+          ],
+        }),
+    ).expect(201);
+    const allocationId = plano.body.allocations[0].id;
+
+    const dia = `${hoje.getUTCFullYear()}${String(hoje.getUTCMonth() + 1).padStart(2, '0')}05`;
+    const batch = await upload([
+      { fitId: 'F1', amount: '-2340.00', memo: 'CAIXA FINANCIAMENTO', date: dia },
+    ]);
+
+    const grouped = await auth(
+      request(app.getHttpServer()).get(`/vault/import/batch/${batch.id}/groups`),
+    );
+    const [grupo] = grouped.body.groups;
+    expect(grupo.suggestedAllocation).toEqual({
+      allocationId,
+      label: 'Financiamento Caixa',
+    });
+
+    await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/entries/categorize')
+        .send({ entryIds: grupo.entryIds, allocationId }),
+    ).expect(201);
+    await auth(
+      request(app.getHttpServer())
+        .post('/vault/import/confirm')
+        .send({ entryIds: grupo.entryIds }),
+    ).expect(201);
+
+    const [transacao] = await db
+      .select()
+      .from(schema.transaction)
+      .where(eq(schema.transaction.vaultId, vaultId));
+    expect(transacao.allocationId).toBe(allocationId);
+    expect(transacao.categoryId).toBeNull();
+  });
+
   it('should reject a file that is not an OFX', async () => {
     const response = await auth(
       request(app.getHttpServer())

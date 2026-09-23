@@ -60,6 +60,7 @@ type CreateParams = RawParams & {
   accountKey: string;
   boxId: string | null;
   categoryId?: string | null;
+  allocationId?: string | null;
   suggestedCategoryId?: string | null;
   suggestionSource?: SuggestionSource;
   createdAt?: Date;
@@ -82,6 +83,8 @@ export type ImportEntryEdit = {
   type?: 'income' | 'expense';
   description?: string;
   categoryId?: string | null;
+  /** Pagamento planejado do plano. Exclusivo com a categoria. */
+  allocationId?: string | null;
   boxId?: string | null;
 };
 
@@ -104,6 +107,7 @@ export class ImportEntry {
       type: params.rawType,
       description: params.rawMemo ?? params.rawName ?? '',
       categoryId: params.categoryId ?? null,
+      allocationId: params.allocationId ?? null,
       suggestedCategoryId: params.suggestedCategoryId ?? null,
       suggestionSource: params.suggestionSource ?? 'none',
       status: 'pending',
@@ -133,6 +137,7 @@ export class ImportEntry {
   type: 'income' | 'expense';
   description: string;
   categoryId: string | null;
+  allocationId: string | null;
   boxId: string | null;
   suggestedCategoryId: string | null;
   suggestionSource: SuggestionSource;
@@ -155,6 +160,7 @@ export class ImportEntry {
     this.type = params.type;
     this.description = params.description;
     this.categoryId = params.categoryId ?? null;
+    this.allocationId = params.allocationId ?? null;
     this.boxId = params.boxId;
     this.suggestedCategoryId = params.suggestedCategoryId ?? null;
     this.suggestionSource = params.suggestionSource ?? 'none';
@@ -186,7 +192,24 @@ export class ImportEntry {
     if (changes.description !== undefined) {
       this.description = changes.description;
     }
-    if (changes.categoryId !== undefined) this.categoryId = changes.categoryId;
+    if (changes.categoryId && changes.allocationId) {
+      return left(
+        'Escolha uma categoria ou um pagamento planejado, não os dois',
+      );
+    }
+    if (changes.allocationId && this.type !== 'expense') {
+      return left('Só despesas podem ser pagamento planejado');
+    }
+    // Categoria e pagamento planejado se excluem, como no formulário: o gasto
+    // conta para o orçamento do dia a dia ou para o plano, nunca para os dois.
+    if (changes.categoryId !== undefined) {
+      this.categoryId = changes.categoryId;
+      if (changes.categoryId) this.allocationId = null;
+    }
+    if (changes.allocationId !== undefined) {
+      this.allocationId = changes.allocationId;
+      if (changes.allocationId) this.categoryId = null;
+    }
     if (changes.boxId !== undefined) this.boxId = changes.boxId;
     return right(true);
   }

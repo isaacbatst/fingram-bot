@@ -17,6 +17,7 @@ import {
   ImportEntryRepository,
   ImportEntryStatusCounts,
 } from './repositories/import-entry.repository';
+import { PlanQueryService } from '@/plan/shared/plan-query.service';
 import { OfxParseError, OfxStatement, parseOfx } from '@/shared/ofx-parser';
 
 export type ImportReview = {
@@ -41,6 +42,11 @@ export type ImportGroup = {
   entryIds: string[];
   /** Parece a quitação de uma fatura — não é gasto novo, e sim o pagamento dela. */
   looksLikeSettlement: boolean;
+  /**
+   * Pagamento planejado cuja parcela prevista bate com o valor e o mês do grupo.
+   * Só para despesas de um lançamento: parcela é pagamento único no mês.
+   */
+  suggestedAllocation: { allocationId: string; label: string } | null;
 };
 
 @Injectable()
@@ -52,6 +58,7 @@ export class ImportService {
     private readonly boxRepository: BoxRepository,
     private readonly importBatchRepository: ImportBatchRepository,
     private readonly importEntryRepository: ImportEntryRepository,
+    private readonly planQueryService: PlanQueryService,
   ) {}
 
   /**
@@ -109,7 +116,11 @@ export class ImportService {
     statement: OfxStatement,
   ): Promise<ImportBatch> {
     const { accountKey } = statement.account;
-    const boxId = await this.resolveBoxId(input.vaultId, accountKey, input.boxId);
+    const boxId = await this.resolveBoxId(
+      input.vaultId,
+      accountKey,
+      input.boxId,
+    );
 
     // The cutoff is applied before deduplication on purpose: a line dropped here
     // must not register its FITID, otherwise a later import without a cutoff would
@@ -300,7 +311,30 @@ export class ImportService {
     // Biggest groups first: the user clears the most lines with the fewest decisions,
     // and sees the count drop quickly.
     groups.sort((a, b) => b.count - a.count || b.totalAmount - a.totalAmount);
-    return right(groups);
+
+    // Uma consulta ao plano para todos os grupos, não uma por grupo.
+    const candidates = groups.filter(
+      (g) => g.type === 'expense' && g.count === 1 && !g.looksLikeSettlement,
+    );
+    const matches = await this.planQueryService.findMatchingScheduledMovements(
+      input.vaultId,
+      candidates.map((g) => ({ amount: g.totalAmount, date: g.firstDate })),
+    );
+    const suggestions = new Map(
+      candidates.map((g, i) => [g.key, matches[i]] as const),
+    );
+
+    return right(
+      groups.map((g) => {
+        const match = suggestions.get(g.key);
+        return {
+          ...g,
+          suggestedAllocation: match
+            ? { allocationId: match.allocationId, label: match.allocationLabel }
+            : null,
+        };
+      }),
+    );
   }
 
   /**
@@ -313,14 +347,32 @@ export class ImportService {
   async categorizeEntries(input: {
     vaultId: string;
     entryIds: string[];
-    categoryId: string | null;
+    categoryId?: string | null;
+    allocationId?: string | null;
   }): Promise<Either<string, { updated: number }>> {
+    if (input.categoryId && input.allocationId) {
+      return left(
+        'Escolha uma categoria ou um pagamento planejado, não os dois',
+      );
+    }
+    if (input.allocationId) {
+      const [error] = await this.validatePaymentAllocation(
+        input.vaultId,
+        input.allocationId,
+      );
+      if (error !== null) return left(error);
+    }
+
+    const changes = input.allocationId
+      ? { allocationId: input.allocationId }
+      : { categoryId: input.categoryId ?? null };
+
     let updated = 0;
     for (const entryId of input.entryIds) {
       const entry = await this.loadEntry(input.vaultId, entryId);
       if (entry === null || entry.status !== 'pending') continue;
 
-      const [error] = entry.edit({ categoryId: input.categoryId });
+      const [error] = entry.edit(changes);
       if (error !== null) continue;
 
       await this.importEntryRepository.update(entry);
@@ -436,8 +488,7 @@ export class ImportService {
         continue;
       }
 
-      const fromBoxId =
-        entry.type === 'expense' ? entry.boxId : input.boxId;
+      const fromBoxId = entry.type === 'expense' ? entry.boxId : input.boxId;
       const toBoxId = entry.type === 'expense' ? input.boxId : entry.boxId;
 
       const [error, transferId] = vault.createTransfer({
@@ -524,11 +575,34 @@ export class ImportService {
       date: entry.date,
       description: entry.description,
       categoryId: entry.categoryId,
+      allocationId: entry.allocationId ?? undefined,
       boxId: entry.boxId ?? fallbackBoxId ?? undefined,
     });
     vault.addTransaction(transaction);
     vault.commitTransaction(transaction.id);
     entry.confirm(transaction.id);
+  }
+
+  /**
+   * Mesma regra do formulário: só alocação de Pagamento, e do plano deste vault.
+   * Reserva fica de fora — exige escolher saque ou realização, e no import o
+   * estrato é quase sempre a conta corrente, não um estrato vinculado a Reserva.
+   */
+  private async validatePaymentAllocation(
+    vaultId: string,
+    allocationId: string,
+  ): Promise<Either<string, true>> {
+    const allocation =
+      await this.planQueryService.findAllocationById(allocationId);
+    if (!allocation) return left('Pagamento planejado não encontrado');
+    if (allocation.realizationMode !== 'immediate') {
+      return left('Só alocações de Pagamento podem ser usadas aqui');
+    }
+    const plan = await this.planQueryService.findPlanById(allocation.planId);
+    if (!plan || plan.vaultId !== vaultId) {
+      return left('Pagamento planejado não pertence a este vault');
+    }
+    return right(true);
   }
 
   private async loadEntry(
