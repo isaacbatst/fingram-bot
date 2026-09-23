@@ -9,20 +9,23 @@ import { zodTextFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { AiService } from './ai.service';
 import { OpenAiClient } from './open-ai.client';
+import { AI_MODELS, AiModels, modelParams } from './ai-models';
 
+// Objeto simples, não `discriminatedUnion`: desde o zod v4 a união vira `oneOf`
+// no JSON Schema, que a saída estruturada da OpenAI recusa em qualquer modelo
+// ("'oneOf' is not permitted"). Com um membro só, a união não servia de nada — e
+// derrubava o /ai do bot inteiro com 400.
 const parseVaultActionSchema = z.object({
   match: z.boolean(),
-  action: z.discriminatedUnion('action', [
-    z.object({
-      action: z.enum([ActionType.INCOME, ActionType.EXPENSE]),
-      payload: z.object({
-        amount: z.number(),
-        description: z.string(),
-        categoryId: z.string(),
-        categoryName: z.string(),
-      }),
+  action: z.object({
+    action: z.enum([ActionType.INCOME, ActionType.EXPENSE]),
+    payload: z.object({
+      amount: z.number(),
+      description: z.string(),
+      categoryId: z.string(),
+      categoryName: z.string(),
     }),
-  ]),
+  }),
 });
 
 interface ParsedTransaction {
@@ -44,6 +47,9 @@ const parseTransactionsFileSchema = z.object({
 @Injectable()
 export class OpenAiService extends AiService {
   private readonly openAi: OpenAI;
+  /** Protegido para a avaliação de modelos poder sobrescrever. */
+  protected models: AiModels = AI_MODELS;
+
   constructor(private readonly openAiClient: OpenAiClient) {
     super();
     this.openAi = openAiClient.openAi;
@@ -56,7 +62,7 @@ export class OpenAiService extends AiService {
     forceType?: 'income' | 'expense',
   ): Promise<Either<string, Action>> {
     const response = await this.openAi.responses.parse({
-      model: 'gpt-4.1-nano',
+      ...modelParams(this.models.parseAction),
       instructions: `Você é um assistente que interpreta comandos para o Duna, um copiloto financeiro.
       O usuário pode solicitar ações de criar receitas e despesas.
       
@@ -157,7 +163,7 @@ export class OpenAiService extends AiService {
 
         const stream = this.openAi.responses
           .stream({
-            model: 'gpt-4.1-mini',
+            ...modelParams(this.models.batchCategorize),
             instructions: this.parseTransactionsFileInstructions(categories),
             input: `
             ${customPrompt ? `Contexto adicional do usuário: ${customPrompt}` : ''}
@@ -286,7 +292,7 @@ Se não encontrar uma categoria adequada, marque como "Outros", mas SEMPRE marqu
     );
 
     const response = await this.openAi.responses.parse({
-      model: 'gpt-5-nano',
+      ...modelParams(this.models.suggestCategory),
       instructions: `Escolha a categoria mais adequada. Retorne apenas o categoryId.
 Categorias: ${JSON.stringify(filteredCategories.map((c) => ({ id: c.id, name: c.name, description: c.description })))}
 ${customPrompt ? `Contexto adicional do usuário: ${customPrompt}` : ''}`,
