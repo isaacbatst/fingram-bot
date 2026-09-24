@@ -256,6 +256,50 @@ export class ImportController {
     return result;
   }
 
+  /**
+   * Confirma despesas pagas com dinheiro de uma Reserva (realização ou saque):
+   * lança a despesa vinculada a ela, no estrato da Reserva.
+   */
+  @Post('confirm-reserve-withdrawal')
+  async confirmReserveWithdrawal(
+    @VaultSession() vaultId: string,
+    @Body()
+    data: {
+      entryIds?: string[];
+      allocationId?: string;
+      withdrawalType?: string;
+      fromEstrato?: boolean;
+    },
+  ) {
+    if (!data.entryIds?.length) {
+      throw new BadRequestException('Nenhum lançamento informado');
+    }
+    if (!data.allocationId) {
+      throw new BadRequestException('A Reserva é obrigatória');
+    }
+    if (
+      data.withdrawalType !== 'withdrawal' &&
+      data.withdrawalType !== 'realization'
+    ) {
+      throw new BadRequestException(
+        'withdrawalType deve ser "withdrawal" ou "realization"',
+      );
+    }
+
+    const [error, result] = await this.importService.confirmAsReserveWithdrawal(
+      {
+        vaultId,
+        entryIds: data.entryIds,
+        allocationId: data.allocationId,
+        withdrawalType: data.withdrawalType,
+        fromEstrato: data.fromEstrato ?? true,
+      },
+    );
+    if (error !== null) throw new BadRequestException(error);
+
+    return result;
+  }
+
   @Post('batch/confirm')
   async confirmBatch(
     @VaultSession() vaultId: string,

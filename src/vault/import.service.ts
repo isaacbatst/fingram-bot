@@ -519,6 +519,97 @@ export class ImportService {
     return right({ confirmed: confirmed.length, skipped });
   }
 
+  /**
+   * Confirms expense lines paid with a Reserva's money: a realization (the
+   * thing the Reserva was for) or a withdrawal (money taken out early).
+   *
+   * Same booking as the form's *Despesa → Planejado* on a Reserva: an expense
+   * tagged with the Reserva and the withdrawal type, **in the Reserva's linked
+   * estrato**. That estrato holds the Reserva's money, so it is the one that
+   * drops; the account estrato stays as it was, since what paid was the
+   * Reserva's money. The plan counts the realization regardless of estrato,
+   * and nothing here looks like a contribution or like income.
+   *
+   * `fromEstrato: false` keeps the expense in the account's estrato, for when
+   * the money had already been moved there (e.g. a transfer booked earlier).
+   */
+  async confirmAsReserveWithdrawal(input: {
+    vaultId: string;
+    entryIds: string[];
+    allocationId: string;
+    withdrawalType: 'withdrawal' | 'realization';
+    fromEstrato: boolean;
+  }): Promise<Either<string, { confirmed: number; skipped: string[] }>> {
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) return left('Dados não encontrados');
+
+    const allocation = await this.planQueryService.findAllocationById(
+      input.allocationId,
+    );
+    if (!allocation) return left('Reserva não encontrada');
+    if (allocation.realizationMode === 'immediate') {
+      return left('Escolha uma alocação Reserva, não de Pagamento');
+    }
+    if (
+      allocation.realizationMode === 'never' &&
+      input.withdrawalType === 'realization'
+    ) {
+      return left('Esta Reserva não aceita realização, só saque');
+    }
+    const plan = await this.planQueryService.findPlanById(allocation.planId);
+    if (!plan || plan.vaultId !== input.vaultId) {
+      return left('Reserva não pertence a este vault');
+    }
+    const estratoId = allocation.estratoId;
+    if (input.fromEstrato && !estratoId) {
+      return left(
+        'Esta Reserva não tem estrato vinculado: não há de onde tirar o dinheiro',
+      );
+    }
+
+    const confirmed: ImportEntry[] = [];
+    const skipped: string[] = [];
+
+    for (const entryId of input.entryIds) {
+      const entry = await this.loadEntry(input.vaultId, entryId);
+      if (
+        entry === null ||
+        entry.status !== 'pending' ||
+        entry.type !== 'expense' ||
+        !entry.boxId
+      ) {
+        skipped.push(entryId);
+        continue;
+      }
+
+      const boxId = input.fromEstrato && estratoId ? estratoId : entry.boxId;
+      const transaction = Transaction.create({
+        vaultId: entry.vaultId,
+        amount: entry.amount,
+        type: 'expense',
+        date: entry.date,
+        description: entry.description,
+        categoryId: null,
+        allocationId: allocation.id,
+        withdrawalType: input.withdrawalType,
+        boxId,
+      });
+      vault.addTransaction(transaction);
+      vault.commitTransaction(transaction.id);
+      // The entry records where the line was booked, like any other edit.
+      entry.edit({ allocationId: allocation.id, boxId });
+      entry.confirm(transaction.id);
+      confirmed.push(entry);
+    }
+
+    await this.vaultRepository.update(vault);
+    for (const entry of confirmed) {
+      await this.importEntryRepository.update(entry);
+    }
+
+    return right({ confirmed: confirmed.length, skipped });
+  }
+
   /** Confirms every still-pending entry of a batch. */
   async confirmBatch(input: {
     vaultId: string;
