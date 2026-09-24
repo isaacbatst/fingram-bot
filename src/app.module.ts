@@ -7,6 +7,7 @@ import { RepositoriesModule } from './shared/persistence/repositories.module';
 import { VaultAgentModule } from './vault/vault-agent.module';
 import { ImportModule } from './vault/import.module';
 import { PlanModule } from './plan/plan.module';
+import { McpModule } from './mcp/mcp.module';
 
 @Module({})
 export class AppModule {
@@ -23,6 +24,7 @@ export class AppModule {
         VaultAgentModule.register(),
         ImportModule.register(),
         PlanModule.register(),
+        McpModule.register(),
       ],
       controllers: [AppController],
     };

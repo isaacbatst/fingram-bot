@@ -17,8 +17,11 @@ async function bootstrap() {
   // um extrato de período longo.
   app.useBodyParser('json', { limit: '5mb' });
   const configService = app.get(ConfigService);
-  app.enableCors({
-    origin: (requestOrigin, cb) => {
+  const appCors = {
+    origin: (
+      requestOrigin: string | undefined,
+      cb: (err: Error | null, allow?: boolean) => void,
+    ) => {
       if (!requestOrigin) return cb(null, true);
       const allowedOriginsStr =
         configService.get<string>('ALLOWED_ORIGINS') ??
@@ -33,6 +36,18 @@ async function bootstrap() {
       }
     },
     credentials: true,
+  };
+  // MCP clients call the MCP endpoint and the OAuth endpoints from any origin
+  // (browser-based clients included). They authenticate with bearer tokens or
+  // client credentials, never cookies, so any origin is allowed without
+  // credentials. The consent endpoints (/oauth/consent) keep the app policy.
+  const mcpPublicPath =
+    /^\/(mcp|authorize|token|register|revoke|\.well-known\/oauth-)(\/|\?|$)/;
+  app.enableCors((req: { url?: string }, cb) => {
+    if (mcpPublicPath.test(req.url ?? '')) {
+      return cb(null, { origin: true, credentials: false });
+    }
+    cb(null, appCors);
   });
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.use((req, res, next) => {

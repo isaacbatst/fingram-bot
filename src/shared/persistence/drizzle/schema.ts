@@ -225,3 +225,53 @@ export const importEntry = pgTable(
     ),
   ],
 );
+
+// OAuth 2.1 for the MCP server. The identity behind every grant is the vault:
+// there is no user table, so "logging in" from an MCP client means authorizing
+// it against a vault. Clients arrive through Dynamic Client Registration.
+export const oauthClient = pgTable('oauth_client', {
+  clientId: text('client_id').primaryKey(),
+  // Full RFC 7591 client information as returned at registration.
+  clientInfo: jsonb('client_info').notNull(),
+  createdAt: timestamp('created_at').notNull(),
+});
+
+// Authorization codes are single-use: `usedAt` is set atomically on exchange.
+// Only the SHA-256 of the code is stored.
+export const oauthAuthorizationCode = pgTable('oauth_authorization_code', {
+  codeHash: text('code_hash').primaryKey(),
+  clientId: text('client_id')
+    .notNull()
+    .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+  vaultId: text('vault_id')
+    .notNull()
+    .references(() => vault.id, { onDelete: 'cascade' }),
+  codeChallenge: text('code_challenge').notNull(),
+  redirectUri: text('redirect_uri').notNull(),
+  scopes: jsonb('scopes').notNull().default(sql`'[]'::jsonb`),
+  resource: text('resource'),
+  expiresAt: timestamp('expires_at').notNull(),
+  usedAt: timestamp('used_at'),
+  createdAt: timestamp('created_at').notNull(),
+});
+
+// One row per grant (access + refresh pair). Refreshing rotates: the old row is
+// revoked and a new one issued. Only token hashes are stored.
+export const oauthToken = pgTable('oauth_token', {
+  id: text('id').primaryKey(),
+  clientId: text('client_id')
+    .notNull()
+    .references(() => oauthClient.clientId, { onDelete: 'cascade' }),
+  vaultId: text('vault_id')
+    .notNull()
+    .references(() => vault.id, { onDelete: 'cascade' }),
+  accessTokenHash: text('access_token_hash').notNull().unique(),
+  refreshTokenHash: text('refresh_token_hash').notNull().unique(),
+  scopes: jsonb('scopes').notNull().default(sql`'[]'::jsonb`),
+  resource: text('resource'),
+  accessExpiresAt: timestamp('access_expires_at').notNull(),
+  refreshExpiresAt: timestamp('refresh_expires_at').notNull(),
+  revokedAt: timestamp('revoked_at'),
+  lastUsedAt: timestamp('last_used_at'),
+  createdAt: timestamp('created_at').notNull(),
+});

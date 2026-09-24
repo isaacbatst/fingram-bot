@@ -85,6 +85,13 @@
       "when": 1790169601448,
       "tag": "0011_import_entry_allocation",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790274502540,
+      "tag": "0012_oauth_mcp",
+      "breakpoints": true
     }
   ]
 }
