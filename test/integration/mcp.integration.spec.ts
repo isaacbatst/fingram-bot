@@ -53,8 +53,8 @@ describe('MCP server + OAuth (integration)', () => {
       })
       .expect(302);
     const location = new URL(res.headers.location);
-    expect(location.pathname).toBe('/oauth/authorize');
-    return location.searchParams.get('request')!;
+    expect(location.pathname).toBe('/');
+    return location.searchParams.get('oauth_request')!;
   }
 
   async function authorizeCode(vaultToken: string, challenge: string) {

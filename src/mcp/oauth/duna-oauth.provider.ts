@@ -83,8 +83,10 @@ export class DunaOAuthProvider implements OAuthServerProvider {
       this.config.jwtSecret,
       request,
     );
-    const consentUrl = new URL(`${this.config.frontendUrl}/oauth/authorize`);
-    consentUrl.searchParams.set('request', signed);
+    // The web app has no path routing (and no SPA rewrite on the host), so
+    // the consent screen is addressed by a query param on the root.
+    const consentUrl = new URL(`${this.config.frontendUrl}/`);
+    consentUrl.searchParams.set('oauth_request', signed);
     res.redirect(302, consentUrl.href);
   }
 
