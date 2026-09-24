@@ -75,6 +75,41 @@ describe('Vault', () => {
     expect(vault.getBalance()).toBe(150);
   });
 
+  it('should clear the category and set withdrawalType when editing', () => {
+    const vault = new Vault();
+    vault.addTransaction(
+      Transaction.restore({
+        id: '1',
+        code: '1',
+        vaultId: vault.id,
+        boxId: '',
+        transferId: null,
+        allocationId: 'alloc-reserva',
+        withdrawalType: 'withdrawal',
+        amount: 100,
+        isCommitted: true,
+        description: 'any',
+        createdAt: new Date(),
+        categoryId: 'cat',
+        type: 'expense',
+        date: new Date(),
+      }),
+    );
+
+    const [err, tx] = vault.editTransaction('1', {
+      categoryId: null,
+      withdrawalType: 'realization',
+    });
+    expect(err).toBeNull();
+    expect(tx!.categoryId).toBeNull();
+    expect(tx!.withdrawalType).toBe('realization');
+    expect(tx!.allocationId).toBe('alloc-reserva');
+
+    vault.editTransaction('1', { allocationId: null, withdrawalType: null });
+    expect(tx!.allocationId).toBeNull();
+    expect(tx!.withdrawalType).toBeNull();
+  });
+
   it('should delete a transaction and recalculate balance', () => {
     const vault = new Vault();
     vault.addTransaction(

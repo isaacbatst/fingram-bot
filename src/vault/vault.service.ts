@@ -360,7 +360,8 @@ export class VaultService {
     transactionCode: string;
     newAmount?: number;
     description?: string;
-    categoryCode?: string;
+    /** null removes the category. */
+    categoryCode?: string | null;
     date?: Date;
     type?: 'income' | 'expense';
     boxId?: string;
@@ -374,7 +375,8 @@ export class VaultService {
       return left(`Dados não encontrados`);
     }
 
-    let categoryId: string | undefined;
+    let categoryId: string | null | undefined =
+      input.categoryCode === null ? null : undefined;
     let category: Category | null = null;
     if (input.categoryCode) {
       category = await this.categoryRepository.findByCode(
@@ -391,7 +393,7 @@ export class VaultService {
     const updatedData: {
       amount?: number;
       description?: string;
-      categoryId?: string;
+      categoryId?: string | null;
       date?: Date;
       type?: 'income' | 'expense';
       boxId?: string;
@@ -403,7 +405,7 @@ export class VaultService {
       updatedData.amount = input.newAmount;
     if (typeof input.description === 'string')
       updatedData.description = input.description;
-    if (categoryId) updatedData.categoryId = categoryId;
+    if (categoryId !== undefined) updatedData.categoryId = categoryId;
     if (input.date) updatedData.date = input.date;
     if (input.type) updatedData.type = input.type;
     if (typeof input.boxId === 'string') updatedData.boxId = input.boxId;
@@ -440,8 +442,8 @@ export class VaultService {
         if (!plan || plan.vaultId !== input.vaultId)
           return left('Alocação não pertence a este vault');
         updatedData.allocationId = input.allocationId;
-        if (input.withdrawalType)
-          updatedData.withdrawalType = input.withdrawalType;
+        // A Pagamento link has no withdrawalType: clear a stale one.
+        updatedData.withdrawalType = input.withdrawalType ?? null;
       }
     }
 

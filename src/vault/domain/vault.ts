@@ -168,11 +168,13 @@ export class Vault {
     options: {
       amount?: number;
       description?: string;
-      categoryId?: string;
+      /** null removes the category. */
+      categoryId?: string | null;
       date?: Date;
       type?: 'income' | 'expense';
       boxId?: string;
       allocationId?: string | null;
+      withdrawalType?: 'withdrawal' | 'realization' | null;
     },
   ): Either<string, Transaction> {
     const transaction = this.findTransactionByCode(code);
@@ -200,6 +202,9 @@ export class Vault {
 
     if (options.allocationId !== undefined) {
       transaction.allocationId = options.allocationId;
+    }
+    if (options.withdrawalType !== undefined) {
+      transaction.withdrawalType = options.withdrawalType;
     }
 
     if (options.type !== undefined) {
