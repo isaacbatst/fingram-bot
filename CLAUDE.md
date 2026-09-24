@@ -105,24 +105,20 @@ JS:    new Date('2026-01-01T00:00:00.000Z')
 
 **Where this applies:** Plan month calculations, period ranges, scheduled movement matching, cost-of-living lookups — anywhere a stored `startDate`/`createdAt` is compared to `new Date()`.
 
-## OpenAI Agents SDK — Tool Schema Constraints
+## MCP Server (`src/mcp/`)
 
-**CRITICAL: Use `.nullable()` instead of `.optional()` for optional tool parameters.**
+Remote MCP server that replaced the in-app chat. Users connect Claude, ChatGPT, etc. and use Duna tools from their own assistant.
 
-The OpenAI API requires all properties to be listed in the JSON Schema `required` array. Zod's `.optional()` removes the property from `required`, causing a 400 error: `'required' is required to be supplied and to be an array including every key in properties`.
+- **Transport:** Streamable HTTP, stateless, JSON responses — `POST /mcp` (`mcp.controller.ts`). A new `McpServer` is built per request by `DunaMcpServerFactory`.
+- **Tools:** `duna-mcp-server.factory.ts`. The vault always comes from the OAuth token (`req.auth.extra.vaultId`), **never from a tool parameter**. Tools call existing services (`VaultService`, `VaultWebService`, `PlanService`) — no domain logic in the tool layer. Mark every tool with `readOnlyHint` / `destructiveHint`; the client uses them to ask the user for confirmation.
+- **OAuth 2.1:** the SDK's `mcpAuthRouter` (metadata, DCR, PKCE, rate limit) serves `/.well-known/*`, `/authorize`, `/token`, `/register`, `/revoke` at the app root (mounted on the Express instance in `McpModule.onModuleInit`, since Nest middleware is path-prefixed). `DunaOAuthProvider` persists clients, single-use codes and hashed tokens (`oauth_*` tables). Refresh rotates the grant.
+- **Consent:** `/authorize` redirects to `FRONTEND_URL/?oauth_request=<signed JWT>`; the web app calls `/oauth/consent` (approve uses the vault cookie). Approval re-validates the redirect_uri against the registered client.
+- **Env:** `API_PUBLIC_URL` (public URL of this API; the issuer and resource URLs derive from it), `FRONTEND_URL`, `JWT_SECRET`.
+- **CORS:** `main.ts` allows any origin, without credentials, for the MCP/OAuth public paths only.
+- **SDK imports:** use subpaths with `.js` (`@modelcontextprotocol/sdk/server/mcp.js`). They resolve under the current `commonjs` tsconfig.
+- **Tests:** `test/integration/mcp.integration.spec.ts` covers the full OAuth flow, every tool, isolation between vaults, and a real SDK `Client` over HTTP. DCR is rate limited (20/hour per IP), so the suite registers a single client.
 
-**Pattern for partial-update tools:**
-```typescript
-parameters: z.object({
-  id: z.string(),
-  name: z.string().nullable().describe('New name. Null to skip.'),
-}),
-execute: async ({ id, name }) => {
-  await service.update(id, { name: name ?? undefined });
-},
-```
-
-Use `?? undefined` to convert `null` back to `undefined` before passing to service methods that use `undefined` to mean "don't change".
+Tool schemas use plain zod `.optional()`. The OpenAI rule "`.nullable()` instead of `.optional()`" applies only to OpenAI structured outputs (`AiService`), not to MCP.
 
 ## Verification Commands
 

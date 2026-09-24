@@ -33,7 +33,6 @@
     "@nestjs/event-emitter": "^3.0.1",
     "@nestjs/jwt": "^11.0.0",
     "@nestjs/platform-express": "^11.0.1",
-    "@openai/agents": "^0.7.2",
     "better-sqlite3": "^12.1.1",
     "cookie-parser": "^1.4.7",
     "csv-parser": "^3.2.0",

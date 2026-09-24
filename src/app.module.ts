@@ -4,7 +4,6 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { RepositoriesModule } from './shared/persistence/repositories.module';
-import { VaultAgentModule } from './vault/vault-agent.module';
 import { ImportModule } from './vault/import.module';
 import { PlanModule } from './plan/plan.module';
 import { McpModule } from './mcp/mcp.module';
@@ -21,7 +20,6 @@ export class AppModule {
         RepositoriesModule.forRoot(config.persistence),
         EventEmitterModule.forRoot(),
         BotModule.register(),
-        VaultAgentModule.register(),
         ImportModule.register(),
         PlanModule.register(),
         McpModule.register(),
