@@ -68,6 +68,9 @@ jobs:
           echo "GIT_COMMIT_HASH=${{ github.sha }}" >> envfile
           echo "ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }}" >> envfile
           echo "FRONTEND_URL=${{ secrets.FRONTEND_URL }}" >> envfile
+          # Public URL of this API (same host as the Traefik rule in stack.yml).
+          # The MCP OAuth issuer and resource URLs derive from it.
+          echo "API_PUBLIC_URL=https://api-carteira.isaacbatst.com.br" >> envfile
           echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" >> envfile
       - name: Docker Stack Deploy
         uses: cssnr/stack-deploy-action@v1
