@@ -118,6 +118,11 @@ Remote MCP server that replaced the in-app chat. Users connect Claude, ChatGPT, 
 - **SDK imports:** use subpaths with `.js` (`@modelcontextprotocol/sdk/server/mcp.js`). They resolve under the current `commonjs` tsconfig.
 - **Tests:** `test/integration/mcp.integration.spec.ts` covers the full OAuth flow, every tool, isolation between vaults, and a real SDK `Client` over HTTP. DCR is rate limited (20/hour per IP), so the suite registers a single client.
 
+Editing rules (MCP edit tools):
+- **Category ids must be scoped by the tool.** `CategoryRepository.findById` is not vault-scoped, so tools resolve a `categoryId` through `vaultService.getCategories(vaultId)` (and pass the code to `editTransactionInVault`). Estratos and allocations are already checked by the domain/service.
+- **Transfers are pairs.** Single-transaction tools (`editTransaction`, `deleteTransaction`, `categorizeTransactions`) refuse a transaction with `transferId`; only `editTransfer`/`deleteTransfer` touch both sides. `listTransactions` shows only the expense side, but the income side's code still works in tools, so guard by `transferId`, not by what is listed.
+- **Category and allocation are exclusive in effect:** the budget ignores the category of a transaction with `allocationId`. Linking to an allocation clears the category; categorizing a linked one requires `allocationId: null` in the same call.
+
 Tool schemas use plain zod `.optional()`. The OpenAI rule "`.nullable()` instead of `.optional()`" applies only to OpenAI structured outputs (`AiService`), not to MCP.
 
 ## Verification Commands

@@ -353,7 +353,12 @@ describe('MCP server + OAuth (integration)', () => {
         [
           'addAllocation',
           'addTransaction',
+          'categorizeTransactions',
+          'createTransfer',
           'deleteTransaction',
+          'deleteTransfer',
+          'editTransaction',
+          'editTransfer',
           'getBudgetSummary',
           'getCategories',
           'getPlan',
@@ -371,6 +376,16 @@ describe('MCP server + OAuth (integration)', () => {
       expect(byName.addTransaction.annotations.readOnlyHint).toBe(false);
       expect(byName.deleteTransaction.annotations.destructiveHint).toBe(true);
       expect(byName.removeAllocation.annotations.destructiveHint).toBe(true);
+      for (const name of [
+        'editTransaction',
+        'categorizeTransactions',
+        'createTransfer',
+        'editTransfer',
+      ]) {
+        expect(byName[name].annotations.readOnlyHint, name).toBe(false);
+        expect(byName[name].annotations.destructiveHint, name).toBe(false);
+      }
+      expect(byName.deleteTransfer.annotations.destructiveHint).toBe(true);
     });
 
     it('adds, lists, summarizes and deletes transactions of the authorized vault', async () => {
@@ -858,6 +873,582 @@ describe('MCP server + OAuth (integration)', () => {
     });
   });
 
+  describe('editing transactions', () => {
+    type Item = {
+      code: string;
+      date: string;
+      type: string;
+      amount: number;
+      description: string;
+      category: { id: string; name: string } | null;
+      estratoId: string | null;
+      isTransfer: boolean;
+      transferId: string | null;
+      allocationId: string | null;
+    };
+
+    /**
+     * Vault with categories food/transport (budgets 500/300), estratos
+     * Principal + Reserva, and a plan with a Pagamento (Financiamento), a
+     * Reserva (Viagem, manual) and a Reserva without realization (Colchão).
+     */
+    async function seed() {
+      const vault = await createVault();
+      const cookie = `vault_access_token=${vault.token}`;
+      const food = crypto.randomUUID();
+      const transport = crypto.randomUUID();
+      await db.insert(schema.vaultCategory).values([
+        {
+          id: food,
+          vaultId: vault.id,
+          name: 'Alimentação',
+          code: 'food',
+          transactionType: 'expense',
+        },
+        {
+          id: transport,
+          vaultId: vault.id,
+          name: 'Transporte',
+          code: 'transport',
+          transactionType: 'expense',
+        },
+      ]);
+      await http()
+        .post('/vault/set-budgets')
+        .set('Cookie', cookie)
+        .send({
+          budgets: [
+            { categoryCode: 'food', amount: 500 },
+            { categoryCode: 'transport', amount: 300 },
+          ],
+        })
+        .expect(201);
+      const boxes = await http().get('/vault/boxes').set('Cookie', cookie);
+      const main = (boxes.body as { id: string; isDefault: boolean }[]).find(
+        (b) => b.isDefault,
+      )!.id;
+      const reserve = (
+        await http()
+          .post('/vault/create-box')
+          .set('Cookie', cookie)
+          .send({ name: 'Reserva', type: 'saving' })
+          .expect(201)
+      ).body.id as string;
+      const plan = await http()
+        .post('/plans')
+        .set('Cookie', cookie)
+        .send({
+          name: 'Plano',
+          startDate: '2026-01-01',
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 5000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 3000 }],
+          },
+          allocations: [
+            {
+              label: 'Financiamento',
+              target: 0,
+              monthlyAmount: [{ month: 0, amount: 1200 }],
+              realizationMode: 'immediate',
+              scheduledMovements: [],
+            },
+            {
+              label: 'Viagem',
+              target: 10000,
+              monthlyAmount: [{ month: 0, amount: 500 }],
+              realizationMode: 'manual',
+              scheduledMovements: [],
+            },
+            {
+              label: 'Colchão',
+              target: 20000,
+              monthlyAmount: [{ month: 0, amount: 300 }],
+              realizationMode: 'never',
+              scheduledMovements: [],
+            },
+          ],
+        })
+        .expect(201);
+      const byLabel = Object.fromEntries(
+        (plan.body.allocations as { id: string; label: string }[]).map((a) => [
+          a.label,
+          a.id,
+        ]),
+      );
+
+      const add = async (body: Record<string, unknown>) => {
+        const res = await http()
+          .post('/vault/create-transaction')
+          .set('Cookie', cookie)
+          .send({ type: 'expense', boxId: main, ...body })
+          .expect(201);
+        return res.body.transaction.code as string;
+      };
+
+      const { access_token } = await connect(vault.token);
+      return {
+        vault,
+        cookie,
+        access_token,
+        food,
+        transport,
+        main,
+        reserve,
+        add,
+        financing: byLabel['Financiamento'],
+        trip: byLabel['Viagem'],
+        mattress: byLabel['Colchão'],
+      };
+    }
+
+    async function row(vaultId: string, code: string) {
+      const rows = await db
+        .select()
+        .from(schema.transaction)
+        .where(eq(schema.transaction.vaultId, vaultId));
+      return rows.find((r) => r.code === code);
+    }
+
+    async function budgetSpent(accessToken: string, categoryId: string) {
+      const summary = await callTool(accessToken, 'getBudgetSummary', {
+        month: 1,
+        year: 2026,
+      });
+      return (
+        summary.data.budgets as { categoryId: string; spent: number }[]
+      ).find((b) => b.categoryId === categoryId)!.spent;
+    }
+
+    async function listed(accessToken: string, code: string) {
+      const res = await callTool(accessToken, 'listTransactions', {
+        allPeriods: true,
+      });
+      return (res.data.items as Item[]).find((t) => t.code === code);
+    }
+
+    it('changes only the fields sent and moves spending between category budgets', async () => {
+      const s = await seed();
+      const code = await s.add({
+        amount: 100,
+        date: '2026-01-10',
+        categoryId: s.food,
+        description: 'Mercado',
+      });
+      expect(await budgetSpent(s.access_token, s.food)).toBe(100);
+
+      const recategorized = await callTool(s.access_token, 'editTransaction', {
+        code,
+        categoryId: s.transport,
+      });
+      expect(recategorized.isError).toBe(false);
+      expect(recategorized.data).toMatchObject({
+        code,
+        amount: 100,
+        type: 'expense',
+        date: '2026-01-10',
+        description: 'Mercado',
+        category: { id: s.transport, name: 'Transporte' },
+        estratoId: s.main,
+        isTransfer: false,
+        transferId: null,
+        allocationId: null,
+      });
+      expect(await budgetSpent(s.access_token, s.food)).toBe(0);
+      expect(await budgetSpent(s.access_token, s.transport)).toBe(100);
+
+      const edited = await callTool(s.access_token, 'editTransaction', {
+        code,
+        amount: 80,
+        date: '2026-01-20',
+        description: 'Uber',
+        estratoId: s.reserve,
+      });
+      expect(edited.data).toMatchObject({
+        amount: 80,
+        date: '2026-01-20',
+        description: 'Uber',
+        estratoId: s.reserve,
+        category: { id: s.transport },
+      });
+      // Same shape as listTransactions.
+      expect(await listed(s.access_token, code)).toEqual(edited.data);
+      // Stored as UTC midnight, like addTransaction.
+      expect((await row(s.vault.id, code))!.date!.toISOString()).toBe(
+        '2026-01-20T00:00:00.000Z',
+      );
+
+      const cleared = await callTool(s.access_token, 'editTransaction', {
+        code,
+        categoryId: null,
+      });
+      expect(cleared.data.category).toBeNull();
+      expect(cleared.data.amount).toBe(80);
+      expect((await row(s.vault.id, code))!.categoryId).toBeNull();
+
+      const income = await callTool(s.access_token, 'editTransaction', {
+        code,
+        type: 'income',
+      });
+      expect(income.data.type).toBe('income');
+    });
+
+    it('rejects invalid edits with a message', async () => {
+      const s = await seed();
+      const code = await s.add({ amount: 50, date: '2026-01-10' });
+      const cases: [Record<string, unknown>, string][] = [
+        [{ code }, 'ao menos um campo'],
+        [{ code: 'nope', amount: 10 }, 'não encontrada'],
+        [{ code, categoryId: crypto.randomUUID() }, 'Categoria não encontrada'],
+        [{ code, estratoId: crypto.randomUUID() }, 'Estrato não encontrado'],
+        [{ code, withdrawalType: 'withdrawal' }, 'allocationId'],
+        [
+          { code, allocationId: crypto.randomUUID() },
+          'Alocação não encontrada',
+        ],
+      ];
+      for (const [args, message] of cases) {
+        const res = await callTool(s.access_token, 'editTransaction', args);
+        expect(res.isError, JSON.stringify(args)).toBe(true);
+        expect(res.text).toContain(message);
+      }
+      const unchanged = await row(s.vault.id, code);
+      expect(unchanged).toMatchObject({ amount: 50, categoryId: null });
+    });
+
+    it('links to plan allocations with the same rules as the app', async () => {
+      const s = await seed();
+      const code = await s.add({
+        amount: 1200,
+        date: '2026-01-10',
+        categoryId: s.food,
+        description: 'Parcela',
+      });
+      const edit = (args: Record<string, unknown>) =>
+        callTool(s.access_token, 'editTransaction', { code, ...args });
+
+      const rejected: [Record<string, unknown>, string][] = [
+        [
+          { allocationId: s.financing, withdrawalType: 'withdrawal' },
+          'withdrawalType só se aplica a alocações Reserva',
+        ],
+        [{ allocationId: s.financing, categoryId: s.food }, 'exclusivas'],
+        [{ allocationId: s.trip }, 'precisam de withdrawalType'],
+        [
+          { allocationId: s.mattress, withdrawalType: 'realization' },
+          'não aceitam realização',
+        ],
+      ];
+      for (const [args, message] of rejected) {
+        const res = await edit(args);
+        expect(res.isError, JSON.stringify(args)).toBe(true);
+        expect(res.text).toContain(message);
+      }
+
+      // Pagamento: replaces the category and leaves the category budget.
+      const payment = await edit({ allocationId: s.financing });
+      expect(payment.isError).toBe(false);
+      expect(payment.data).toMatchObject({
+        allocationId: s.financing,
+        category: null,
+      });
+      expect(await budgetSpent(s.access_token, s.food)).toBe(0);
+
+      // Categorizing a linked transaction must unlink explicitly.
+      const linked = await edit({ categoryId: s.food });
+      expect(linked.isError).toBe(true);
+      expect(linked.text).toContain('allocationId: null');
+
+      const reserve = await edit({
+        allocationId: s.trip,
+        withdrawalType: 'realization',
+      });
+      expect(reserve.data.allocationId).toBe(s.trip);
+      expect(await row(s.vault.id, code)).toMatchObject({
+        allocationId: s.trip,
+        withdrawalType: 'realization',
+      });
+      const withdrawal = await edit({
+        allocationId: s.mattress,
+        withdrawalType: 'withdrawal',
+      });
+      expect(withdrawal.isError).toBe(false);
+
+      // Back to a Pagamento: the Reserva withdrawalType does not linger.
+      await edit({ allocationId: s.financing });
+      expect(await row(s.vault.id, code)).toMatchObject({
+        allocationId: s.financing,
+        withdrawalType: null,
+      });
+
+      const unlinked = await edit({ allocationId: null, categoryId: s.food });
+      expect(unlinked.data).toMatchObject({
+        allocationId: null,
+        category: { id: s.food },
+      });
+      expect(await row(s.vault.id, code)).toMatchObject({
+        allocationId: null,
+        withdrawalType: null,
+        categoryId: s.food,
+      });
+      expect(await budgetSpent(s.access_token, s.food)).toBe(1200);
+    });
+
+    it('creates, edits and deletes transfers as a pair, and guards single-side edits', async () => {
+      const s = await seed();
+      const balances = async () => {
+        const res = await callTool(s.access_token, 'listEstratos');
+        return Object.fromEntries(
+          (res.data as { id: string; balance: number }[]).map((e) => [
+            e.id,
+            e.balance,
+          ]),
+        );
+      };
+
+      const same = await callTool(s.access_token, 'createTransfer', {
+        fromEstratoId: s.main,
+        toEstratoId: s.main,
+        amount: 10,
+        date: '2026-01-15',
+      });
+      expect(same.isError).toBe(true);
+
+      const created = await callTool(s.access_token, 'createTransfer', {
+        fromEstratoId: s.main,
+        toEstratoId: s.reserve,
+        amount: 300,
+        date: '2026-01-15',
+      });
+      expect(created.isError).toBe(false);
+      const { transferId, code } = created.data;
+      expect(created.data).toEqual({
+        transferId,
+        code,
+        amount: 300,
+        date: '2026-01-15',
+        fromEstratoId: s.main,
+        toEstratoId: s.reserve,
+      });
+      expect(await balances()).toMatchObject({
+        [s.main]: -300,
+        [s.reserve]: 300,
+      });
+      expect(await listed(s.access_token, code)).toMatchObject({
+        isTransfer: true,
+        transferId,
+        estratoId: s.main,
+      });
+
+      // Either side, through the single-transaction tools, is refused.
+      const sides = (
+        await db
+          .select()
+          .from(schema.transaction)
+          .where(eq(schema.transaction.transferId, transferId))
+      ).map((r) => r.code);
+      expect(sides).toHaveLength(2);
+      for (const side of sides) {
+        const edit = await callTool(s.access_token, 'editTransaction', {
+          code: side,
+          amount: 1,
+        });
+        expect(edit.isError).toBe(true);
+        expect(edit.text).toContain('editTransfer');
+        const del = await callTool(s.access_token, 'deleteTransaction', {
+          code: side,
+        });
+        expect(del.isError).toBe(true);
+        expect(del.text).toContain('deleteTransfer');
+      }
+      const categorize = await callTool(
+        s.access_token,
+        'categorizeTransactions',
+        { codes: [code], categoryId: s.food },
+      );
+      expect(categorize.isError).toBe(true);
+      expect(await balances()).toMatchObject({
+        [s.main]: -300,
+        [s.reserve]: 300,
+      });
+
+      expect(
+        (await callTool(s.access_token, 'editTransfer', { transferId }))
+          .isError,
+      ).toBe(true);
+      expect(
+        (
+          await callTool(s.access_token, 'editTransfer', {
+            transferId,
+            toEstratoId: s.main,
+          })
+        ).isError,
+      ).toBe(true);
+
+      const edited = await callTool(s.access_token, 'editTransfer', {
+        transferId,
+        amount: 250,
+        date: '2026-01-18',
+      });
+      expect(edited.data).toMatchObject({
+        amount: 250,
+        date: '2026-01-18',
+        fromEstratoId: s.main,
+        toEstratoId: s.reserve,
+      });
+      const pair = await db
+        .select()
+        .from(schema.transaction)
+        .where(eq(schema.transaction.transferId, transferId));
+      expect(pair.map((r) => r.amount)).toEqual([250, 250]);
+      expect(await balances()).toMatchObject({
+        [s.main]: -250,
+        [s.reserve]: 250,
+      });
+
+      const deleted = await callTool(s.access_token, 'deleteTransfer', {
+        transferId,
+      });
+      expect(deleted.isError).toBe(false);
+      expect(await balances()).toMatchObject({ [s.main]: 0, [s.reserve]: 0 });
+      expect(
+        (await callTool(s.access_token, 'deleteTransfer', { transferId }))
+          .isError,
+      ).toBe(true);
+    });
+
+    it('categorizes in bulk, reporting per-code failures without aborting', async () => {
+      const s = await seed();
+      const a = await s.add({ amount: 10, date: '2026-01-05' });
+      const b = await s.add({
+        amount: 20,
+        date: '2026-01-06',
+        categoryId: s.transport,
+      });
+      const c = await s.add({ amount: 30, date: '2026-01-07' });
+      const planned = await s.add({
+        amount: 1200,
+        date: '2026-01-08',
+        allocationId: s.financing,
+      });
+
+      const res = await callTool(s.access_token, 'categorizeTransactions', {
+        codes: [a, b, 'nope', c, planned, a],
+        categoryId: s.food,
+      });
+      expect(res.isError).toBe(false);
+      expect(res.data.category).toEqual({ id: s.food, name: 'Alimentação' });
+      expect(res.data.updated).toEqual([a, b, c]);
+      expect(res.data.failed.map((f: { code: string }) => f.code)).toEqual([
+        'nope',
+        planned,
+      ]);
+      expect(await budgetSpent(s.access_token, s.food)).toBe(60);
+      expect(await budgetSpent(s.access_token, s.transport)).toBe(0);
+      expect((await row(s.vault.id, planned))!.categoryId).toBeNull();
+
+      const allFailed = await callTool(
+        s.access_token,
+        'categorizeTransactions',
+        { codes: ['nope'], categoryId: s.food },
+      );
+      expect(allFailed.isError).toBe(true);
+      expect(
+        (
+          await callTool(s.access_token, 'categorizeTransactions', {
+            codes: [a],
+            categoryId: crypto.randomUUID(),
+          })
+        ).isError,
+      ).toBe(true);
+    });
+
+    it("cannot edit another vault's transactions or use its ids", async () => {
+      const mine = await seed();
+      const other = await seed();
+      const myCode = await mine.add({
+        amount: 10,
+        date: '2026-01-05',
+        categoryId: mine.food,
+      });
+      const otherCode = await other.add({
+        amount: 99,
+        date: '2026-01-05',
+        categoryId: other.food,
+      });
+      const otherTransfer = await callTool(
+        other.access_token,
+        'createTransfer',
+        {
+          fromEstratoId: other.main,
+          toEstratoId: other.reserve,
+          amount: 50,
+          date: '2026-01-06',
+        },
+      );
+      const token = mine.access_token;
+      const expectError = async (
+        tool: string,
+        args: Record<string, unknown>,
+      ) => {
+        const res = await callTool(token, tool, args);
+        expect(res.isError, `${tool} ${JSON.stringify(args)}`).toBe(true);
+        return res;
+      };
+
+      // Their transactions and transfers.
+      await expectError('editTransaction', { code: otherCode, amount: 1 });
+      await expectError('deleteTransaction', { code: otherCode });
+      await expectError('categorizeTransactions', {
+        codes: [otherCode],
+        categoryId: mine.transport,
+      });
+      const transferId = otherTransfer.data.transferId;
+      await expectError('editTransfer', { transferId, amount: 1 });
+      await expectError('deleteTransfer', { transferId });
+
+      // Their ids on my transaction.
+      await expectError('editTransaction', {
+        code: myCode,
+        categoryId: other.transport,
+      });
+      await expectError('categorizeTransactions', {
+        codes: [myCode],
+        categoryId: other.transport,
+      });
+      await expectError('editTransaction', {
+        code: myCode,
+        estratoId: other.reserve,
+      });
+      const alloc = await expectError('editTransaction', {
+        code: myCode,
+        allocationId: other.financing,
+      });
+      expect(alloc.text).toContain('não pertence a este vault');
+      await expectError('createTransfer', {
+        fromEstratoId: mine.main,
+        toEstratoId: other.reserve,
+        amount: 5,
+        date: '2026-01-07',
+      });
+
+      expect(await row(other.vault.id, otherCode)).toMatchObject({
+        amount: 99,
+        categoryId: other.food,
+      });
+      expect(await row(mine.vault.id, myCode)).toMatchObject({
+        amount: 10,
+        categoryId: mine.food,
+        boxId: mine.main,
+        allocationId: null,
+      });
+      const pair = await db
+        .select()
+        .from(schema.transaction)
+        .where(eq(schema.transaction.transferId, transferId));
+      expect(pair.map((r) => r.amount)).toEqual([50, 50]);
+    });
+  });
+
   describe('real MCP client', () => {
     it('initializes and calls tools through the SDK client over HTTP', async () => {
       const vault = await createVault();
@@ -880,7 +1471,7 @@ describe('MCP server + OAuth (integration)', () => {
         expect(client.getInstructions()).toContain('Duna');
 
         const { tools } = await client.listTools();
-        expect(tools.length).toBe(14);
+        expect(tools.length).toBe(19);
 
         const result = await client.callTool({
           name: 'getBudgetSummary',

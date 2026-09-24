@@ -5,6 +5,8 @@ import { z } from 'zod';
 import { PlanService } from '@/plan/plan.service';
 import { VaultService } from '@/vault/vault.service';
 import { VaultWebService } from '@/vault/vault-web.service';
+import { Vault } from '@/vault/domain/vault';
+import { TransactionDTO } from '@/vault/dto/transaction.dto,';
 import { computeSpendingBreakdown } from './spending-breakdown';
 
 const changePoints = z
@@ -80,6 +82,46 @@ function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/** Transaction as listTransactions and editTransaction return it. */
+function toTransactionItem(t: TransactionDTO) {
+  return {
+    code: t.code,
+    date: t.date.toISOString().slice(0, 10),
+    type: t.type,
+    amount: t.amount,
+    description: t.description ?? '',
+    category: t.category ? { id: t.category.id, name: t.category.name } : null,
+    committed: t.isCommitted,
+    estratoId: t.boxId || null,
+    isTransfer: t.transferId !== null,
+    transferId: t.transferId,
+    transferToEstratoId: t.transferToBoxId,
+    allocationId: t.allocationId ?? null,
+  };
+}
+
+/** Both sides of a transfer, as the transfer tools return it. */
+function describeTransfer(vault: Vault, transferId: string) {
+  const sides = [...vault.transactions.values()].filter(
+    (t) => t.transferId === transferId,
+  );
+  const out = sides.find((t) => t.type === 'expense');
+  const into = sides.find((t) => t.type === 'income');
+  if (!out || !into) return null;
+  return {
+    transferId,
+    code: out.code,
+    amount: out.amount,
+    date: out.date.toISOString().slice(0, 10),
+    fromEstratoId: out.boxId,
+    toEstratoId: into.boxId,
+  };
+}
+
+function transferSideError(transferId: string, tool: string): string {
+  return `Esta transação é um lado de uma transferência entre estratos (transferId ${transferId}). Use ${tool} para alterar a transferência inteira.`;
+}
+
 function resolvePeriod(input: {
   month?: number;
   year?: number;
@@ -116,6 +158,8 @@ export class DunaMcpServerFactory {
           'Para registrar uma transação, busque as categorias com getCategories e use a mais provável; o usuário pode corrigir depois.',
           'O orçamento é mensal, mas o período pode não começar no dia 1: use getBudgetSummary para saber as datas do período.',
           'Para totais e comparações (por categoria, por mês, por estrato), use getSpendingBreakdown em vez de somar listTransactions.',
+          'Para corrigir uma transação, use editTransaction com o code de listTransactions (só os campos enviados mudam); para recategorizar várias de uma vez, categorizeTransactions.',
+          'Transferências entre estratos (isTransfer) são um par de lançamentos: altere ou remova com editTransfer/deleteTransfer, pelo transferId.',
         ].join('\n'),
       },
     );
@@ -236,21 +280,7 @@ export class DunaMcpServerFactory {
           pageSize: result.pageSize,
           total: result.total,
           totalPages: result.totalPages,
-          items: result.items.map((t) => ({
-            code: t.code,
-            date: t.date.toISOString().slice(0, 10),
-            type: t.type,
-            amount: t.amount,
-            description: t.description ?? '',
-            category: t.category
-              ? { id: t.category.id, name: t.category.name }
-              : null,
-            committed: t.isCommitted,
-            estratoId: t.boxId || null,
-            isTransfer: t.transferId !== null,
-            transferToEstratoId: t.transferToBoxId,
-            allocationId: t.allocationId ?? null,
-          })),
+          items: result.items.map(toTransactionItem),
         });
       },
     );
@@ -555,7 +585,7 @@ export class DunaMcpServerFactory {
       {
         title: 'Remover transação',
         description:
-          'Remove uma transação pelo código (retornado por addTransaction e listTransactions).',
+          'Remove uma transação pelo código (retornado por addTransaction e listTransactions). Transferências entre estratos se removem com deleteTransfer.',
         inputSchema: {
           code: z.string().describe('Código da transação'),
         },
@@ -567,6 +597,11 @@ export class DunaMcpServerFactory {
         },
       },
       async ({ code }) => {
+        const [vaultErr, vault] = await this.vaultService.getVault({ vaultId });
+        if (vaultErr !== null) return error(vaultErr);
+        const transferId = vault.findTransactionByCode(code)?.transferId;
+        if (transferId)
+          return error(transferSideError(transferId, 'deleteTransfer'));
         const [err] = await this.vaultService.deleteTransaction({
           vaultId,
           transactionCode: code,
@@ -575,6 +610,8 @@ export class DunaMcpServerFactory {
         return json({ deleted: code });
       },
     );
+
+    this.registerTransactionEditTools(server, vaultId);
 
     server.registerTool(
       'updatePremises',
@@ -724,5 +761,315 @@ export class DunaMcpServerFactory {
         return json({ removed: allocationId });
       },
     );
+  }
+
+  /** Category of this vault by id (ids of other vaults are not found). */
+  private async findCategory(vaultId: string, categoryId: string) {
+    const categories = await this.vaultService.getCategories(vaultId);
+    return categories.find((c) => c.id === categoryId) ?? null;
+  }
+
+  private registerTransactionEditTools(server: McpServer, vaultId: string) {
+    server.registerTool(
+      'editTransaction',
+      {
+        title: 'Editar transação',
+        description:
+          'Edita uma transação pelo código (retornado por listTransactions e addTransaction). Só os campos enviados mudam. categoryId: null remove a categoria. Categoria e alocação do plano são exclusivas: vincular a uma alocação remove a categoria; para categorizar uma transação vinculada, envie allocationId: null junto. Transferências entre estratos se editam com editTransfer. Retorna a transação atualizada.',
+        inputSchema: {
+          code: z.string().describe('Código da transação'),
+          amount: z
+            .number()
+            .positive()
+            .optional()
+            .describe('Novo valor em R$, sempre positivo'),
+          description: z.string().optional().describe('Nova descrição'),
+          date: z.string().date().optional().describe('Nova data (AAAA-MM-DD)'),
+          type: z
+            .enum(['income', 'expense'])
+            .optional()
+            .describe('Receita ou despesa'),
+          categoryId: z
+            .string()
+            .nullable()
+            .optional()
+            .describe('ID da categoria (ver getCategories); null remove'),
+          estratoId: z
+            .string()
+            .optional()
+            .describe('Move para outro estrato (ver listEstratos)'),
+          allocationId: z
+            .string()
+            .nullable()
+            .optional()
+            .describe(
+              'Vincula a uma alocação do plano (ver getPlan): Pagamento planejado ou uso de Reserva. null desvincula',
+            ),
+          withdrawalType: z
+            .enum(['withdrawal', 'realization'])
+            .optional()
+            .describe(
+              'Obrigatório ao vincular a uma Reserva (não vale para Pagamento): realization = uso para o objetivo; withdrawal = saque fora do objetivo. Reserva com realizationMode "never" só aceita withdrawal. Envie junto com allocationId',
+            ),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ code, ...fields }) => {
+        if (Object.values(fields).every((v) => v === undefined)) {
+          return error('Informe ao menos um campo para alterar');
+        }
+        if (fields.withdrawalType !== undefined && !fields.allocationId) {
+          return error('withdrawalType precisa vir junto com o allocationId');
+        }
+        if (fields.categoryId && fields.allocationId) {
+          return error(
+            'Categoria e alocação do plano são exclusivas: envie só uma das duas',
+          );
+        }
+
+        const [vaultErr, vault] = await this.vaultService.getVault({ vaultId });
+        if (vaultErr !== null) return error(vaultErr);
+        const current = vault.findTransactionByCode(code);
+        if (!current) return error(`Transação #${code} não encontrada`);
+        if (current.transferId) {
+          return error(transferSideError(current.transferId, 'editTransfer'));
+        }
+        if (
+          fields.categoryId &&
+          fields.allocationId === undefined &&
+          current.allocationId
+        ) {
+          return error(
+            'Esta transação está vinculada a uma alocação do plano, e categoria e alocação são exclusivas. Para trocar pela categoria, envie allocationId: null junto.',
+          );
+        }
+
+        // The service looks categories up by code; the tools expose ids.
+        let categoryCode: string | null | undefined;
+        if (fields.categoryId) {
+          const category = await this.findCategory(vaultId, fields.categoryId);
+          if (!category) return error('Categoria não encontrada');
+          categoryCode = category.code;
+        } else if (fields.categoryId === null) {
+          categoryCode = null;
+        } else if (fields.allocationId && current.categoryId) {
+          // Linking to the plan replaces the category.
+          categoryCode = null;
+        }
+
+        const [err, result] = await this.vaultService.editTransactionInVault({
+          vaultId,
+          transactionCode: code,
+          newAmount: fields.amount,
+          description: fields.description,
+          // Same as addTransaction: a YYYY-MM-DD date is stored as UTC midnight.
+          date: fields.date ? new Date(fields.date) : undefined,
+          type: fields.type,
+          categoryCode,
+          boxId: fields.estratoId,
+          allocationId: fields.allocationId,
+          withdrawalType: fields.withdrawalType,
+        });
+        if (err !== null) return error(err);
+        return json(toTransactionItem(result.transaction));
+      },
+    );
+
+    server.registerTool(
+      'categorizeTransactions',
+      {
+        title: 'Categorizar transações',
+        description:
+          'Aplica uma categoria a várias transações de uma vez, pelos códigos (de listTransactions). Cada código é tratado à parte: os que falham (não encontrado, transferência, vinculado a alocação do plano) voltam em "failed" sem impedir os demais.',
+        inputSchema: {
+          codes: z
+            .array(z.string())
+            .min(1)
+            .max(100)
+            .describe('Códigos das transações (até 100)'),
+          categoryId: z
+            .string()
+            .describe('ID da categoria (ver getCategories)'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ codes, categoryId }) => {
+        const category = await this.findCategory(vaultId, categoryId);
+        if (!category) return error('Categoria não encontrada');
+        const [vaultErr, vault] = await this.vaultService.getVault({ vaultId });
+        if (vaultErr !== null) return error(vaultErr);
+
+        const updated: string[] = [];
+        const failed: { code: string; error: string }[] = [];
+        for (const code of new Set(codes)) {
+          const current = vault.findTransactionByCode(code);
+          if (!current) {
+            failed.push({ code, error: `Transação #${code} não encontrada` });
+            continue;
+          }
+          if (current.transferId) {
+            failed.push({
+              code,
+              error: 'Transferência entre estratos não tem categoria',
+            });
+            continue;
+          }
+          if (current.allocationId) {
+            failed.push({
+              code,
+              error:
+                'Vinculada a uma alocação do plano; use editTransaction com allocationId: null para trocar pela categoria',
+            });
+            continue;
+          }
+          const [err] = await this.vaultService.editTransactionInVault({
+            vaultId,
+            transactionCode: code,
+            categoryCode: category.code,
+          });
+          if (err !== null) failed.push({ code, error: err });
+          else updated.push(code);
+        }
+
+        const payload = {
+          category: { id: category.id, name: category.name },
+          updated,
+          failed,
+        };
+        if (updated.length === 0) return { ...json(payload), isError: true };
+        return json(payload);
+      },
+    );
+
+    server.registerTool(
+      'createTransfer',
+      {
+        title: 'Transferir entre estratos',
+        description:
+          'Move dinheiro entre dois estratos do usuário (ex.: da conta para a reserva). Cria o par de lançamentos, sem categoria e sem afetar o orçamento. Retorna o transferId.',
+        inputSchema: {
+          fromEstratoId: z
+            .string()
+            .describe('Estrato de origem (ver listEstratos)'),
+          toEstratoId: z.string().describe('Estrato de destino'),
+          amount: z
+            .number()
+            .positive()
+            .describe('Valor em R$, sempre positivo'),
+          date: z.string().date().describe('Data no formato AAAA-MM-DD'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+      },
+      async (input) => {
+        const [err, transferId] = await this.vaultService.createTransfer({
+          vaultId,
+          fromBoxId: input.fromEstratoId,
+          toBoxId: input.toEstratoId,
+          amount: input.amount,
+          date: new Date(input.date),
+        });
+        if (err !== null) return error(err);
+        return this.transferResult(vaultId, transferId);
+      },
+    );
+
+    server.registerTool(
+      'editTransfer',
+      {
+        title: 'Editar transferência',
+        description:
+          'Edita uma transferência entre estratos pelo transferId (de listTransactions): valor, data, estrato de origem e/ou de destino. Os dois lados mudam juntos. Só os campos enviados mudam.',
+        inputSchema: {
+          transferId: z.string().describe('ID da transferência'),
+          amount: z
+            .number()
+            .positive()
+            .optional()
+            .describe('Novo valor em R$, sempre positivo'),
+          date: z.string().date().optional().describe('Nova data (AAAA-MM-DD)'),
+          fromEstratoId: z
+            .string()
+            .optional()
+            .describe('Novo estrato de origem'),
+          toEstratoId: z
+            .string()
+            .optional()
+            .describe('Novo estrato de destino'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ transferId, ...fields }) => {
+        if (Object.values(fields).every((v) => v === undefined)) {
+          return error('Informe ao menos um campo para alterar');
+        }
+        const [err] = await this.vaultService.editTransfer({
+          vaultId,
+          transferId,
+          amount: fields.amount,
+          date: fields.date ? new Date(fields.date) : undefined,
+          fromBoxId: fields.fromEstratoId,
+          toBoxId: fields.toEstratoId,
+        });
+        if (err !== null) return error(err);
+        return this.transferResult(vaultId, transferId);
+      },
+    );
+
+    server.registerTool(
+      'deleteTransfer',
+      {
+        title: 'Remover transferência',
+        description:
+          'Remove uma transferência entre estratos (os dois lados) pelo transferId.',
+        inputSchema: {
+          transferId: z.string().describe('ID da transferência'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ transferId }) => {
+        const [err] = await this.vaultService.deleteTransfer({
+          vaultId,
+          transferId,
+        });
+        if (err !== null) return error(err);
+        return json({ deleted: transferId });
+      },
+    );
+  }
+
+  private async transferResult(
+    vaultId: string,
+    transferId: string,
+  ): Promise<CallToolResult> {
+    const [err, vault] = await this.vaultService.getVault({ vaultId });
+    if (err !== null) return error(err);
+    const transfer = describeTransfer(vault, transferId);
+    if (!transfer) return error('Transferência não encontrada');
+    return json(transfer);
   }
 }
