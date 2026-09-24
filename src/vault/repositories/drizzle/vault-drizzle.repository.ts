@@ -14,6 +14,7 @@ import {
   budget,
   vaultCategory,
   box,
+  cardInvoice,
 } from '@/shared/persistence/drizzle/schema';
 import * as schema from '@/shared/persistence/drizzle/schema';
 import { Box, BoxType } from '../../domain/box';
@@ -21,6 +22,7 @@ import {
   BudgetStartDayOverride,
   BudgetStartDaySchedule,
 } from '../../domain/budget-period';
+import { CardInvoice } from '../../domain/card-invoice';
 import { Category } from '../../domain/category';
 import { Transaction } from '../../domain/transaction';
 import { Vault } from '../../domain/vault';
@@ -63,6 +65,24 @@ export class VaultDrizzleRepository extends VaultRepository {
       );
     }
 
+    const invoiceChanges = vaultEntity.invoicesTracker.getChanges();
+
+    // Faturas novas antes das transações: o não discriminado e as compras
+    // ligadas apontam para elas.
+    for (const i of invoiceChanges.new) {
+      queries.push(
+        this.db.insert(cardInvoice).values({
+          id: i.id,
+          vaultId: i.vaultId,
+          boxId: i.boxId,
+          amount: i.amount,
+          paymentDate: i.paymentDate,
+          cardLabel: i.cardLabel,
+          createdAt: i.createdAt,
+        }),
+      );
+    }
+
     const transactionsChanges = vaultEntity.transactionsTracker.getChanges();
 
     // Insert new transactions
@@ -83,6 +103,8 @@ export class VaultDrizzleRepository extends VaultRepository {
           transferId: t.transferId ?? null,
           allocationId: t.allocationId ?? null,
           withdrawalType: t.withdrawalType ?? null,
+          invoiceId: t.invoiceId,
+          purchaseDate: t.purchaseDate,
         }),
       );
     }
@@ -114,8 +136,29 @@ export class VaultDrizzleRepository extends VaultRepository {
             transferId: t.transferId ?? null,
             allocationId: t.allocationId ?? null,
             withdrawalType: t.withdrawalType ?? null,
+            invoiceId: t.invoiceId,
+            purchaseDate: t.purchaseDate,
           })
           .where(eq(transaction.id, t.id)),
+      );
+    }
+
+    for (const i of invoiceChanges.dirty) {
+      queries.push(
+        this.db
+          .update(cardInvoice)
+          .set({ cardLabel: i.cardLabel })
+          .where(eq(cardInvoice.id, i.id)),
+      );
+    }
+
+    // Depois das transações, que deixam de apontar para a fatura removida.
+    const deletedInvoiceIds = invoiceChanges.deleted.map((i) => i.id);
+    if (deletedInvoiceIds.length > 0) {
+      queries.push(
+        this.db
+          .delete(cardInvoice)
+          .where(inArray(cardInvoice.id, deletedInvoiceIds)),
       );
     }
 
@@ -272,6 +315,28 @@ export class VaultDrizzleRepository extends VaultRepository {
             | 'withdrawal'
             | 'realization'
             | null,
+          invoiceId: t.invoiceId ?? null,
+          purchaseDate: t.purchaseDate ?? null,
+        }),
+      );
+    }
+
+    const invoiceRows = await this.db
+      .select()
+      .from(cardInvoice)
+      .where(eq(cardInvoice.vaultId, row.id));
+    const invoices = new Map<string, CardInvoice>();
+    for (const i of invoiceRows) {
+      invoices.set(
+        i.id,
+        CardInvoice.restore({
+          id: i.id,
+          vaultId: i.vaultId,
+          boxId: i.boxId ?? '',
+          amount: i.amount,
+          paymentDate: i.paymentDate,
+          cardLabel: i.cardLabel,
+          createdAt: i.createdAt,
         }),
       );
     }
@@ -343,6 +408,7 @@ export class VaultDrizzleRepository extends VaultRepository {
       boxes,
       row.customPrompt ?? '',
       schedule,
+      invoices,
     );
     vaultEntity.transactionsTracker.clearChanges();
     vaultEntity.budgetsTracker.clearChanges();

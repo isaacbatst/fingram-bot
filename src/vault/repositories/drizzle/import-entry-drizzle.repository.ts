@@ -169,6 +169,15 @@ export class ImportEntryDrizzleRepository extends ImportEntryRepository {
     return rows.map((row) => this.toDomain(row));
   }
 
+  async findAllByBatchId(batchId: string): Promise<ImportEntry[]> {
+    const rows = await this.db
+      .select()
+      .from(importEntry)
+      .where(eq(importEntry.batchId, batchId))
+      .orderBy(asc(importEntry.date));
+    return rows.map((row) => this.toDomain(row));
+  }
+
   async countByStatus(batchId: string): Promise<ImportEntryStatusCounts> {
     const rows = await this.db
       .select({ status: importEntry.status, value: count() })

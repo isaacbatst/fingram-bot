@@ -18,4 +18,10 @@ export interface TransactionDTO {
     description?: string;
   } | null;
   allocationId?: string | null;
+  /** Fatura de cartão a que a transação pertence. */
+  invoiceId?: string | null;
+  /** `remainder`: o não discriminado da fatura. `purchase`: compra ligada a ela. */
+  invoiceRole?: 'remainder' | 'purchase' | null;
+  /** Data da compra, quando ela conta na data de pagamento da fatura. */
+  purchaseDate?: Date | null;
 }

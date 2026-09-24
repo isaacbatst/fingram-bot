@@ -13,6 +13,7 @@ import {
 import { VaultAccessTokenGuard } from './vault-access-token.guard';
 import { VaultSession } from './vault-session.decorator';
 import { ImportService } from './import.service';
+import { CardInvoiceService } from './card-invoice.service';
 import { ImportBatch } from './domain/import-batch';
 import { ImportEntry, ImportEntryStatus } from './domain/import-entry';
 
@@ -23,7 +24,10 @@ const STATUSES: ImportEntryStatus[] = ['pending', 'confirmed', 'dismissed'];
 export class ImportController {
   private readonly logger = new Logger(ImportController.name);
 
-  constructor(private readonly importService: ImportService) {}
+  constructor(
+    private readonly importService: ImportService,
+    private readonly cardInvoiceService: CardInvoiceService,
+  ) {}
 
   /**
    * The file arrives base64-encoded rather than as multipart on purpose: the OFX
@@ -300,6 +304,47 @@ export class ImportController {
     return result;
   }
 
+  /**
+   * Registra a fatura de cartão a partir do débito de pagamento na conta
+   * corrente. Confirma na hora: a fatura passa a contar como gasto, e o que o
+   * extrato do cartão ainda não detalhou aparece como "não discriminado".
+   */
+  @Post('confirm-invoice')
+  async confirmInvoice(
+    @VaultSession() vaultId: string,
+    @Body() data: { entryIds?: string[] },
+  ) {
+    if (!data.entryIds?.length) {
+      throw new BadRequestException('Nenhum lançamento informado');
+    }
+
+    const [error, result] = await this.importService.confirmAsInvoice({
+      vaultId,
+      entryIds: data.entryIds,
+    });
+    if (error !== null) throw new BadRequestException(error);
+
+    return result;
+  }
+
+  /** Liga um extrato de cartão a uma fatura, ou desliga com `invoiceId: null`. */
+  @Post('batch/invoice')
+  async setBatchInvoice(
+    @VaultSession() vaultId: string,
+    @Body() data: { batchId?: string; invoiceId?: string | null },
+  ) {
+    if (!data.batchId) throw new BadRequestException('batchId é obrigatório');
+
+    const [error, batch] = await this.cardInvoiceService.setBatchInvoice({
+      vaultId,
+      batchId: data.batchId,
+      invoiceId: data.invoiceId ?? null,
+    });
+    if (error !== null) throw new BadRequestException(error);
+
+    return this.batchToDTO(batch);
+  }
+
   @Post('batch/confirm')
   async confirmBatch(
     @VaultSession() vaultId: string,
@@ -365,6 +410,7 @@ export class ImportController {
       duplicateCount: batch.duplicateCount,
       fromDate: batch.fromDate,
       outOfRangeCount: batch.outOfRangeCount,
+      invoiceId: batch.invoiceId,
       createdAt: batch.createdAt,
     };
   }

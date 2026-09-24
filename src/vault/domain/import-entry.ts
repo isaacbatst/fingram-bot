@@ -214,7 +214,11 @@ export class ImportEntry {
     return right(true);
   }
 
-  confirm(transactionId: string): Either<string, boolean> {
+  /**
+   * `transactionId` is null only when the confirmation produced no transaction of
+   * its own — an invoice payment whose card purchases already cover all of it.
+   */
+  confirm(transactionId: string | null): Either<string, boolean> {
     if (this.status !== 'pending') {
       return left(`Lançamento já ${this.statusLabel()}`);
     }

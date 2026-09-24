@@ -37,6 +37,7 @@ export class ImportBatchDrizzleRepository extends ImportBatchRepository {
       duplicateCount: row.duplicateCount,
       fromDate: row.fromDate,
       outOfRangeCount: row.outOfRangeCount,
+      invoiceId: row.invoiceId,
       createdAt: row.createdAt,
     });
   }
@@ -58,6 +59,7 @@ export class ImportBatchDrizzleRepository extends ImportBatchRepository {
       duplicateCount: batch.duplicateCount,
       fromDate: batch.fromDate,
       outOfRangeCount: batch.outOfRangeCount,
+      invoiceId: batch.invoiceId,
       createdAt: batch.createdAt,
     };
   }

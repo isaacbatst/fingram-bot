@@ -81,6 +81,13 @@ export const transaction = pgTable('transaction', {
     onDelete: 'set null',
   }),
   withdrawalType: text('withdrawal_type'),
+  // Fatura de cartão a que a transação pertence: o resto não discriminado dela,
+  // ou uma compra do extrato do cartão ligada a ela. A compra passa a contar na
+  // data de pagamento da fatura (`date`) e guarda a data em que foi feita.
+  invoiceId: text('invoice_id').references(() => cardInvoice.id, {
+    onDelete: 'set null',
+  }),
+  purchaseDate: timestamp('purchase_date'),
 });
 
 export const budget = pgTable('budget', {
@@ -168,6 +175,27 @@ export const importBatch = pgTable('import_batch', {
   // Lines dropped for falling before `fromDate`. Unlike duplicates, these leave no
   // entry behind, so re-importing without a cutoff brings them back.
   outOfRangeCount: integer('out_of_range_count').notNull().default(0),
+  // Fatura que este extrato de cartão detalha. Só para `kind = 'creditcard'`.
+  invoiceId: text('invoice_id').references(() => cardInvoice.id, {
+    onDelete: 'set null',
+  }),
+  createdAt: timestamp('created_at').notNull(),
+});
+
+// Uma fatura de cartão paga, registrada a partir do débito na conta corrente.
+// Conta como gasto desde o registro: o que o extrato do cartão ainda não
+// detalhou vira uma transação "não discriminado" que encolhe conforme as
+// compras são ligadas. Ver `docs/product/spec-operational.md` §9.
+export const cardInvoice = pgTable('card_invoice', {
+  id: text('id').primaryKey(),
+  vaultId: text('vault_id')
+    .notNull()
+    .references(() => vault.id),
+  // Estrato que pagou (o da conta corrente do débito).
+  boxId: text('box_id').references(() => box.id),
+  amount: doublePrecision('amount').notNull(),
+  paymentDate: timestamp('payment_date').notNull(),
+  cardLabel: text('card_label'),
   createdAt: timestamp('created_at').notNull(),
 });
 
@@ -248,7 +276,9 @@ export const oauthAuthorizationCode = pgTable('oauth_authorization_code', {
     .references(() => vault.id, { onDelete: 'cascade' }),
   codeChallenge: text('code_challenge').notNull(),
   redirectUri: text('redirect_uri').notNull(),
-  scopes: jsonb('scopes').notNull().default(sql`'[]'::jsonb`),
+  scopes: jsonb('scopes')
+    .notNull()
+    .default(sql`'[]'::jsonb`),
   resource: text('resource'),
   expiresAt: timestamp('expires_at').notNull(),
   usedAt: timestamp('used_at'),
@@ -267,7 +297,9 @@ export const oauthToken = pgTable('oauth_token', {
     .references(() => vault.id, { onDelete: 'cascade' }),
   accessTokenHash: text('access_token_hash').notNull().unique(),
   refreshTokenHash: text('refresh_token_hash').notNull().unique(),
-  scopes: jsonb('scopes').notNull().default(sql`'[]'::jsonb`),
+  scopes: jsonb('scopes')
+    .notNull()
+    .default(sql`'[]'::jsonb`),
   resource: text('resource'),
   accessExpiresAt: timestamp('access_expires_at').notNull(),
   refreshExpiresAt: timestamp('refresh_expires_at').notNull(),

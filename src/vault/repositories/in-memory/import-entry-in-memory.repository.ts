@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/require-await */
 import { Injectable } from '@nestjs/common';
 import {
   ImportEntryRepository,
@@ -64,6 +65,12 @@ export class ImportEntryInMemoryRepository extends ImportEntryRepository {
   async findPendingByBatchId(batchId: string): Promise<ImportEntry[]> {
     return [...this.entries.values()]
       .filter((e) => e.batchId === batchId && e.status === 'pending')
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+  }
+
+  async findAllByBatchId(batchId: string): Promise<ImportEntry[]> {
+    return [...this.entries.values()]
+      .filter((e) => e.batchId === batchId)
       .sort((a, b) => a.date.getTime() - b.date.getTime());
   }
 
