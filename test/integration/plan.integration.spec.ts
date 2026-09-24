@@ -1164,6 +1164,61 @@ describe('Plan API (integration)', () => {
       expect(months[2].costOfLiving).toBe(6000);
     });
 
+    it('does not count the incoming side of a transfer as real income', async () => {
+      const now = new Date();
+      const startDate = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1),
+      );
+      const createRes = await request(app.getHttpServer())
+        .post('/plans')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          name: 'Transfer income',
+          startDate: startDate.toISOString(),
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 10000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+          },
+          allocations: [],
+        })
+        .expect(201);
+      const month0 = new Date(
+        Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), 15),
+      );
+
+      await createTestTransaction(db, {
+        vaultId,
+        amount: 12000,
+        type: 'income',
+        date: month0,
+      });
+      // Money moved between two of the user's own (non-linked) estratos.
+      const transferId = crypto.randomUUID();
+      await createTestTransaction(db, {
+        vaultId,
+        amount: 800,
+        type: 'expense',
+        date: month0,
+        transferId,
+      });
+      await createTestTransaction(db, {
+        vaultId,
+        amount: 800,
+        type: 'income',
+        date: month0,
+        transferId,
+      });
+
+      const projRes = await request(app.getHttpServer())
+        .get(`/plans/${createRes.body.id}/projection?months=3`)
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+
+      expect(projRes.body[0].isReal).toBe(true);
+      expect(projRes.body[0].income).toBe(12000);
+      expect(projRes.body[0].costOfLiving).toBe(0);
+    });
+
     it('projection without transactions should still work with isReal for past months', async () => {
       // Create plan starting 1 month ago with no transactions
       const now = new Date();

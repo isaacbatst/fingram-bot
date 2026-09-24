@@ -120,12 +120,15 @@ export class VaultQueryService {
       const realCostOfLiving =
         totalExpenses - taggedExpenses - transferExpenses;
 
-      // Income = income - income in linked estratos
-      const totalIncome = incomes.reduce((sum, t) => sum + t.amount, 0);
-      const linkedIncome = incomes
-        .filter((t) => t.boxId && linkedEstratoIds.has(t.boxId))
+      // Income = income - income in linked estratos - incoming side of
+      // transfers. A transfer is money moving between the user's own estratos,
+      // not money earned (the same reason its expense side is left out of the
+      // cost of living above).
+      const realIncome = incomes
+        .filter(
+          (t) => !t.transferId && !(t.boxId && linkedEstratoIds.has(t.boxId)),
+        )
         .reduce((sum, t) => sum + t.amount, 0);
-      const realIncome = totalIncome - linkedIncome;
 
       // Allocation payments
       const allocationPayments = allocationContext.map((ctx) => {
