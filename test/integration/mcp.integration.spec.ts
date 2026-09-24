@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-return */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
@@ -13,7 +14,12 @@ import { AddressInfo } from 'node:net';
 import { createHash, randomBytes } from 'node:crypto';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { startTestApp, stopTestApp, truncateAll } from './setup';
+import {
+  createTestTransaction,
+  startTestApp,
+  stopTestApp,
+  truncateAll,
+} from './setup';
 
 const REDIRECT_URI = 'http://localhost:9999/callback';
 
@@ -352,6 +358,8 @@ describe('MCP server + OAuth (integration)', () => {
           'getCategories',
           'getPlan',
           'getProjection',
+          'getSpendingBreakdown',
+          'listEstratos',
           'listPlans',
           'listTransactions',
           'removeAllocation',
@@ -547,6 +555,309 @@ describe('MCP server + OAuth (integration)', () => {
     });
   });
 
+  describe('filters and aggregation', () => {
+    /**
+     * Vault with two estratos over Jan–Feb 2026:
+     *   Jan  Principal: food 100, transport 40, income 5000, planned payment 1200
+     *        transfer 300 Principal → Reserva
+     *   Feb  Principal: food 60   | Reserva: food 25
+     */
+    async function seed() {
+      const vault = await createVault();
+      const cookie = `vault_access_token=${vault.token}`;
+      const food = crypto.randomUUID();
+      const transport = crypto.randomUUID();
+      await db.insert(schema.vaultCategory).values([
+        {
+          id: food,
+          vaultId: vault.id,
+          name: 'Alimentação',
+          code: 'food',
+          transactionType: 'expense',
+        },
+        {
+          id: transport,
+          vaultId: vault.id,
+          name: 'Transporte',
+          code: 'transport',
+          transactionType: 'expense',
+        },
+      ]);
+      const boxes = await http().get('/vault/boxes').set('Cookie', cookie);
+      const main = (boxes.body as { id: string; isDefault: boolean }[]).find(
+        (b) => b.isDefault,
+      )!.id;
+      const reserve = (
+        await http()
+          .post('/vault/create-box')
+          .set('Cookie', cookie)
+          .send({ name: 'Reserva', type: 'saving' })
+          .expect(201)
+      ).body.id as string;
+
+      const add = (body: Record<string, unknown>) =>
+        http()
+          .post('/vault/create-transaction')
+          .set('Cookie', cookie)
+          .send(body)
+          .expect(201);
+      await add({
+        amount: 100,
+        type: 'expense',
+        date: '2026-01-10',
+        categoryId: food,
+        boxId: main,
+        description: 'Mercado',
+      });
+      await add({
+        amount: 40,
+        type: 'expense',
+        date: '2026-01-12',
+        categoryId: transport,
+        boxId: main,
+        description: 'Uber',
+      });
+      await add({
+        amount: 5000,
+        type: 'income',
+        date: '2026-01-05',
+        boxId: main,
+        description: 'Salário',
+      });
+      await add({
+        amount: 60,
+        type: 'expense',
+        date: '2026-02-03',
+        categoryId: food,
+        boxId: main,
+        description: 'Mercado',
+      });
+      await add({
+        amount: 25,
+        type: 'expense',
+        date: '2026-02-20',
+        categoryId: food,
+        boxId: reserve,
+        description: 'Feira',
+      });
+      await http()
+        .post('/vault/create-transfer')
+        .set('Cookie', cookie)
+        .send({
+          fromBoxId: main,
+          toBoxId: reserve,
+          amount: 300,
+          date: '2026-01-15',
+        })
+        .expect(201);
+
+      const plan = await http()
+        .post('/plans')
+        .set('Cookie', cookie)
+        .send({
+          name: 'Plano',
+          startDate: '2026-01-01',
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 5000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 3000 }],
+          },
+          allocations: [
+            {
+              label: 'Financiamento',
+              target: 0,
+              monthlyAmount: [{ month: 0, amount: 1200 }],
+              realizationMode: 'immediate',
+              scheduledMovements: [],
+            },
+          ],
+        })
+        .expect(201);
+      await createTestTransaction(db, {
+        vaultId: vault.id,
+        amount: 1200,
+        type: 'expense',
+        date: new Date('2026-01-20T00:00:00.000Z'),
+        boxId: main,
+        allocationId: plan.body.allocations[0].id,
+        description: 'Parcela',
+      });
+
+      const { access_token } = await connect(vault.token);
+      return { access_token, cookie, food, main, reserve };
+    }
+
+    it('lists estratos with balances', async () => {
+      const { access_token, main, reserve } = await seed();
+      const res = await callTool(access_token, 'listEstratos');
+      const byId = Object.fromEntries(
+        (res.data as { id: string }[]).map((e) => [e.id, e]),
+      );
+      expect(byId[main]).toMatchObject({ kind: 'corrente', isDefault: true });
+      expect(byId[reserve]).toMatchObject({
+        name: 'Reserva',
+        kind: 'reserva',
+        isDefault: false,
+        balance: 275, // 300 transferred in, 25 spent
+      });
+    });
+
+    it('filters transactions by date range, type, estrato and amount', async () => {
+      const { access_token, reserve } = await seed();
+      const list = async (args: Record<string, unknown>) =>
+        (await callTool(access_token, 'listTransactions', args)).data as {
+          total: number;
+          items: { description: string; amount: number }[];
+        };
+
+      // Whole range: 5 plain + transfer (expense side) + planned payment.
+      expect((await list({ from: '2026-01-01', to: '2026-02-28' })).total).toBe(
+        7,
+      );
+      // Inclusive day bounds.
+      expect(
+        (await list({ from: '2026-02-20', to: '2026-02-20' })).items.map(
+          (t) => t.description,
+        ),
+      ).toEqual(['Feira']);
+      // Open-ended range.
+      expect((await list({ from: '2026-02-01' })).total).toBe(2);
+
+      // Type excludes transfers.
+      const expenses = await list({
+        from: '2026-01-01',
+        to: '2026-01-31',
+        type: 'expense',
+      });
+      expect(expenses.items.map((t) => t.amount).sort((a, b) => a - b)).toEqual(
+        [40, 100, 1200],
+      );
+      expect((await list({ allPeriods: true, type: 'income' })).total).toBe(1);
+
+      // Estrato includes transfers into it.
+      const inReserve = await list({ allPeriods: true, estratoId: reserve });
+      expect(
+        inReserve.items.map((t) => t.amount).sort((a, b) => a - b),
+      ).toEqual([25, 300]);
+
+      // Amount range, inclusive.
+      const mid = await list({
+        allPeriods: true,
+        minAmount: 40,
+        maxAmount: 100,
+        type: 'expense',
+      });
+      expect(mid.items.map((t) => t.amount).sort((a, b) => a - b)).toEqual([
+        40, 60, 100,
+      ]);
+    });
+
+    it('rejects conflicting or inverted filters', async () => {
+      const { access_token } = await seed();
+      const cases: Record<string, unknown>[] = [
+        { from: '2026-01-01', month: 1, year: 2026 },
+        { from: '2026-01-01', allPeriods: true },
+        { from: '2026-02-01', to: '2026-01-01' },
+        { minAmount: 100, maxAmount: 10 },
+      ];
+      for (const args of cases) {
+        const res = await callTool(access_token, 'listTransactions', args);
+        expect(res.isError, JSON.stringify(args)).toBe(true);
+      }
+    });
+
+    it('breaks spending down by category like the budget', async () => {
+      const { access_token, food } = await seed();
+      const res = await callTool(access_token, 'getSpendingBreakdown', {
+        from: '2026-01-01',
+        to: '2026-02-28',
+      });
+      expect(res.data.range).toEqual({ from: '2026-01-01', to: '2026-02-28' });
+      // Transfer (300) and income are not spending.
+      expect(res.data.total).toBe(1425);
+      expect(res.data.groups).toEqual([
+        {
+          categoryId: null,
+          categoryName: 'Pagamentos do plano',
+          total: 1200,
+          count: 1,
+        },
+        { categoryId: food, categoryName: 'Alimentação', total: 185, count: 3 },
+        {
+          categoryId: expect.any(String),
+          categoryName: 'Transporte',
+          total: 40,
+          count: 1,
+        },
+      ]);
+    });
+
+    it('breaks down by budget month, by estrato and for income', async () => {
+      const { access_token, reserve } = await seed();
+      const byMonth = await callTool(access_token, 'getSpendingBreakdown', {
+        from: '2026-01-01',
+        to: '2026-02-28',
+        groupBy: 'month',
+      });
+      expect(byMonth.data.groups).toEqual([
+        { period: { month: 1, year: 2026 }, total: 1340, count: 3 },
+        { period: { month: 2, year: 2026 }, total: 85, count: 2 },
+      ]);
+
+      const inReserve = await callTool(access_token, 'getSpendingBreakdown', {
+        from: '2026-01-01',
+        to: '2026-02-28',
+        estratoId: reserve,
+      });
+      expect(inReserve.data.total).toBe(25);
+
+      const february = await callTool(access_token, 'getSpendingBreakdown', {
+        month: 2,
+        year: 2026,
+      });
+      expect(february.data.range).toEqual({
+        from: '2026-02-01',
+        to: '2026-02-28',
+      });
+      expect(february.data.total).toBe(85);
+
+      const income = await callTool(access_token, 'getSpendingBreakdown', {
+        from: '2026-01-01',
+        to: '2026-02-28',
+        type: 'income',
+      });
+      expect(income.data.total).toBe(5000);
+    });
+
+    it('agrees with the budget summary on per-category spending', async () => {
+      const { access_token, cookie, food } = await seed();
+      await http()
+        .post('/vault/set-budgets')
+        .set('Cookie', cookie)
+        .send({ budgets: [{ categoryCode: 'food', amount: 500 }] })
+        .expect(201);
+
+      for (const month of [1, 2]) {
+        const summary = await callTool(access_token, 'getBudgetSummary', {
+          month,
+          year: 2026,
+        });
+        const budgetSpent = (
+          summary.data.budgets as { categoryId: string; spent: number }[]
+        ).find((b) => b.categoryId === food)!.spent;
+
+        const breakdown = await callTool(access_token, 'getSpendingBreakdown', {
+          month,
+          year: 2026,
+        });
+        const breakdownFood = (
+          breakdown.data.groups as { categoryId: string; total: number }[]
+        ).find((g) => g.categoryId === food)!.total;
+
+        expect(breakdownFood, `month ${month}`).toBe(budgetSpent);
+      }
+    });
+  });
+
   describe('real MCP client', () => {
     it('initializes and calls tools through the SDK client over HTTP', async () => {
       const vault = await createVault();
@@ -569,7 +880,7 @@ describe('MCP server + OAuth (integration)', () => {
         expect(client.getInstructions()).toContain('Duna');
 
         const { tools } = await client.listTools();
-        expect(tools.length).toBe(12);
+        expect(tools.length).toBe(14);
 
         const result = await client.callTool({
           name: 'getBudgetSummary',

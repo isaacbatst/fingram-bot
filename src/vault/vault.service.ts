@@ -219,6 +219,11 @@ export class VaultService {
     page?: number;
     pageSize?: number;
     ignorePeriod?: boolean;
+    /** Explicit range; takes precedence over `date` and `ignorePeriod`. */
+    dateRange?: { startDate: Date; endDate: Date };
+    type?: 'income' | 'expense';
+    minAmount?: number;
+    maxAmount?: number;
   }) {
     this.logger.log(
       `Getting transactions for vault: ${input.vaultId} with page size: ${input.pageSize ?? 10}`,
@@ -229,8 +234,8 @@ export class VaultService {
       return left(`Dados não encontrados`);
     }
 
-    let dateRange: { startDate: Date; endDate: Date } | undefined;
-    if (!input.ignorePeriod) {
+    let dateRange = input.dateRange;
+    if (!dateRange && !input.ignorePeriod) {
       const date = input.date ?? vault.getCurrentBudgetPeriod();
       dateRange = vault.getBudgetPeriod(date.month, date.year);
     }
@@ -243,6 +248,9 @@ export class VaultService {
           categoryId: input.categoryId,
           description: input.description,
           boxId: input.boxId,
+          type: input.type,
+          minAmount: input.minAmount,
+          maxAmount: input.maxAmount,
           page: input.page ?? 1,
           pageSize: input.pageSize ?? 10,
         },

@@ -10,12 +10,14 @@ import {
   isNull,
   gte,
   lt,
+  lte,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
   TransactionRepository,
   AggregationTransaction,
   DailyActivity,
+  TransactionListFilter,
 } from '../transaction.repository';
 import {
   DRIZZLE_DATABASE,
@@ -38,14 +40,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
 
   async findTransactionsByVaultId(
     vaultId: string,
-    filter?: {
-      dateRange?: { startDate: Date; endDate: Date };
-      categoryId?: string;
-      description?: string;
-      boxId?: string;
-      page?: number;
-      pageSize?: number;
-    },
+    filter?: TransactionListFilter,
   ): Promise<Paginated<TransactionDTO>> {
     const page = filter?.page ?? 1;
     const pageSize = filter?.pageSize ?? 10;
@@ -69,6 +64,19 @@ export class TransactionDrizzleRepository extends TransactionRepository {
       conditions.push(
         ilike(transaction.description, `%${filter.description}%`),
       );
+    }
+
+    if (filter?.type) {
+      conditions.push(eq(transaction.type, filter.type));
+      conditions.push(isNull(transaction.transferId));
+    }
+
+    if (filter?.minAmount !== undefined) {
+      conditions.push(gte(transaction.amount, filter.minAmount));
+    }
+
+    if (filter?.maxAmount !== undefined) {
+      conditions.push(lte(transaction.amount, filter.maxAmount));
     }
 
     // Exclude income-side of transfers (keep only expense side or non-transfers)

@@ -5,6 +5,7 @@ import {
   TransactionRepository,
   AggregationTransaction,
   DailyActivity,
+  TransactionListFilter,
 } from '../transaction.repository';
 import { Paginated } from '../../domain/paginated';
 import { TransactionDTO } from '../../dto/transaction.dto,';
@@ -17,14 +18,7 @@ export class TransactionInMemoryRepository extends TransactionRepository {
 
   async findTransactionsByVaultId(
     vaultId: string,
-    filter?: {
-      dateRange?: { startDate: Date; endDate: Date };
-      categoryId?: string;
-      description?: string;
-      boxId?: string;
-      page?: number;
-      pageSize?: number;
-    },
+    filter?: TransactionListFilter,
   ): Promise<Paginated<TransactionDTO>> {
     const vault = this.store.vaults.get(vaultId);
     if (!vault) {
@@ -59,6 +53,20 @@ export class TransactionInMemoryRepository extends TransactionRepository {
           ?.toLowerCase()
           .includes(filter.description!.toLowerCase()),
       );
+    }
+
+    if (filter?.type) {
+      transactions = transactions.filter(
+        (t) => t.type === filter.type && !t.transferId,
+      );
+    }
+
+    if (filter?.minAmount !== undefined) {
+      transactions = transactions.filter((t) => t.amount >= filter.minAmount!);
+    }
+
+    if (filter?.maxAmount !== undefined) {
+      transactions = transactions.filter((t) => t.amount <= filter.maxAmount!);
     }
 
     // All transactions (before exclusion) for looking up income pairs

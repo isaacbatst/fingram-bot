@@ -10,20 +10,27 @@ export interface AggregationTransaction {
   withdrawalType: 'withdrawal' | 'realization' | null;
 }
 
+export interface TransactionListFilter {
+  dateRange?: {
+    startDate: Date;
+    endDate: Date;
+  };
+  categoryId?: string;
+  description?: string;
+  boxId?: string;
+  /** Only this type. Transfers are left out: moving money between boxes is neither. */
+  type?: 'income' | 'expense';
+  /** Inclusive bounds on the (positive) amount. */
+  minAmount?: number;
+  maxAmount?: number;
+  page?: number;
+  pageSize?: number;
+}
+
 export abstract class TransactionRepository {
   abstract findTransactionsByVaultId(
     vaultId: string,
-    filter?: {
-      dateRange?: {
-        startDate: Date;
-        endDate: Date;
-      };
-      categoryId?: string;
-      description?: string;
-      boxId?: string;
-      page?: number;
-      pageSize?: number;
-    },
+    filter?: TransactionListFilter,
   ): Promise<Paginated<TransactionDTO>>;
 
   abstract findCommittedByPeriod(

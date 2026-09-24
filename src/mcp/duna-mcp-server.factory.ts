@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { PlanService } from '@/plan/plan.service';
 import { VaultService } from '@/vault/vault.service';
 import { VaultWebService } from '@/vault/vault-web.service';
+import { computeSpendingBreakdown } from './spending-breakdown';
 
 const changePoints = z
   .array(
@@ -35,6 +36,37 @@ const period = {
     .optional()
     .describe('Ano do período de orçamento. Omita para o período atual'),
 };
+
+const dateRange = {
+  from: z
+    .string()
+    .date()
+    .optional()
+    .describe('Início do intervalo (AAAA-MM-DD, inclusivo)'),
+  to: z
+    .string()
+    .date()
+    .optional()
+    .describe('Fim do intervalo (AAAA-MM-DD, inclusivo)'),
+};
+
+/**
+ * from/to as whole UTC days (dates are stored as UTC midnight). Either bound
+ * may be omitted for an open-ended range.
+ */
+function parseDateRange(input: {
+  from?: string;
+  to?: string;
+}): { startDate: Date; endDate: Date } | undefined | string {
+  if (input.from === undefined && input.to === undefined) return undefined;
+  const startDate = new Date(`${input.from ?? '1970-01-01'}T00:00:00.000Z`);
+  const endDate = new Date(`${input.to ?? '9999-12-31'}T23:59:59.999Z`);
+  if (startDate > endDate) return '"from" deve ser anterior ou igual a "to"';
+  return { startDate, endDate };
+}
+
+const EXCLUSIVE_PERIOD_ERROR =
+  'Use from/to ou month/year (ou allPeriods), não os dois';
 
 function json(data: unknown): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(data) }] };
@@ -83,6 +115,7 @@ export class DunaMcpServerFactory {
           'Valores monetários estão em reais (BRL). Ao responder, formate como R$ 1.234,56 e datas como "10 de novembro de 2025".',
           'Para registrar uma transação, busque as categorias com getCategories e use a mais provável; o usuário pode corrigir depois.',
           'O orçamento é mensal, mas o período pode não começar no dia 1: use getBudgetSummary para saber as datas do período.',
+          'Para totais e comparações (por categoria, por mês, por estrato), use getSpendingBreakdown em vez de somar listTransactions.',
         ].join('\n'),
       },
     );
@@ -119,18 +152,39 @@ export class DunaMcpServerFactory {
       {
         title: 'Listar transações',
         description:
-          'Lista transações de um período de orçamento, da mais recente para a mais antiga, com filtros opcionais por categoria e descrição. Paginado.',
+          'Lista transações, da mais recente para a mais antiga. Período: um mês de orçamento (month/year, padrão o atual), um intervalo de datas (from/to) ou todos (allPeriods). Filtros opcionais por categoria, estrato, tipo, faixa de valor e descrição. Paginado. Para totais, prefira getSpendingBreakdown.',
         inputSchema: {
           ...period,
+          ...dateRange,
+          allPeriods: z
+            .boolean()
+            .optional()
+            .describe('Busca em todos os períodos'),
           categoryId: z.string().optional().describe('Filtra por categoria'),
+          estratoId: z
+            .string()
+            .optional()
+            .describe(
+              'Filtra por estrato (conta/reserva, ver listEstratos). Inclui transferências que entram nele',
+            ),
+          type: z
+            .enum(['income', 'expense'])
+            .optional()
+            .describe('Só receitas ou só despesas. Exclui transferências'),
+          minAmount: z
+            .number()
+            .min(0)
+            .optional()
+            .describe('Valor mínimo em R$ (inclusivo)'),
+          maxAmount: z
+            .number()
+            .min(0)
+            .optional()
+            .describe('Valor máximo em R$ (inclusivo)'),
           description: z
             .string()
             .optional()
             .describe('Filtra por trecho da descrição'),
-          allPeriods: z
-            .boolean()
-            .optional()
-            .describe('Busca em todos os períodos, ignorando mês e ano'),
           page: z
             .number()
             .int()
@@ -150,12 +204,29 @@ export class DunaMcpServerFactory {
       async (input) => {
         const date = resolvePeriod(input);
         if (typeof date === 'string') return error(date);
+        const range = parseDateRange(input);
+        if (typeof range === 'string') return error(range);
+        if (range && (date || input.allPeriods)) {
+          return error(EXCLUSIVE_PERIOD_ERROR);
+        }
+        if (
+          input.minAmount !== undefined &&
+          input.maxAmount !== undefined &&
+          input.minAmount > input.maxAmount
+        ) {
+          return error('minAmount deve ser menor ou igual a maxAmount');
+        }
         const [err, result] = await this.vaultService.getTransactions({
           vaultId,
           date,
-          categoryId: input.categoryId,
-          description: input.description,
+          dateRange: range,
           ignorePeriod: input.allPeriods,
+          categoryId: input.categoryId,
+          boxId: input.estratoId,
+          type: input.type,
+          minAmount: input.minAmount,
+          maxAmount: input.maxAmount,
+          description: input.description,
           page: input.page ?? 1,
           pageSize: input.pageSize ?? 50,
         });
@@ -175,9 +246,99 @@ export class DunaMcpServerFactory {
               ? { id: t.category.id, name: t.category.name }
               : null,
             committed: t.isCommitted,
+            estratoId: t.boxId || null,
             isTransfer: t.transferId !== null,
+            transferToEstratoId: t.transferToBoxId,
             allocationId: t.allocationId ?? null,
           })),
+        });
+      },
+    );
+
+    server.registerTool(
+      'listEstratos',
+      {
+        title: 'Listar estratos',
+        description:
+          'Lista os estratos do usuário (contas correntes e reservas) com saldo atual e meta. Use o id para filtrar transações e gastos por estrato.',
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async () => {
+        const [err, boxes] = await this.vaultService.getBoxes(vaultId);
+        if (err !== null) return error(err);
+        return json(
+          boxes.map((b) => ({
+            id: b.id,
+            name: b.name,
+            kind: b.type === 'saving' ? 'reserva' : 'corrente',
+            isDefault: b.isDefault,
+            balance: round(b.balance),
+            goalAmount: b.goalAmount ?? null,
+            goalProgressPercent:
+              b.goalProgress === null ? null : round(b.goalProgress),
+          })),
+        );
+      },
+    );
+
+    server.registerTool(
+      'getSpendingBreakdown',
+      {
+        title: 'Totais por categoria e/ou mês',
+        description:
+          'Soma despesas (ou receitas) de um período, agrupadas por categoria, por mês de orçamento ou pelos dois. Calculado no servidor: use em vez de somar listTransactions. Transferências entre estratos não contam; pagamentos do plano aparecem num grupo próprio ("Pagamentos do plano"), como no orçamento do app.',
+        inputSchema: {
+          ...period,
+          ...dateRange,
+          groupBy: z
+            .enum(['category', 'month', 'categoryAndMonth'])
+            .optional()
+            .describe('Agrupamento (padrão category)'),
+          type: z
+            .enum(['income', 'expense'])
+            .optional()
+            .describe('Despesas (padrão) ou receitas'),
+          estratoId: z
+            .string()
+            .optional()
+            .describe('Só transações deste estrato (ver listEstratos)'),
+        },
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async (input) => {
+        const requested = resolvePeriod(input);
+        if (typeof requested === 'string') return error(requested);
+        const explicitRange = parseDateRange(input);
+        if (typeof explicitRange === 'string') return error(explicitRange);
+        if (explicitRange && requested) return error(EXCLUSIVE_PERIOD_ERROR);
+
+        const [err, vault] = await this.vaultService.getVault({ vaultId });
+        if (err !== null) return error(err);
+        const range =
+          explicitRange ??
+          (() => {
+            const p = requested ?? vault.getCurrentBudgetPeriod();
+            return vault.getBudgetPeriod(p.month, p.year);
+          })();
+        const categories = await this.vaultService.getCategories(vaultId);
+
+        const result = computeSpendingBreakdown({
+          transactions: vault.transactions.values(),
+          range,
+          type: input.type ?? 'expense',
+          groupBy: input.groupBy ?? 'category',
+          boxId: input.estratoId,
+          categoryNames: new Map(categories.map((c) => [c.id, c.name])),
+          periodOf: (date) => vault.getCurrentBudgetPeriod(date),
+        });
+
+        return json({
+          range: {
+            from: range.startDate.toISOString().slice(0, 10),
+            to: range.endDate.toISOString().slice(0, 10),
+          },
+          type: input.type ?? 'expense',
+          ...result,
         });
       },
     );

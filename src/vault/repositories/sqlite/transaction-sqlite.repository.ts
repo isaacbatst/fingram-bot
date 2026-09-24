@@ -4,6 +4,7 @@ import {
   TransactionRepository,
   AggregationTransaction,
   DailyActivity,
+  TransactionListFilter,
 } from '../transaction.repository';
 import { SQLITE_DATABASE } from '@/shared/persistence/sqlite/sqlite.module';
 import { Database } from 'better-sqlite3';
@@ -38,15 +39,9 @@ export class TransactionSqliteRepository extends TransactionRepository {
 
   async findTransactionsByVaultId(
     vaultId: string,
-    filter?: {
-      dateRange?: { startDate: Date; endDate: Date };
-      categoryId?: string;
-      description?: string;
-      boxId?: string;
-      page?: number;
-      pageSize?: number;
-    },
+    filter?: TransactionListFilter,
   ): Promise<Paginated<TransactionDTO>> {
+    const extra = this.typeAndAmountConditions(filter);
     const page = filter?.page ?? 1;
     const pageSize = filter?.pageSize ?? 10;
     const offset = (page - 1) * pageSize;
@@ -74,6 +69,8 @@ export class TransactionSqliteRepository extends TransactionRepository {
       query += ' AND (t.box_id = ? OR it.box_id = ?)';
       params.push(filter.boxId, filter.boxId);
     }
+    query += extra.sql;
+    params.push(...extra.params);
     query += ' ORDER BY t.date DESC, t.created_at DESC LIMIT ? OFFSET ?';
     params.push(pageSize, offset);
     const rows = this.db
@@ -124,11 +121,34 @@ export class TransactionSqliteRepository extends TransactionRepository {
       countQuery += ' AND (t.box_id = ? OR it.box_id = ?)';
       countParams.push(filter.boxId, filter.boxId);
     }
+    countQuery += extra.sql;
+    countParams.push(...extra.params);
     const total = (
       this.db.prepare(countQuery).get(...countParams) as { count: number }
     ).count;
     const totalPages = Math.ceil(total / pageSize);
     return { items, total, page, pageSize, totalPages };
+  }
+
+  private typeAndAmountConditions(filter?: TransactionListFilter): {
+    sql: string;
+    params: unknown[];
+  } {
+    let sql = '';
+    const params: unknown[] = [];
+    if (filter?.type) {
+      sql += ' AND t.type = ? AND t.transfer_id IS NULL';
+      params.push(filter.type);
+    }
+    if (filter?.minAmount !== undefined) {
+      sql += ' AND t.amount >= ?';
+      params.push(filter.minAmount);
+    }
+    if (filter?.maxAmount !== undefined) {
+      sql += ' AND t.amount <= ?';
+      params.push(filter.maxAmount);
+    }
+    return { sql, params };
   }
 
   async findCommittedByPeriod(
