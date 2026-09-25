@@ -12,7 +12,13 @@ import { BoxRepository } from '@/vault/repositories/box.repository';
 import { Injectable, Logger } from '@nestjs/common';
 import { ReadableStream } from 'node:stream/web';
 import { Box } from './domain/box';
-import { Category } from './domain/category';
+import {
+  Category,
+  CategoryTransactionType,
+  nextCategoryCode,
+  validateCategoryName,
+} from './domain/category';
+import * as crypto from 'crypto';
 import { Vault } from './domain/vault';
 import { TransactionDTO } from './dto/transaction.dto,';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -491,6 +497,69 @@ export class VaultService {
     const categories = await this.categoryRepository.findAllByVaultId(vaultId);
     this.logger.log(`Found ${categories.length} categories`);
     return categories;
+  }
+
+  /**
+   * Creates a category that only exists in this vault. Reads the vault's
+   * categories first so the base ones are seeded before: seeding is skipped
+   * once the vault has any category.
+   */
+  async createCategory(input: {
+    vaultId: string;
+    name: string;
+    description?: string;
+    transactionType: CategoryTransactionType;
+  }): Promise<Either<string, Category>> {
+    const categories = await this.categoryRepository.findAllByVaultId(
+      input.vaultId,
+    );
+    const name = input.name.trim();
+    const nameErr = validateCategoryName(name, categories);
+    if (nameErr) return left(nameErr);
+
+    const category = new Category(
+      crypto.randomUUID(),
+      name,
+      nextCategoryCode(categories),
+      input.description?.trim() ?? '',
+      input.transactionType,
+    );
+    await this.categoryRepository.create(input.vaultId, category);
+    return right(category);
+  }
+
+  /** Changes only the fields sent. */
+  async updateCategory(input: {
+    vaultId: string;
+    categoryId: string;
+    name?: string;
+    description?: string;
+    transactionType?: CategoryTransactionType;
+  }): Promise<Either<string, Category>> {
+    const categories = await this.categoryRepository.findAllByVaultId(
+      input.vaultId,
+    );
+    const current = categories.find((c) => c.id === input.categoryId);
+    if (!current) return left('Categoria não encontrada');
+
+    const name = input.name?.trim() ?? current.name;
+    if (input.name !== undefined) {
+      const nameErr = validateCategoryName(
+        name,
+        categories.filter((c) => c.id !== current.id),
+      );
+      if (nameErr) return left(nameErr);
+    }
+
+    const updated = new Category(
+      current.id,
+      name,
+      current.code,
+      input.description?.trim() ?? current.description,
+      input.transactionType ?? current.transactionType,
+    );
+    await this.categoryRepository.update(input.vaultId, updated);
+    return right(updated);
   }
 
   async setBudgets(input: {

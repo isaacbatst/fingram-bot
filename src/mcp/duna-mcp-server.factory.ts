@@ -7,6 +7,7 @@ import { VaultService } from '@/vault/vault.service';
 import { VaultWebService } from '@/vault/vault-web.service';
 import { CardInvoiceService, InvoiceView } from '@/vault/card-invoice.service';
 import { Vault } from '@/vault/domain/vault';
+import { Category, CATEGORY_NAME_MAX_LENGTH } from '@/vault/domain/category';
 import { TransactionDTO } from '@/vault/dto/transaction.dto,';
 import { computeSpendingBreakdown } from './spending-breakdown';
 
@@ -167,6 +168,7 @@ export class DunaMcpServerFactory {
           `Data de hoje: ${new Date().toISOString().slice(0, 10)}.`,
           'Valores monetários estão em reais (BRL). Ao responder, formate como R$ 1.234,56 e datas como "10 de novembro de 2025".',
           'Para registrar uma transação, busque as categorias com getCategories e use a mais provável; o usuário pode corrigir depois.',
+          'Categorias são do usuário: prefira uma existente. Crie com createCategory só quando o usuário pedir ou nenhuma servir, e confirme o nome com ele antes. Para renomear ou ajustar a descrição, updateCategory.',
           'O orçamento é mensal, mas o período pode não começar no dia 1: use getBudgetSummary para saber as datas do período.',
           'Para totais e comparações (por categoria, por mês, por estrato), use getSpendingBreakdown em vez de somar listTransactions.',
           'Fatura de cartão: o pagamento da fatura vira uma fatura (importado do extrato da conta, ou com createInvoice quando o usuário conta que pagou) com uma parte "não discriminada" que conta no mês do pagamento. As compras do extrato do cartão ligadas a ela contam na data do pagamento (a data da compra fica em purchaseDate) e abatem o não discriminado. Use listInvoices para saber o que falta detalhar.',
@@ -179,7 +181,93 @@ export class DunaMcpServerFactory {
     this.registerReadTools(server, vaultId);
     this.registerWriteTools(server, vaultId);
     this.registerInvoiceTools(server, vaultId);
+    this.registerCategoryTools(server, vaultId);
     return server;
+  }
+
+  private registerCategoryTools(server: McpServer, vaultId: string) {
+    const toItem = (c: Category) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      transactionType: c.transactionType,
+    });
+    const transactionType = z
+      .enum(['income', 'expense', 'both'])
+      .describe('Se a categoria vale para receita, despesa ou ambos');
+    const description = z
+      .string()
+      .max(500)
+      .describe(
+        'Palavras-chave do que entra nela (ex.: "ração, veterinário, pet shop"). A sugestão automática de categoria usa esse texto',
+      );
+
+    server.registerTool(
+      'createCategory',
+      {
+        title: 'Criar categoria',
+        description:
+          'Cria uma categoria nova, só deste usuário. Recusa um nome igual ao de uma categoria existente (sem diferenciar maiúsculas, acentos e emoji). Retorna a categoria com o id, para usar em addTransaction, editTransaction e categorizeTransactions.',
+        inputSchema: {
+          name: z
+            .string()
+            .max(CATEGORY_NAME_MAX_LENGTH)
+            .describe('Nome da categoria, ex.: "Pets"'),
+          transactionType,
+          description: description.optional(),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+      },
+      async (input) => {
+        const [err, category] = await this.vaultService.createCategory({
+          vaultId,
+          ...input,
+        });
+        if (err !== null) return error(err);
+        return json(toItem(category));
+      },
+    );
+
+    server.registerTool(
+      'updateCategory',
+      {
+        title: 'Editar categoria',
+        description:
+          'Renomeia uma categoria ou muda sua descrição ou tipo, pelo id (de getCategories). Só os campos enviados mudam; as transações e o orçamento da categoria continuam ligados a ela.',
+        inputSchema: {
+          categoryId: z
+            .string()
+            .describe('ID da categoria (ver getCategories)'),
+          name: z
+            .string()
+            .max(CATEGORY_NAME_MAX_LENGTH)
+            .optional()
+            .describe('Novo nome'),
+          description: description.optional(),
+          transactionType: transactionType.optional(),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ categoryId, ...fields }) => {
+        const [err, category] = await this.vaultService.updateCategory({
+          vaultId,
+          categoryId,
+          ...fields,
+        });
+        if (err !== null) return error(err);
+        return json(toItem(category));
+      },
+    );
   }
 
   private registerInvoiceTools(server: McpServer, vaultId: string) {

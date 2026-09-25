@@ -49,6 +49,20 @@ export class CategoryInMemoryRepository extends CategoryRepository {
     return null;
   }
 
+  async create(vaultId: string, category: Category): Promise<void> {
+    const vaultCategories =
+      this.store.vaultCategories.get(vaultId) ?? new Map<string, Category>();
+    vaultCategories.set(category.id, category);
+    this.store.vaultCategories.set(vaultId, vaultCategories);
+  }
+
+  async update(vaultId: string, category: Category): Promise<void> {
+    const vaultCategories = this.store.vaultCategories.get(vaultId);
+    if (vaultCategories?.has(category.id)) {
+      vaultCategories.set(category.id, category);
+    }
+  }
+
   // Seed vault categories from base categories
   async seedForVault(vaultId: string): Promise<void> {
     // Check if already seeded
