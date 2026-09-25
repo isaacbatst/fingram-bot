@@ -12,6 +12,12 @@ import { Category } from './category';
 import { Either, left, right } from './either';
 import { Transaction } from './transaction';
 import { ChangesTracker } from './changes-tracker';
+import {
+  CardInvoice,
+  computeInvoiceBreakdown,
+  INVOICE_REMAINDER_DESCRIPTION,
+  InvoiceBreakdown,
+} from './card-invoice';
 
 // Interfaces para serialização
 export interface SerializedCategory {
@@ -85,6 +91,7 @@ export class Vault {
     amount: number;
   }>();
   readonly boxesTracker = new ChangesTracker<Box>();
+  readonly invoicesTracker = new ChangesTracker<CardInvoice>();
 
   constructor(
     public readonly id = Vault.generateId(),
@@ -101,6 +108,7 @@ export class Vault {
       defaultDay: 1,
       overrides: [],
     },
+    public readonly invoices: Map<string, CardInvoice> = new Map(),
   ) {}
 
   get schedule(): BudgetStartDaySchedule {
@@ -179,6 +187,11 @@ export class Vault {
   ): Either<string, Transaction> {
     const transaction = this.findTransactionByCode(code);
     if (!transaction) return left(`Transação #${code} não encontrada`);
+    if (transaction.isInvoiceRemainder) {
+      return left(
+        'O valor não discriminado é calculado pela fatura: importe o extrato do cartão para detalhá-lo, ou exclua a fatura',
+      );
+    }
 
     if (options.boxId !== undefined) {
       if (!this.boxes.get(options.boxId)) {
@@ -197,7 +210,11 @@ export class Vault {
       transaction.categoryId = options.categoryId;
     }
     if (options.date !== undefined) {
-      transaction.date = options.date;
+      // Compra ligada a uma fatura conta na data de pagamento dela; a data que
+      // o usuário vê e corrige é a da compra.
+      if (transaction.isInvoicePurchase)
+        transaction.purchaseDate = options.date;
+      else transaction.date = options.date;
     }
 
     if (options.allocationId !== undefined) {
@@ -217,15 +234,183 @@ export class Vault {
     }
 
     this.transactionsTracker.registerDirty(transaction);
+    if (transaction.invoiceId) this.recomputeInvoice(transaction.invoiceId);
     return right(transaction);
   }
 
+  /**
+   * Excluir o não discriminado de uma fatura é excluir a fatura: ele não existe
+   * sem ela. Excluir uma compra ligada faz o não discriminado crescer de volta.
+   */
   deleteTransaction(code: string): Either<string, boolean> {
     const transaction = this.findTransactionByCode(code);
     if (!transaction) return left(`Transação #${code} não encontrada`);
+    if (transaction.isInvoiceRemainder) {
+      return this.deleteInvoice(transaction.invoiceId!);
+    }
     this.transactions.delete(transaction.id);
     this.transactionsTracker.registerDeleted(transaction);
+    if (transaction.invoiceId) this.recomputeInvoice(transaction.invoiceId);
     return right(true);
+  }
+
+  /**
+   * Registra uma fatura paga. Ela conta como gasto desde já: o que nenhuma
+   * compra ligada detalhou vira a transação "não discriminado", no estrato que
+   * pagou e na data do pagamento.
+   */
+  registerInvoice(input: {
+    amount: number;
+    paymentDate: Date;
+    boxId: string;
+    cardLabel?: string | null;
+  }): Either<string, CardInvoice> {
+    if (!(input.amount > 0)) return left('O valor da fatura deve ser positivo');
+    if (!this.boxes.get(input.boxId)) return left('Estrato não encontrado');
+
+    const invoice = CardInvoice.create({
+      vaultId: this.id,
+      boxId: input.boxId,
+      amount: input.amount,
+      paymentDate: input.paymentDate,
+      cardLabel: input.cardLabel ?? null,
+    });
+    this.invoices.set(invoice.id, invoice);
+    this.invoicesTracker.registerNew(invoice);
+    this.recomputeInvoice(invoice.id);
+    return right(invoice);
+  }
+
+  /**
+   * Liga uma compra do cartão a uma fatura. A compra passa a contar na data de
+   * pagamento da fatura, no estrato que pagou, e abate o não discriminado. A
+   * data da compra fica guardada em `purchaseDate`.
+   */
+  linkToInvoice(
+    transactionId: string,
+    invoiceId: string,
+  ): Either<string, true> {
+    const transaction = this.transactions.get(transactionId);
+    if (!transaction) return left('Transação não encontrada');
+    const invoice = this.invoices.get(invoiceId);
+    if (!invoice) return left('Fatura não encontrada');
+    if (transaction.transferId || transaction.isInvoiceRemainder) {
+      return left('Só compras podem ser ligadas a uma fatura');
+    }
+    if (transaction.invoiceId === invoiceId) return right(true);
+
+    if (transaction.invoiceId) this.unlinkFromInvoice(transactionId);
+
+    transaction.purchaseDate = transaction.date;
+    transaction.date = invoice.paymentDate;
+    transaction.boxId = invoice.boxId;
+    transaction.invoiceId = invoiceId;
+    this.transactionsTracker.registerDirty(transaction);
+    this.recomputeInvoice(invoiceId);
+    return right(true);
+  }
+
+  /** Desfaz o vínculo: a compra volta a contar na data em que foi feita. */
+  unlinkFromInvoice(transactionId: string): Either<string, true> {
+    const transaction = this.transactions.get(transactionId);
+    if (!transaction?.isInvoicePurchase) {
+      return left('A transação não está ligada a uma fatura');
+    }
+    const invoiceId = transaction.invoiceId!;
+    transaction.date = transaction.purchaseDate!;
+    transaction.purchaseDate = null;
+    transaction.invoiceId = null;
+    this.transactionsTracker.registerDirty(transaction);
+    this.recomputeInvoice(invoiceId);
+    return right(true);
+  }
+
+  /**
+   * Remove a fatura e o não discriminado dela. As compras ligadas continuam
+   * existindo e voltam a contar na data da compra.
+   */
+  deleteInvoice(invoiceId: string): Either<string, boolean> {
+    const invoice = this.invoices.get(invoiceId);
+    if (!invoice) return left('Fatura não encontrada');
+
+    for (const tx of [...this.transactions.values()]) {
+      if (tx.invoiceId !== invoiceId) continue;
+      if (tx.isInvoiceRemainder) {
+        this.transactions.delete(tx.id);
+        this.transactionsTracker.registerDeleted(tx);
+      } else {
+        tx.date = tx.purchaseDate!;
+        tx.purchaseDate = null;
+        tx.invoiceId = null;
+        this.transactionsTracker.registerDirty(tx);
+      }
+    }
+    this.invoices.delete(invoiceId);
+    this.invoicesTracker.registerDeleted(invoice);
+    return right(true);
+  }
+
+  getInvoiceBreakdown(invoiceId: string): InvoiceBreakdown | null {
+    const invoice = this.invoices.get(invoiceId);
+    if (!invoice) return null;
+    return computeInvoiceBreakdown(
+      invoice.amount,
+      this.invoicePurchases(invoiceId),
+    );
+  }
+
+  private invoicePurchases(invoiceId: string): Transaction[] {
+    return [...this.transactions.values()].filter(
+      (tx) => tx.invoiceId === invoiceId && tx.isInvoicePurchase,
+    );
+  }
+
+  /**
+   * Mantém o não discriminado igual a `valor pago − compras ligadas`. Quando
+   * chega a zero a transação é removida — uma despesa de R$ 0 só poluiria as
+   * listas — e volta a existir se o valor crescer de novo (uma compra excluída
+   * ou desligada). Compras além do valor pago não geram valor negativo: o
+   * excesso aparece em `getInvoiceBreakdown`.
+   */
+  private recomputeInvoice(invoiceId: string): void {
+    const invoice = this.invoices.get(invoiceId);
+    if (!invoice) return;
+    const { remainder } = computeInvoiceBreakdown(
+      invoice.amount,
+      this.invoicePurchases(invoiceId),
+    );
+    const current = [...this.transactions.values()].find(
+      (tx) => tx.invoiceId === invoiceId && tx.isInvoiceRemainder,
+    );
+
+    if (remainder === 0) {
+      if (current) {
+        this.transactions.delete(current.id);
+        this.transactionsTracker.registerDeleted(current);
+      }
+      return;
+    }
+
+    if (current) {
+      if (current.amount !== remainder) {
+        current.amount = remainder;
+        this.transactionsTracker.registerDirty(current);
+      }
+      return;
+    }
+
+    const created = Transaction.create({
+      vaultId: this.id,
+      amount: remainder,
+      type: 'expense',
+      date: invoice.paymentDate,
+      boxId: invoice.boxId,
+      description: INVOICE_REMAINDER_DESCRIPTION,
+      categoryId: null,
+      invoiceId,
+    });
+    this.addTransaction(created);
+    this.commitTransaction(created.id);
   }
 
   private isSpendingTransaction(transaction: Transaction): boolean {
@@ -586,6 +771,7 @@ export class Vault {
     this.transactionsTracker.clearChanges();
     this.budgetsTracker.clearChanges();
     this.boxesTracker.clearChanges();
+    this.invoicesTracker.clearChanges();
     this.isDirty = false;
   }
 

@@ -20,6 +20,8 @@ type CreateParams = {
   fromDate?: Date | null;
   /** Lines dropped for falling before `fromDate`. */
   outOfRangeCount?: number;
+  /** Fatura que este extrato de cartão detalha. */
+  invoiceId?: string | null;
   createdAt?: Date;
 };
 
@@ -65,6 +67,7 @@ export class ImportBatch {
   status: ImportBatchStatus;
   duplicateCount: number;
   outOfRangeCount: number;
+  invoiceId: string | null;
 
   private constructor(params: RestoreParams) {
     this.id = params.id;
@@ -82,6 +85,7 @@ export class ImportBatch {
     this.status = params.status;
     this.duplicateCount = params.duplicateCount;
     this.outOfRangeCount = params.outOfRangeCount;
+    this.invoiceId = params.invoiceId ?? null;
     this.createdAt = params.createdAt;
   }
 

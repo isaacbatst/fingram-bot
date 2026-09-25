@@ -21,6 +21,8 @@ export abstract class ImportEntryRepository {
     options?: { status?: ImportEntryStatus; page?: number; pageSize?: number },
   ): Promise<Paginated<ImportEntry>>;
   abstract findPendingByBatchId(batchId: string): Promise<ImportEntry[]>;
+  /** Every entry of a batch, in any state, unpaginated. */
+  abstract findAllByBatchId(batchId: string): Promise<ImportEntry[]>;
   abstract countByStatus(batchId: string): Promise<ImportEntryStatusCounts>;
   /**
    * Pending lines per batch for a vault, in one query.

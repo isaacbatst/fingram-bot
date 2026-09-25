@@ -10,6 +10,8 @@ import { VaultAuthModule } from './vault-auth.module';
 import { PlanQueryModule } from '@/plan/shared/plan-query.module';
 import { ImportController } from './import.controller';
 import { ImportService } from './import.service';
+import { CardInvoiceService } from './card-invoice.service';
+import { InvoiceController } from './invoice.controller';
 
 @Module({})
 export class ImportModule {
@@ -37,8 +39,8 @@ export class ImportModule {
           sqlite: ImportInMemoryRepositoriesModule,
         }),
       ],
-      controllers: [ImportController],
-      providers: [ImportService],
+      controllers: [ImportController, InvoiceController],
+      providers: [ImportService, CardInvoiceService],
       exports: [ImportService],
     };
   }

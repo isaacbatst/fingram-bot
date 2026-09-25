@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ImportService } from './import.service';
+import { CardInvoiceService } from './card-invoice.service';
 import { Vault } from './domain/vault';
 import { Box } from './domain/box';
 import { InMemoryStore } from '@/shared/persistence/in-memory/in-memory-store';
@@ -105,6 +106,7 @@ describe('ImportService', () => {
   let store: InMemoryStore;
   let vaultRepo: VaultInMemoryRepository;
   let entryRepo: ImportEntryInMemoryRepository;
+  let invoiceService: CardInvoiceService;
   let vault: Vault;
   let box: Box;
   let reserva: Box;
@@ -141,6 +143,11 @@ describe('ImportService', () => {
       batchRepo,
       entryRepo,
       new PlanQueryService(planRepo, allocationRepo),
+      (invoiceService = new CardInvoiceService(
+        vaultRepo,
+        batchRepo,
+        entryRepo,
+      )),
     );
   });
 
@@ -439,10 +446,12 @@ describe('ImportService', () => {
       const fatura = groups.find((g) => g.description.includes('FATURA'))!;
       const padaria = groups.find((g) => g.description.includes('PADARIA'))!;
       expect(fatura.looksLikeSettlement).toBe(true);
+      expect(fatura.suggestsInvoice).toBe(true);
       expect(padaria.looksLikeSettlement).toBe(false);
+      expect(padaria.suggestsInvoice).toBe(false);
     });
 
-    it('should flag the bill payment seen from inside the card statement', async () => {
+    it('should dismiss the bill payment seen from inside the card statement', async () => {
       const [error, batches] = await service.ingest({
         vaultId: vault.id,
         file: ofxCartao([
@@ -454,13 +463,23 @@ describe('ImportService', () => {
       expect(error).toBeNull();
       expect(batches![0].kind).toBe('creditcard');
 
+      // Esses R$ 7.133,47 são a quitação da fatura, não receita: ficam
+      // ignorados desde a leitura e nem chegam à triagem.
       const groups = await groupsOf(batches![0].id);
-      const quitacao = groups.find((g) => g.description.includes('Pagamento'))!;
-      const compra = groups.find((g) => g.description.includes('Ifood'))!;
-      // Sem a flag, esses R$ 7.133,47 entrariam como receita e inflariam os ganhos.
-      expect(quitacao.looksLikeSettlement).toBe(true);
-      expect(quitacao.type).toBe('income');
-      expect(compra.looksLikeSettlement).toBe(false);
+      expect(groups).toHaveLength(1);
+      expect(groups[0].description).toContain('Ifood');
+      expect(groups[0].looksLikeSettlement).toBe(false);
+      expect(groups[0].suggestsInvoice).toBe(false);
+
+      const [, review] = await service.getReview({
+        vaultId: vault.id,
+        batchId: batches![0].id,
+      });
+      expect(review!.counts).toEqual({
+        pending: 1,
+        confirmed: 0,
+        dismissed: 1,
+      });
     });
 
     it('should keep accents from a UTF-8 card statement', async () => {
@@ -1077,6 +1096,250 @@ describe('ImportService', () => {
         batchId: batch.id,
       });
       expect(error).not.toBeNull();
+    });
+  });
+
+  describe('fatura de cartão', () => {
+    /** Extrato do cartão de um ciclo, com o total da fatura em LEDGERBAL. */
+    const cartao = (
+      lines: Line[],
+      ledgerBalance: string | null,
+      accountId = 'cartao-1',
+    ) =>
+      Buffer.from(
+        `OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+<OFX>
+<CREDITCARDMSGSRSV1>
+<CCSTMTTRNRS>
+<CCSTMTRS>
+<CURDEF>BRL
+<CCACCTFROM>
+<ACCTID>${accountId}
+</CCACCTFROM>
+<BANKTRANLIST>
+<DTSTART>20260803
+<DTEND>20260902
+${lines
+  .map(
+    (l) => `<STMTTRN>
+<TRNTYPE>${l.amount.startsWith('-') ? 'DEBIT' : 'CREDIT'}
+<DTPOSTED>${l.date ?? '20260815'}000000[-3:BRT]
+<TRNAMT>${l.amount}
+<FITID>${l.fitId}
+<MEMO>${l.memo}
+</STMTTRN>`,
+  )
+  .join('\n')}
+</BANKTRANLIST>
+${ledgerBalance === null ? '' : `<LEDGERBAL>\n<BALAMT>${ledgerBalance}\n<DTASOF>20260902\n</LEDGERBAL>`}
+</CCSTMTRS>
+</CCSTMTTRNRS>
+</CREDITCARDMSGSRSV1>
+</OFX>`,
+        'latin1',
+      );
+
+    const ingestCartao = async (
+      lines: Line[],
+      ledgerBalance: string | null = '-3200.00',
+      accountId?: string,
+    ) => {
+      const [error, batches] = await service.ingest({
+        vaultId: vault.id,
+        file: cartao(lines, ledgerBalance, accountId),
+        boxId: box.id,
+      });
+      expect(error).toBeNull();
+      return batches![0];
+    };
+
+    const compras: Line[] = [
+      { fitId: 'C1', amount: '-1000.00', memo: 'MERCADO', date: '20260812' },
+      { fitId: 'C2', amount: '-1050.00', memo: 'POSTO', date: '20260820' },
+      {
+        fitId: 'C3',
+        amount: '1500.00',
+        memo: 'Pagamento recebido',
+        date: '20260805',
+      },
+    ];
+
+    /** Registra a fatura de R$ 3.200 paga em 10/09 a partir da conta corrente. */
+    const registrarFatura = async (amount = '-3200.00') => {
+      const [batch] = await ingest([
+        { fitId: 'P1', amount, memo: 'PAGAMENTO FATURA', date: '20260910' },
+      ]);
+      const [error, result] = await service.confirmAsInvoice({
+        vaultId: vault.id,
+        entryIds: await pendingIds(batch.id),
+      });
+      expect(error).toBeNull();
+      expect(result!.confirmed).toBe(1);
+      return result!.invoiceIds[0];
+    };
+
+    const remainder = (invoiceId: string) =>
+      [...vault.transactions.values()].find(
+        (t) => t.invoiceId === invoiceId && t.isInvoiceRemainder,
+      );
+    const spent = (month: number) =>
+      vault.totalSpentAmount({ month, year: 2026 }, { includeAll: true });
+    const income = (month: number) =>
+      vault.totalIncomeAmount({ month, year: 2026 }, { includeAll: true });
+
+    it('should register the invoice and count the full amount on the payment date', async () => {
+      const invoiceId = await registrarFatura();
+
+      expect(remainder(invoiceId)!.amount).toBe(3200);
+      expect(spent(9)).toBe(3200);
+      const [, list] = await invoiceService.listInvoices(vault.id);
+      expect(list!.invoices).toHaveLength(1);
+      expect(list!.invoices[0]).toMatchObject({
+        amount: 3200,
+        remainder: 3200,
+        status: 'awaiting',
+      });
+    });
+
+    it('should link a card statement imported after the payment and shrink the remainder', async () => {
+      const invoiceId = await registrarFatura();
+      const batch = await ingestCartao(compras);
+      expect(batch.invoiceId).toBe(invoiceId);
+
+      await service.confirmBatch({ vaultId: vault.id, batchId: batch.id });
+
+      expect(remainder(invoiceId)!.amount).toBe(1150);
+      expect(spent(8)).toBe(0);
+      expect(spent(9)).toBe(3200);
+      // "Pagamento recebido" foi ignorado na leitura: nunca vira receita.
+      expect(income(8) + income(9)).toBe(0);
+      const [, list] = await invoiceService.listInvoices(vault.id);
+      expect(list!.invoices[0]).toMatchObject({
+        itemized: 2050,
+        remainder: 1150,
+        status: 'partial',
+        cardLabel: 'Cartão cartao-1',
+      });
+      expect(list!.unlinkedStatements).toHaveLength(0);
+    });
+
+    it('should pick up purchases confirmed before the payment was registered', async () => {
+      // Sem LEDGERBAL que bata, só a soma das compras: 2.050.
+      const batch = await ingestCartao(compras, null);
+      await service.confirmBatch({ vaultId: vault.id, batchId: batch.id });
+      expect(spent(8)).toBe(2050);
+
+      const [, before] = await invoiceService.listInvoices(vault.id);
+      expect(before!.unlinkedStatements).toEqual([
+        expect.objectContaining({
+          batchId: batch.id,
+          purchaseCount: 2,
+          total: 2050,
+        }),
+      ]);
+
+      const invoiceId = await registrarFatura('-2050.00');
+
+      expect(remainder(invoiceId)).toBeUndefined();
+      expect(spent(8)).toBe(0);
+      expect(spent(9)).toBe(2050);
+      const [, after] = await invoiceService.listInvoices(vault.id);
+      expect(after!.invoices[0].status).toBe('detailed');
+      expect(after!.unlinkedStatements).toHaveLength(0);
+    });
+
+    it('should leave the link to the user when the amount does not match', async () => {
+      const invoiceId = await registrarFatura();
+      const batch = await ingestCartao(compras, '-999.00');
+      expect(batch.invoiceId).toBeNull();
+      await service.confirmBatch({ vaultId: vault.id, batchId: batch.id });
+      expect(remainder(invoiceId)!.amount).toBe(3200);
+
+      const [error] = await invoiceService.setBatchInvoice({
+        vaultId: vault.id,
+        batchId: batch.id,
+        invoiceId,
+      });
+      expect(error).toBeNull();
+      expect(remainder(invoiceId)!.amount).toBe(1150);
+
+      // Desfazer devolve as compras para a data delas.
+      await invoiceService.setBatchInvoice({
+        vaultId: vault.id,
+        batchId: batch.id,
+        invoiceId: null,
+      });
+      expect(remainder(invoiceId)!.amount).toBe(3200);
+      expect(spent(8)).toBe(2050);
+    });
+
+    it('should not link automatically when two invoices match', async () => {
+      await registrarFatura();
+      const [second] = await ingest([
+        {
+          fitId: 'P2',
+          amount: '-3200.00',
+          memo: 'PAGAMENTO FATURA',
+          date: '20260912',
+        },
+      ]);
+      await service.confirmAsInvoice({
+        vaultId: vault.id,
+        entryIds: await pendingIds(second.id),
+      });
+
+      const batch = await ingestCartao(compras);
+      expect(batch.invoiceId).toBeNull();
+    });
+
+    it('should refuse linking a checking account statement', async () => {
+      const invoiceId = await registrarFatura();
+      const [bank] = await ingest([
+        { fitId: 'X1', amount: '-10.00', memo: 'PADARIA' },
+      ]);
+      const [error] = await invoiceService.setBatchInvoice({
+        vaultId: vault.id,
+        batchId: bank.id,
+        invoiceId,
+      });
+      expect(error).not.toBeNull();
+    });
+
+    it('should delete the invoice and put the purchases back on their dates', async () => {
+      const invoiceId = await registrarFatura();
+      const batch = await ingestCartao(compras);
+      await service.confirmBatch({ vaultId: vault.id, batchId: batch.id });
+
+      const [error] = await invoiceService.deleteInvoice({
+        vaultId: vault.id,
+        invoiceId,
+      });
+
+      expect(error).toBeNull();
+      expect(spent(8)).toBe(2050);
+      expect(spent(9)).toBe(0);
+      const [, list] = await invoiceService.listInvoices(vault.id);
+      expect(list!.invoices).toHaveLength(0);
+      expect(list!.unlinkedStatements).toHaveLength(1);
+    });
+
+    it('should not register an invoice from another vault entry or an income line', async () => {
+      const [batch] = await ingest([
+        { fitId: 'R1', amount: '100.00', memo: 'ESTORNO FATURA' },
+      ]);
+      const [, result] = await service.confirmAsInvoice({
+        vaultId: vault.id,
+        entryIds: await pendingIds(batch.id),
+      });
+      expect(result!.confirmed).toBe(0);
+
+      const [otherError] = await service.confirmAsInvoice({
+        vaultId: 'outro-vault',
+        entryIds: await pendingIds(batch.id),
+      });
+      expect(otherError).not.toBeNull();
     });
   });
 });

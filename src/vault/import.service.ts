@@ -18,6 +18,7 @@ import {
   ImportEntryStatusCounts,
 } from './repositories/import-entry.repository';
 import { PlanQueryService } from '@/plan/shared/plan-query.service';
+import { CardInvoiceService, isInvoiceLine } from './card-invoice.service';
 import { OfxParseError, OfxStatement, parseOfx } from '@/shared/ofx-parser';
 
 export type ImportReview = {
@@ -43,6 +44,11 @@ export type ImportGroup = {
   /** Parece a quitação de uma fatura — não é gasto novo, e sim o pagamento dela. */
   looksLikeSettlement: boolean;
   /**
+   * Débito de pagamento de fatura na conta corrente: a triagem propõe registrar
+   * a fatura, que conta como gasto desde já e espera o extrato do cartão.
+   */
+  suggestsInvoice: boolean;
+  /**
    * Pagamento planejado cuja parcela prevista bate com o valor e o mês do grupo.
    * Só para despesas de um lançamento: parcela é pagamento único no mês.
    */
@@ -59,6 +65,7 @@ export class ImportService {
     private readonly importBatchRepository: ImportBatchRepository,
     private readonly importEntryRepository: ImportEntryRepository,
     private readonly planQueryService: PlanQueryService,
+    private readonly cardInvoiceService: CardInvoiceService,
   ) {}
 
   /**
@@ -101,7 +108,7 @@ export class ImportService {
 
     const batches: ImportBatch[] = [];
     for (const statement of statements) {
-      batches.push(await this.ingestStatement(input, statement));
+      batches.push(await this.ingestStatement(input, vault, statement));
     }
     return right(batches);
   }
@@ -113,6 +120,7 @@ export class ImportService {
       boxId?: string;
       fromDate?: Date;
     },
+    vault: Vault,
     statement: OfxStatement,
   ): Promise<ImportBatch> {
     const { accountKey } = statement.account;
@@ -154,8 +162,6 @@ export class ImportService {
       fromDate: input.fromDate ?? null,
       outOfRangeCount: statement.transactions.length - inRange.length,
     });
-    await this.importBatchRepository.create(batch);
-
     const entries = fresh.map((transaction) =>
       ImportEntry.create({
         vaultId: input.vaultId,
@@ -170,6 +176,29 @@ export class ImportService {
         rawName: transaction.name,
       }),
     );
+
+    if (batch.kind === 'creditcard') {
+      // "Pagamento recebido" no cartão é a quitação de uma fatura: o mesmo
+      // evento que o débito na conta corrente. Nunca é receita, então nem
+      // chega à triagem.
+      for (const entry of entries) {
+        if (entry.type === 'income' && !isInvoiceLine(entry)) entry.dismiss();
+      }
+
+      // A fatura pode ter sido registrada antes de o extrato chegar.
+      const invoice = this.cardInvoiceService.findInvoiceForStatement(
+        vault,
+        await this.importBatchRepository.findByVaultId(input.vaultId),
+        batch,
+        entries,
+      );
+      if (invoice) {
+        this.cardInvoiceService.applyBatchLink(vault, batch, [], invoice.id);
+        await this.vaultRepository.update(vault);
+      }
+    }
+
+    await this.importBatchRepository.create(batch);
     await this.importEntryRepository.createMany(entries);
 
     this.logger.log(
@@ -307,13 +336,20 @@ export class ImportService {
         ),
       };
     });
+    const withInvoice = groups.map((g) => ({
+      ...g,
+      suggestsInvoice:
+        g.looksLikeSettlement && g.type === 'expense' && batch.kind === 'bank',
+    }));
 
     // Biggest groups first: the user clears the most lines with the fewest decisions,
     // and sees the count drop quickly.
-    groups.sort((a, b) => b.count - a.count || b.totalAmount - a.totalAmount);
+    withInvoice.sort(
+      (a, b) => b.count - a.count || b.totalAmount - a.totalAmount,
+    );
 
     // Uma consulta ao plano para todos os grupos, não uma por grupo.
-    const candidates = groups.filter(
+    const candidates = withInvoice.filter(
       (g) => g.type === 'expense' && g.count === 1 && !g.looksLikeSettlement,
     );
     const matches = await this.planQueryService.findMatchingScheduledMovements(
@@ -325,7 +361,7 @@ export class ImportService {
     );
 
     return right(
-      groups.map((g) => {
+      withInvoice.map((g) => {
         const match = suggestions.get(g.key);
         return {
           ...g,
@@ -430,6 +466,7 @@ export class ImportService {
 
     const confirmed: ImportEntry[] = [];
     const skipped: string[] = [];
+    const batches = new Map<string, ImportBatch | null>();
 
     for (const entryId of input.entryIds) {
       const entry = await this.loadEntry(input.vaultId, entryId);
@@ -439,6 +476,19 @@ export class ImportService {
       }
       this.materialize(vault, entry, defaultBox?.id ?? null);
       confirmed.push(entry);
+
+      // Compra de um extrato de cartão já ligado a uma fatura: entra nela e
+      // passa a contar na data de pagamento.
+      if (!batches.has(entry.batchId)) {
+        batches.set(
+          entry.batchId,
+          await this.importBatchRepository.findById(entry.batchId),
+        );
+      }
+      const invoiceId = batches.get(entry.batchId)?.invoiceId;
+      if (invoiceId && isInvoiceLine(entry) && entry.transactionId) {
+        vault.linkToInvoice(entry.transactionId, invoiceId);
+      }
     }
 
     // The vault aggregate is saved once for the whole batch, and no
@@ -608,6 +658,98 @@ export class ImportService {
     }
 
     return right({ confirmed: confirmed.length, skipped });
+  }
+
+  /**
+   * Registers a card invoice from its payment on the checking account, instead
+   * of ignoring the line.
+   *
+   * Ignoring the payment left nothing to check the card purchases against: a
+   * statement never imported meant spending silently missing. Registering it
+   * counts the whole amount now, as "não discriminado", and the card statement
+   * purchases shrink that part as they are linked — the payment month always
+   * adds up to what was paid.
+   *
+   * The card statement may have arrived first: a matching one still without an
+   * invoice is linked right away, so the remainder starts reduced.
+   */
+  async confirmAsInvoice(input: {
+    vaultId: string;
+    entryIds: string[];
+  }): Promise<
+    Either<
+      string,
+      { confirmed: number; skipped: string[]; invoiceIds: string[] }
+    >
+  > {
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) return left('Dados não encontrados');
+    const defaultBox = await this.boxRepository.findDefaultByVaultId(
+      input.vaultId,
+    );
+    const batches = await this.importBatchRepository.findByVaultId(
+      input.vaultId,
+    );
+
+    const confirmed: ImportEntry[] = [];
+    const linked: ImportBatch[] = [];
+    const skipped: string[] = [];
+    const invoiceIds: string[] = [];
+
+    for (const entryId of input.entryIds) {
+      const entry = await this.loadEntry(input.vaultId, entryId);
+      const boxId = entry?.boxId ?? defaultBox?.id;
+      if (
+        entry === null ||
+        entry.status !== 'pending' ||
+        entry.type !== 'expense' ||
+        !boxId
+      ) {
+        skipped.push(entryId);
+        continue;
+      }
+
+      const [error, invoice] = vault.registerInvoice({
+        amount: entry.amount,
+        paymentDate: entry.date,
+        boxId,
+      });
+      if (error !== null) {
+        skipped.push(entryId);
+        continue;
+      }
+      invoiceIds.push(invoice.id);
+
+      const match = await this.cardInvoiceService.findStatementForInvoice(
+        invoice,
+        batches,
+      );
+      if (match) {
+        this.cardInvoiceService.applyBatchLink(
+          vault,
+          match.batch,
+          match.entries,
+          invoice.id,
+        );
+        linked.push(match.batch);
+      }
+
+      const remainder = [...vault.transactions.values()].find(
+        (t) => t.invoiceId === invoice.id && t.isInvoiceRemainder,
+      );
+      entry.confirm(remainder?.id ?? null);
+      confirmed.push(entry);
+    }
+
+    await this.vaultRepository.update(vault);
+    for (const batch of linked) {
+      await this.importBatchRepository.update(batch);
+    }
+    for (const entry of confirmed) {
+      await this.importEntryRepository.update(entry);
+    }
+
+    return right({ confirmed: confirmed.length, skipped, invoiceIds });
   }
 
   /** Confirms every still-pending entry of a batch. */

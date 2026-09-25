@@ -18,6 +18,8 @@ type ConstructorParams = {
   date: Date;
   allocationId: string | null;
   withdrawalType: 'withdrawal' | 'realization' | null;
+  invoiceId?: string | null;
+  purchaseDate?: Date | null;
 };
 
 type CreateParams = {
@@ -32,6 +34,7 @@ type CreateParams = {
   createdAt?: Date;
   allocationId?: string;
   withdrawalType?: 'withdrawal' | 'realization' | null;
+  invoiceId?: string | null;
 };
 
 export class Transaction {
@@ -53,6 +56,8 @@ export class Transaction {
       date: params.date,
       allocationId: params.allocationId ?? null,
       withdrawalType: params.withdrawalType ?? null,
+      invoiceId: params.invoiceId ?? null,
+      purchaseDate: null,
     });
   }
 
@@ -75,6 +80,13 @@ export class Transaction {
   public date: Date = new Date();
   public allocationId: string | null = null;
   public withdrawalType: 'withdrawal' | 'realization' | null = null;
+  /** Fatura de cartão a que pertence — ver `isInvoiceRemainder`/`isInvoicePurchase`. */
+  public invoiceId: string | null = null;
+  /**
+   * Data em que a compra foi feita, quando ligada a uma fatura. Nesse caso
+   * `date` é a data de pagamento da fatura, que é quando a compra conta.
+   */
+  public purchaseDate: Date | null = null;
 
   private constructor(params: ConstructorParams) {
     this.id = params.id;
@@ -91,6 +103,18 @@ export class Transaction {
     this.date = params.date;
     this.allocationId = params.allocationId;
     this.withdrawalType = params.withdrawalType;
+    this.invoiceId = params.invoiceId ?? null;
+    this.purchaseDate = params.purchaseDate ?? null;
+  }
+
+  /** O que a fatura ainda não detalhou. Calculado pela fatura, não editável. */
+  get isInvoiceRemainder(): boolean {
+    return this.invoiceId !== null && this.purchaseDate === null;
+  }
+
+  /** Compra do extrato do cartão ligada a uma fatura. */
+  get isInvoicePurchase(): boolean {
+    return this.invoiceId !== null && this.purchaseDate !== null;
   }
   commit(): Either<string, boolean> {
     if (this.isCommitted) {
@@ -116,6 +140,13 @@ export class Transaction {
       category,
       date: this.date,
       allocationId: this.allocationId,
+      invoiceId: this.invoiceId,
+      invoiceRole: this.isInvoiceRemainder
+        ? 'remainder'
+        : this.isInvoicePurchase
+          ? 'purchase'
+          : null,
+      purchaseDate: this.purchaseDate,
     };
   }
 }

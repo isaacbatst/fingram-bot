@@ -139,6 +139,13 @@ export class TransactionInMemoryRepository extends TransactionRepository {
             }
           : null,
         allocationId: transaction.allocationId ?? null,
+        invoiceId: transaction.invoiceId,
+        invoiceRole: transaction.isInvoiceRemainder
+          ? 'remainder'
+          : transaction.isInvoicePurchase
+            ? 'purchase'
+            : null,
+        purchaseDate: transaction.purchaseDate,
       };
     });
 
