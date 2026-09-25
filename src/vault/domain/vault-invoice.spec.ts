@@ -158,7 +158,7 @@ describe('Vault — fatura de cartão', () => {
     vault.linkToInvoice(a.id, invoice.id);
     expect(remainderOf(invoice.id)).toBeUndefined();
 
-    vault.deleteTransaction(a.code);
+    vault.deleteTransaction(a.id);
 
     expect(remainderOf(invoice.id)!.amount).toBe(3200);
     expect(spentOn(SEPTEMBER)).toBe(3200);
@@ -169,7 +169,7 @@ describe('Vault — fatura de cartão', () => {
     const a = purchase(1000, day(8, 12));
     vault.linkToInvoice(a.id, invoice.id);
 
-    vault.editTransaction(a.code, { amount: 1200 });
+    vault.editTransaction(a.id, { amount: 1200 });
 
     expect(remainderOf(invoice.id)!.amount).toBe(2000);
   });
@@ -179,7 +179,7 @@ describe('Vault — fatura de cartão', () => {
     const a = purchase(1000, day(8, 12));
     vault.linkToInvoice(a.id, invoice.id);
 
-    vault.editTransaction(a.code, { date: day(8, 14) });
+    vault.editTransaction(a.id, { date: day(8, 14) });
 
     expect(a.purchaseDate).toEqual(day(8, 14));
     expect(a.date).toEqual(day(9, 10));
@@ -187,7 +187,7 @@ describe('Vault — fatura de cartão', () => {
 
   it('should refuse editing the remainder, which the invoice computes', () => {
     const invoice = register();
-    const [error] = vault.editTransaction(remainderOf(invoice.id)!.code, {
+    const [error] = vault.editTransaction(remainderOf(invoice.id)!.id, {
       amount: 10,
     });
     expect(error).not.toBeNull();
@@ -226,7 +226,7 @@ describe('Vault — fatura de cartão', () => {
     const a = purchase(1000, day(8, 12));
     vault.linkToInvoice(a.id, invoice.id);
 
-    const [error] = vault.deleteTransaction(remainderOf(invoice.id)!.code);
+    const [error] = vault.deleteTransaction(remainderOf(invoice.id)!.id);
 
     expect(error).toBeNull();
     expect(vault.invoices.has(invoice.id)).toBe(false);

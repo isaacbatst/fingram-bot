@@ -40,9 +40,10 @@ export class VaultWebController {
   ) {
     const parsed = weeks ? parseInt(weeks, 10) : NaN;
     // Limite superior para a janela não virar uma varredura da tabela inteira.
-    const safe = Number.isFinite(parsed) && parsed > 0 && parsed <= 53
-      ? parsed
-      : undefined;
+    const safe =
+      Number.isFinite(parsed) && parsed > 0 && parsed <= 53
+        ? parsed
+        : undefined;
     return this.vaultQueryService.getDailyActivity(vaultId, safe);
   }
 
@@ -192,7 +193,7 @@ export class VaultWebController {
     @VaultSession() vaultId: string,
     @Body()
     data: {
-      transactionCode: string;
+      transactionId: string;
       newAmount?: number;
       newDate?: string; // formato ISO (YYYY-MM-DD)
       newCategory?: string;
@@ -202,8 +203,8 @@ export class VaultWebController {
       newAllocationId?: string | null;
     },
   ) {
-    if (!data.transactionCode) {
-      throw new BadRequestException('O código da transação é obrigatório');
+    if (!data.transactionId) {
+      throw new BadRequestException('O ID da transação é obrigatório');
     }
 
     if (data.newType && !['income', 'expense'].includes(data.newType)) {
@@ -415,11 +416,11 @@ export class VaultWebController {
   @Post('delete-transaction')
   async deleteTransaction(
     @VaultSession() vaultId: string,
-    @Body() data: { transactionCode: string },
+    @Body() data: { transactionId: string },
   ) {
     const [error] = await this.vaultWebService.deleteTransaction(
       vaultId,
-      data.transactionCode,
+      data.transactionId,
     );
     if (error !== null) {
       this.handleError(error.type, error.message);

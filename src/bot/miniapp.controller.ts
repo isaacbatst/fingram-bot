@@ -135,7 +135,7 @@ export class MiniappController {
     @MiniappSession() session: MiniappSessionTokenPayload,
     @Body()
     data: {
-      transactionCode: string;
+      transactionId: string;
       newAmount?: number;
       newDate?: string; // formato ISO (YYYY-MM-DD)
       newCategory?: string;
@@ -143,8 +143,8 @@ export class MiniappController {
       newType?: 'income' | 'expense';
     },
   ) {
-    if (!data.transactionCode) {
-      throw new BadRequestException('O código da transação é obrigatório');
+    if (!data.transactionId) {
+      throw new BadRequestException('O ID da transação é obrigatório');
     }
 
     if (data.newType && !['income', 'expense'].includes(data.newType)) {

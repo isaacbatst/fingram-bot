@@ -368,7 +368,7 @@ export class MiniappService {
   async editTransaction(
     vaultId: string,
     editData: {
-      transactionCode: string;
+      transactionId: string;
       newAmount?: number;
       newDate?: Date;
       newCategory?: string;
@@ -379,7 +379,7 @@ export class MiniappService {
     try {
       const editResult = await this.vaultService.editTransactionInVault({
         vaultId,
-        transactionCode: editData.transactionCode,
+        transactionId: editData.transactionId,
         newAmount: editData.newAmount,
         date: editData.newDate,
         categoryCode: editData.newCategory,

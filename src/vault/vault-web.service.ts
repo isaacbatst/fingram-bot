@@ -353,7 +353,7 @@ export class VaultWebService {
   async editTransaction(
     vaultId: string,
     data: {
-      transactionCode: string;
+      transactionId: string;
       newAmount?: number;
       newDate?: Date;
       newCategory?: string;
@@ -377,7 +377,7 @@ export class VaultWebService {
       // Use VaultService directly
       const [error, result] = await this.vaultService.editTransactionInVault({
         vaultId,
-        transactionCode: data.transactionCode,
+        transactionId: data.transactionId,
         newAmount: data.newAmount,
         date: data.newDate,
         categoryCode: data.newCategory,
@@ -448,13 +448,13 @@ export class VaultWebService {
 
   async deleteTransaction(
     vaultId: string,
-    transactionCode: string,
+    transactionId: string,
   ): Promise<Either<VaultError, boolean>> {
     try {
       this.logger.log(`Deleting transaction for vault: ${vaultId}`);
       const [error, result] = await this.vaultService.deleteTransaction({
         vaultId,
-        transactionCode,
+        transactionId,
       });
       if (error !== null) {
         return left({

@@ -51,22 +51,22 @@ export class VaultService {
     return vault;
   }
 
-  async deleteTransaction(input: { vaultId: string; transactionCode: string }) {
+  async deleteTransaction(input: { vaultId: string; transactionId: string }) {
     this.logger.log(
-      `Deleting transaction from vault: ${input.vaultId}, transactionCode: ${input.transactionCode}`,
+      `Deleting transaction from vault: ${input.vaultId}, transactionId: ${input.transactionId}`,
     );
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) {
       this.logger.warn(`Vault not found: ${input.vaultId}`);
       return left(`Dados não encontrados`);
     }
-    const [err] = vault.deleteTransaction(input.transactionCode);
+    const [err] = vault.deleteTransaction(input.transactionId);
     if (err !== null) {
       this.logger.error(`Failed to delete transaction: ${err}`);
       return left(err);
     }
     await this.vaultRepository.update(vault);
-    this.logger.log(`Transaction deleted: ${input.transactionCode}`);
+    this.logger.log(`Transaction deleted: ${input.transactionId}`);
     return right(true);
   }
 
@@ -357,7 +357,7 @@ export class VaultService {
 
   async editTransactionInVault(input: {
     vaultId: string;
-    transactionCode: string;
+    transactionId: string;
     newAmount?: number;
     description?: string;
     /** null removes the category. */
@@ -448,11 +448,11 @@ export class VaultService {
     }
 
     const [err, transaction] = vault.editTransaction(
-      input.transactionCode,
+      input.transactionId,
       updatedData,
     );
     this.logger.log(
-      `Editing transaction: ${input.transactionCode}, new data: ${JSON.stringify(
+      `Editing transaction: ${input.transactionId}, new data: ${JSON.stringify(
         transaction,
       )}`,
     );
@@ -467,7 +467,7 @@ export class VaultService {
       category = await this.categoryRepository.findById(transaction.categoryId);
     }
 
-    this.logger.log(`Transaction edited: ${input.transactionCode}`);
+    this.logger.log(`Transaction edited: ${input.transactionId}`);
     return right({
       transaction: transaction.toDTO(category),
       vault,

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Telegraf } from 'telegraf';
+import { Context, Telegraf } from 'telegraf';
 import { message } from 'telegraf/filters';
 import { Either, left, right } from '../vault/domain/either';
 import { BotService } from './bot.service';
@@ -351,49 +351,11 @@ export class TelegramHandler {
       );
     });
 
-    this.telegraf.command('edit', async (ctx) => {
-      const chatId = ctx.chat.id.toString();
-      const { args } = this.parseCommandAndArgs(ctx.message.text);
-      if (args.length === 0) {
-        await ctx.reply(
-          'Para editar uma transação, você precisa fornecer o código da transação seguido dos campos que deseja alterar.\n\n' +
-            '📝 Uso: /edit <código> [opções]\n\n' +
-            'Opções disponíveis:\n' +
-            '• -v <valor> - alterar o valor\n' +
-            '• -d <dd/mm/yyyy> - alterar a data\n' +
-            '• -c <categoria> - alterar a categoria\n' +
-            '• -t <tipo> - alterar o tipo (income/expense)\n' +
-            '• -desc "descrição" - alterar a descrição\n\n' +
-            'Exemplos:\n' +
-            '• /edit ABC123 -v 50.00\n' +
-            '• /edit ABC123 -d 15/12/2024 -c alimentacao\n' +
-            '• /edit ABC123 -desc "Almoço no restaurante"',
-        );
-        return;
-      }
-
-      // Parse edit transaction args
-      const [parseError, parsedParams] = this.parseEditTransactionArgs(args);
-      if (parseError !== null) {
-        await ctx.reply(parseError);
-        return;
-      }
-
-      const [err, success] = await this.botService.handleEdit(
-        chatId,
-        parsedParams,
-      );
-      if (err !== null) {
-        await ctx.reply(err);
-        return;
-      }
-      await ctx.reply(
-        this.messageGenerator.formatTransactionEdited(
-          parsedParams.transactionCode,
-          success.transaction,
-          success.vault,
-        ),
-        { parse_mode: 'MarkdownV2' },
+    // Transactions are now edited/deleted in the web app, by id.
+    this.telegraf.command(['edit', 'delete'], async (ctx) => {
+      await this.replyWithAppLink(
+        ctx,
+        'Este comando não é mais suportado. Para editar ou excluir transações, use o aplicativo:',
       );
     });
 
@@ -605,28 +567,6 @@ export class TelegramHandler {
       );
     });
 
-    // delete transaction command /delete <transaction_code>
-    this.telegraf.command('delete', async (ctx) => {
-      const chatId = ctx.chat.id.toString();
-      const { args } = this.parseCommandAndArgs(ctx.message.text);
-      if (args.length === 0) {
-        await ctx.reply(
-          'Uso: /delete <código da transação>\n\nDeleta uma transação pelo código. Exemplo: /delete 123456',
-          { parse_mode: 'MarkdownV2' },
-        );
-        return;
-      }
-      const [err, success] = await this.botService.deleteTransaction(
-        chatId,
-        args[0],
-      );
-      if (err !== null) {
-        await ctx.reply(err);
-        return;
-      }
-      await ctx.reply(success);
-    });
-
     this.telegraf.on('message', async (ctx, next) => {
       if (ctx.message && 'web_app_data' in ctx.message) {
         this.logger.log('Received Web App data');
@@ -643,21 +583,7 @@ export class TelegramHandler {
     });
 
     this.telegraf.command('miniapp', async (ctx) => {
-      const [err, token] = await this.vaultAuthService.createLinkToken(
-        ctx.chat.id.toString(),
-      );
-      if (err !== null) {
-        this.logger.error('Error creating mini app token', err);
-        await ctx.reply(
-          'Erro ao criar link para o Mini App. Tente novamente mais tarde.',
-        );
-        return;
-      }
-      this.logger.log(`Generated token: ${token} for chatId: ${ctx.chat.id}`);
-      const frontendLink = `${this.FRONTEND_URL}?token=${token}`;
-      await ctx.reply(`[Abrir Aplicativo](${frontendLink})`, {
-        parse_mode: 'Markdown',
-      });
+      await this.replyWithAppLink(ctx);
     });
     this.telegraf.on('inline_query', async (ctx) => {
       this.logger.log('Received inline query', ctx.inlineQuery.query);
@@ -807,97 +733,22 @@ export class TelegramHandler {
     });
   }
 
-  /**
-   * Parse transaction edit command arguments
-   * Format: <code> -v <valor> -d <dd/mm/yyyy> -c <categoria> -desc "descrição" -t <'expense' | 'income'>
-   */
-  private parseEditTransactionArgs(args: string[]): Either<
-    string,
-    {
-      transactionCode: string;
-      newAmount?: number;
-      newDate?: Date;
-      newCategory?: string;
-      newDescription?: string;
-      type?: 'income' | 'expense';
-    }
-  > {
-    if (args.length < 1) {
-      return left(
-        'Para editar uma transação, você precisa fornecer o código da transação seguido dos campos que deseja alterar.',
+  private async replyWithAppLink(ctx: Context, message?: string) {
+    const [err, token] = await this.vaultAuthService.createLinkToken(
+      ctx.chat!.id.toString(),
+    );
+    if (err !== null) {
+      this.logger.error('Error creating mini app token', err);
+      await ctx.reply(
+        'Erro ao criar link para o Mini App. Tente novamente mais tarde.',
       );
+      return;
     }
-
-    const transactionCode = args[0];
-    const flags = args.slice(1);
-    let newAmount: number | undefined;
-    let newDate: Date | undefined;
-    let newCategory: string | undefined;
-    let newDescription: string | undefined;
-    let type: 'income' | 'expense' | undefined;
-
-    for (let i = 0; i < flags.length; i++) {
-      const flag = flags[i];
-      if (flag === '-v' && flags[i + 1]) {
-        const value = parseFloat(flags[i + 1]);
-        if (isNaN(value)) return left('Valor inválido para -v. Use um número.');
-        newAmount = value;
-        i++;
-      } else if (flag === '-d' && flags[i + 1]) {
-        // Accept date as dd/mm/yyyy
-        const dateParts = flags[i + 1].split('/');
-        if (dateParts.length === 3) {
-          const [day, month, year] = dateParts.map(Number);
-          if (
-            !isNaN(day) &&
-            !isNaN(month) &&
-            !isNaN(year) &&
-            day > 0 &&
-            month > 0 &&
-            year > 0
-          ) {
-            newDate = new Date(year, month - 1, day);
-          } else {
-            return left('Data inválida para -d. Use dd/mm/yyyy.');
-          }
-        } else {
-          return left('Data inválida para -d. Use dd/mm/yyyy.');
-        }
-        i++;
-      } else if (flag === '-c' && flags[i + 1]) {
-        newCategory = flags[i + 1];
-        i++;
-      } else if (flag === '-desc' && flags[i + 1]) {
-        newDescription = flags[i + 1];
-        // If description is quoted, join until closing quote
-        if (newDescription.startsWith('"')) {
-          let desc = newDescription;
-          let j = i + 2;
-          while (!desc.endsWith('"') && j < flags.length) {
-            desc += ' ' + flags[j];
-            j++;
-          }
-          newDescription = desc.replace(/^"|"$/g, '');
-          i = j - 1;
-        }
-      } else if (flag === '-t' && flags[i + 1]) {
-        const t = flags[i + 1].toLowerCase();
-        if (t === 'income' || t === 'expense') {
-          type = t;
-        } else {
-          return left("Tipo inválido para -t. Use 'income' ou 'expense'.");
-        }
-        i++;
-      }
-    }
-
-    return right({
-      transactionCode,
-      newAmount,
-      newDate,
-      newCategory,
-      newDescription,
-      type,
+    this.logger.log(`Generated token: ${token} for chatId: ${ctx.chat!.id}`);
+    const frontendLink = `${this.FRONTEND_URL}?token=${token}`;
+    const link = `[Abrir Aplicativo](${frontendLink})`;
+    await ctx.reply(message ? `${message}\n\n${link}` : link, {
+      parse_mode: 'Markdown',
     });
   }
 }

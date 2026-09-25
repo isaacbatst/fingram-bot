@@ -172,7 +172,7 @@ export class Vault {
   }
 
   editTransaction(
-    code: string,
+    id: string,
     options: {
       amount?: number;
       description?: string;
@@ -185,8 +185,8 @@ export class Vault {
       withdrawalType?: 'withdrawal' | 'realization' | null;
     },
   ): Either<string, Transaction> {
-    const transaction = this.findTransactionByCode(code);
-    if (!transaction) return left(`Transação #${code} não encontrada`);
+    const transaction = this.transactions.get(id);
+    if (!transaction) return left('Transação não encontrada');
     if (transaction.isInvoiceRemainder) {
       return left(
         'O valor não discriminado é calculado pela fatura: importe o extrato do cartão para detalhá-lo, ou exclua a fatura',
@@ -242,9 +242,9 @@ export class Vault {
    * Excluir o não discriminado de uma fatura é excluir a fatura: ele não existe
    * sem ela. Excluir uma compra ligada faz o não discriminado crescer de volta.
    */
-  deleteTransaction(code: string): Either<string, boolean> {
-    const transaction = this.findTransactionByCode(code);
-    if (!transaction) return left(`Transação #${code} não encontrada`);
+  deleteTransaction(id: string): Either<string, boolean> {
+    const transaction = this.transactions.get(id);
+    if (!transaction) return left('Transação não encontrada');
     if (transaction.isInvoiceRemainder) {
       return this.deleteInvoice(transaction.invoiceId!);
     }
@@ -596,15 +596,6 @@ export class Vault {
       this.transactionsTracker.registerDeleted(tx);
     }
     return right(true);
-  }
-
-  findTransactionByCode(code: string): Transaction | null {
-    for (const transaction of this.transactions.values()) {
-      if (transaction.code === code) {
-        return transaction;
-      }
-    }
-    return null;
   }
 
   setBudget(category: Category, amount: number): Either<string, boolean> {

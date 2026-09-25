@@ -823,3 +823,59 @@ describe('Vault - Boxes', () => {
     expect(vault.totalIncomeAmount({ month: 3, year: 2026 })).toBe(1000);
   });
 });
+
+describe('Vault - transactions are addressed by id', () => {
+  // Codes are 4 random hex chars and may repeat inside a vault (it happened in
+  // production), so edit/delete must never resolve a transaction by code.
+  const restoreTx = (id: string, vaultId: string) =>
+    Transaction.restore({
+      id,
+      code: 'abcd',
+      vaultId,
+      boxId: '',
+      transferId: null,
+      allocationId: null,
+      withdrawalType: null,
+      amount: 10,
+      isCommitted: true,
+      description: id,
+      createdAt: new Date(),
+      categoryId: null,
+      type: 'expense',
+      date: new Date(),
+    });
+
+  it('should edit only the transaction with the given id when codes repeat', () => {
+    const vault = new Vault();
+    vault.addTransaction(restoreTx('first', vault.id));
+    vault.addTransaction(restoreTx('second', vault.id));
+
+    const [err, tx] = vault.editTransaction('second', { amount: 99 });
+
+    expect(err).toBeNull();
+    expect(tx!.id).toBe('second');
+    expect(vault.transactions.get('second')!.amount).toBe(99);
+    expect(vault.transactions.get('first')!.amount).toBe(10);
+  });
+
+  it('should delete only the transaction with the given id when codes repeat', () => {
+    const vault = new Vault();
+    vault.addTransaction(restoreTx('first', vault.id));
+    vault.addTransaction(restoreTx('second', vault.id));
+
+    const [err] = vault.deleteTransaction('second');
+
+    expect(err).toBeNull();
+    expect([...vault.transactions.keys()]).toEqual(['first']);
+  });
+
+  it('should fail when the id does not exist', () => {
+    const vault = new Vault();
+    vault.addTransaction(restoreTx('first', vault.id));
+
+    expect(vault.editTransaction('abcd', { amount: 1 })[0]).toBe(
+      'Transação não encontrada',
+    );
+    expect(vault.deleteTransaction('abcd')[0]).toBe('Transação não encontrada');
+  });
+});

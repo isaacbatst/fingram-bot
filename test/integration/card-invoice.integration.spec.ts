@@ -383,7 +383,7 @@ describe('Fatura de cartão (integration)', () => {
       (t: { description: string }) => t.description === 'POSTO SHELL',
     );
 
-    await post('/vault/delete-transaction', { transactionCode: posto.code });
+    await post('/vault/delete-transaction', { transactionId: posto.id });
 
     expect((await invoices()).invoices[0].remainder).toBe(2200);
     expect((await summary(9)).spent).toBe(3200);

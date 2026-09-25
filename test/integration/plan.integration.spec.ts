@@ -876,7 +876,7 @@ describe('Plan API (integration)', () => {
         })
         .expect(201);
 
-      const txCode = txRes.body.transaction.code;
+      const txId = txRes.body.transaction.id;
       expect(txRes.body.transaction.allocationId).toBeFalsy();
 
       // Edit to add allocationId
@@ -884,7 +884,7 @@ describe('Plan API (integration)', () => {
         .post('/vault/edit-transaction')
         .set('Cookie', `vault_access_token=${vaultToken}`)
         .send({
-          transactionCode: txCode,
+          transactionId: txId,
           newAllocationId: pagamentoAllocationId,
         })
         .expect(201);
@@ -908,7 +908,7 @@ describe('Plan API (integration)', () => {
         })
         .expect(201);
 
-      const txCode = txRes.body.transaction.code;
+      const txId = txRes.body.transaction.id;
       expect(txRes.body.transaction.allocationId).toBe(pagamentoAllocationId);
 
       // Edit to remove allocationId
@@ -916,7 +916,7 @@ describe('Plan API (integration)', () => {
         .post('/vault/edit-transaction')
         .set('Cookie', `vault_access_token=${vaultToken}`)
         .send({
-          transactionCode: txCode,
+          transactionId: txId,
           newAllocationId: null,
         })
         .expect(201);

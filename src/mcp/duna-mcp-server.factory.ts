@@ -85,7 +85,7 @@ function round(value: number): number {
 /** Transaction as listTransactions and editTransaction return it. */
 function toTransactionItem(t: TransactionDTO) {
   return {
-    code: t.code,
+    id: t.id,
     date: t.date.toISOString().slice(0, 10),
     type: t.type,
     amount: t.amount,
@@ -110,7 +110,6 @@ function describeTransfer(vault: Vault, transferId: string) {
   if (!out || !into) return null;
   return {
     transferId,
-    code: out.code,
     amount: out.amount,
     date: out.date.toISOString().slice(0, 10),
     fromEstratoId: out.boxId,
@@ -158,7 +157,7 @@ export class DunaMcpServerFactory {
           'Para registrar uma transação, busque as categorias com getCategories e use a mais provável; o usuário pode corrigir depois.',
           'O orçamento é mensal, mas o período pode não começar no dia 1: use getBudgetSummary para saber as datas do período.',
           'Para totais e comparações (por categoria, por mês, por estrato), use getSpendingBreakdown em vez de somar listTransactions.',
-          'Para corrigir uma transação, use editTransaction com o code de listTransactions (só os campos enviados mudam); para recategorizar várias de uma vez, categorizeTransactions.',
+          'Para corrigir uma transação, use editTransaction com o id de listTransactions (só os campos enviados mudam); para recategorizar várias de uma vez, categorizeTransactions.',
           'Transferências entre estratos (isTransfer) são um par de lançamentos: altere ou remova com editTransfer/deleteTransfer, pelo transferId.',
         ].join('\n'),
       },
@@ -570,7 +569,7 @@ export class DunaMcpServerFactory {
         });
         if (err !== null) return error(err);
         return json({
-          code: result.transaction.code,
+          id: result.transaction.id,
           amount: result.transaction.amount,
           type: result.transaction.type,
           date: result.transaction.date.toISOString().slice(0, 10),
@@ -585,9 +584,9 @@ export class DunaMcpServerFactory {
       {
         title: 'Remover transação',
         description:
-          'Remove uma transação pelo código (retornado por addTransaction e listTransactions). Transferências entre estratos se removem com deleteTransfer.',
+          'Remove uma transação pelo id (retornado por addTransaction e listTransactions). Transferências entre estratos se removem com deleteTransfer.',
         inputSchema: {
-          code: z.string().describe('Código da transação'),
+          id: z.string().describe('ID da transação'),
         },
         annotations: {
           readOnlyHint: false,
@@ -596,18 +595,18 @@ export class DunaMcpServerFactory {
           openWorldHint: false,
         },
       },
-      async ({ code }) => {
+      async ({ id }) => {
         const [vaultErr, vault] = await this.vaultService.getVault({ vaultId });
         if (vaultErr !== null) return error(vaultErr);
-        const transferId = vault.findTransactionByCode(code)?.transferId;
+        const transferId = vault.transactions.get(id)?.transferId;
         if (transferId)
           return error(transferSideError(transferId, 'deleteTransfer'));
         const [err] = await this.vaultService.deleteTransaction({
           vaultId,
-          transactionCode: code,
+          transactionId: id,
         });
         if (err !== null) return error(err);
-        return json({ deleted: code });
+        return json({ deleted: id });
       },
     );
 
@@ -775,9 +774,9 @@ export class DunaMcpServerFactory {
       {
         title: 'Editar transação',
         description:
-          'Edita uma transação pelo código (retornado por listTransactions e addTransaction). Só os campos enviados mudam. categoryId: null remove a categoria. Categoria e alocação do plano são exclusivas: vincular a uma alocação remove a categoria; para categorizar uma transação vinculada, envie allocationId: null junto. Transferências entre estratos se editam com editTransfer. Retorna a transação atualizada.',
+          'Edita uma transação pelo id (retornado por listTransactions e addTransaction). Só os campos enviados mudam. categoryId: null remove a categoria. Categoria e alocação do plano são exclusivas: vincular a uma alocação remove a categoria; para categorizar uma transação vinculada, envie allocationId: null junto. Transferências entre estratos se editam com editTransfer. Retorna a transação atualizada.',
         inputSchema: {
-          code: z.string().describe('Código da transação'),
+          id: z.string().describe('ID da transação'),
           amount: z
             .number()
             .positive()
@@ -819,7 +818,7 @@ export class DunaMcpServerFactory {
           openWorldHint: false,
         },
       },
-      async ({ code, ...fields }) => {
+      async ({ id, ...fields }) => {
         if (Object.values(fields).every((v) => v === undefined)) {
           return error('Informe ao menos um campo para alterar');
         }
@@ -834,8 +833,8 @@ export class DunaMcpServerFactory {
 
         const [vaultErr, vault] = await this.vaultService.getVault({ vaultId });
         if (vaultErr !== null) return error(vaultErr);
-        const current = vault.findTransactionByCode(code);
-        if (!current) return error(`Transação #${code} não encontrada`);
+        const current = vault.transactions.get(id);
+        if (!current) return error('Transação não encontrada');
         if (current.transferId) {
           return error(transferSideError(current.transferId, 'editTransfer'));
         }
@@ -864,7 +863,7 @@ export class DunaMcpServerFactory {
 
         const [err, result] = await this.vaultService.editTransactionInVault({
           vaultId,
-          transactionCode: code,
+          transactionId: id,
           newAmount: fields.amount,
           description: fields.description,
           // Same as addTransaction: a YYYY-MM-DD date is stored as UTC midnight.
@@ -885,13 +884,13 @@ export class DunaMcpServerFactory {
       {
         title: 'Categorizar transações',
         description:
-          'Aplica uma categoria a várias transações de uma vez, pelos códigos (de listTransactions). Cada código é tratado à parte: os que falham (não encontrado, transferência, vinculado a alocação do plano) voltam em "failed" sem impedir os demais.',
+          'Aplica uma categoria a várias transações de uma vez, pelos ids (de listTransactions). Cada id é tratado à parte: os que falham (não encontrado, transferência, vinculado a alocação do plano) voltam em "failed" sem impedir os demais.',
         inputSchema: {
-          codes: z
+          ids: z
             .array(z.string())
             .min(1)
             .max(100)
-            .describe('Códigos das transações (até 100)'),
+            .describe('IDs das transações (até 100)'),
           categoryId: z
             .string()
             .describe('ID da categoria (ver getCategories)'),
@@ -903,30 +902,30 @@ export class DunaMcpServerFactory {
           openWorldHint: false,
         },
       },
-      async ({ codes, categoryId }) => {
+      async ({ ids, categoryId }) => {
         const category = await this.findCategory(vaultId, categoryId);
         if (!category) return error('Categoria não encontrada');
         const [vaultErr, vault] = await this.vaultService.getVault({ vaultId });
         if (vaultErr !== null) return error(vaultErr);
 
         const updated: string[] = [];
-        const failed: { code: string; error: string }[] = [];
-        for (const code of new Set(codes)) {
-          const current = vault.findTransactionByCode(code);
+        const failed: { id: string; error: string }[] = [];
+        for (const id of new Set(ids)) {
+          const current = vault.transactions.get(id);
           if (!current) {
-            failed.push({ code, error: `Transação #${code} não encontrada` });
+            failed.push({ id, error: 'Transação não encontrada' });
             continue;
           }
           if (current.transferId) {
             failed.push({
-              code,
+              id,
               error: 'Transferência entre estratos não tem categoria',
             });
             continue;
           }
           if (current.allocationId) {
             failed.push({
-              code,
+              id,
               error:
                 'Vinculada a uma alocação do plano; use editTransaction com allocationId: null para trocar pela categoria',
             });
@@ -934,11 +933,11 @@ export class DunaMcpServerFactory {
           }
           const [err] = await this.vaultService.editTransactionInVault({
             vaultId,
-            transactionCode: code,
+            transactionId: id,
             categoryCode: category.code,
           });
-          if (err !== null) failed.push({ code, error: err });
-          else updated.push(code);
+          if (err !== null) failed.push({ id, error: err });
+          else updated.push(id);
         }
 
         const payload = {

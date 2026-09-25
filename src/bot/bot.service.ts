@@ -1,6 +1,6 @@
 import { VaultService } from '@/vault/vault.service';
 import { Injectable, Logger } from '@nestjs/common';
-import { Either, left, right } from '../vault/domain/either';
+import { left, right } from '../vault/domain/either';
 import { ChatService } from './modules/chat/chat.service';
 import { TransactionCreatedEvent } from '../vault/events/transaction-created.event';
 import { TelegramMessageGenerator } from './telegram-message-generator';
@@ -83,49 +83,6 @@ export class BotService {
         type: 'expense',
         date: new Date(),
       },
-    });
-  }
-
-  /**
-   * Edita uma transação existente no Duna
-   * @param chatId ID do chat do Telegram
-   * @param params Parâmetros já processados para edição da transação
-   */
-  async handleEdit(
-    chatId: string,
-    params: {
-      transactionCode: string;
-      newAmount?: number;
-      newDate?: Date;
-      newCategory?: string;
-      newDescription?: string;
-      type?: 'income' | 'expense';
-    },
-  ) {
-    // Validar se pelo menos um campo foi fornecido para edição
-    if (
-      params.newAmount === undefined &&
-      params.newDate === undefined &&
-      params.newCategory === undefined &&
-      params.newDescription === undefined &&
-      params.type === undefined
-    ) {
-      return left(
-        'Nenhum campo para editar informado. Use -v, -d, -c, -t ou -desc.',
-      );
-    }
-
-    const chat = await this.chatService.findChatByTelegramChatId(chatId);
-    if (!chat) return left('Duna não encontrado.');
-    if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
-    return await this.vaultService.editTransactionInVault({
-      vaultId: chat.vaultId,
-      transactionCode: params.transactionCode,
-      newAmount: params.newAmount,
-      date: params.newDate,
-      categoryCode: params.newCategory,
-      description: params.newDescription,
-      type: params.type,
     });
   }
 
@@ -284,23 +241,6 @@ export class BotService {
       return left(err);
     }
     return right(`Prompt do Duna atualizado com sucesso:\n\n`);
-  }
-
-  async deleteTransaction(
-    chatId: string,
-    transactionCode: string,
-  ): Promise<Either<string, string>> {
-    const chat = await this.chatService.findChatByTelegramChatId(chatId);
-    if (!chat) return left('Duna não encontrado.');
-    if (!chat.vaultId) return left(BotService.NOT_STARTED_MESSAGE);
-    const [err] = await this.vaultService.deleteTransaction({
-      vaultId: chat.vaultId,
-      transactionCode,
-    });
-    if (err !== null) {
-      return left(err);
-    }
-    return right(`Transação ${transactionCode} deletada com sucesso.`);
   }
 
   async getVaultPrompt(chatId: string) {

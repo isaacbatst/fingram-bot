@@ -406,7 +406,7 @@ describe('MCP server + OAuth (integration)', () => {
       const listed = await callTool(access_token, 'listTransactions');
       expect(listed.data.total).toBe(1);
       expect(listed.data.items[0]).toMatchObject({
-        code: added.data.code,
+        id: added.data.id,
         amount: 42.5,
         type: 'expense',
         description: 'Padaria',
@@ -422,7 +422,7 @@ describe('MCP server + OAuth (integration)', () => {
       expect(summary.data.period.endDate >= today).toBe(true);
 
       const deleted = await callTool(access_token, 'deleteTransaction', {
-        code: added.data.code,
+        id: added.data.id,
       });
       expect(deleted.isError).toBe(false);
       const after = await callTool(access_token, 'listTransactions');
@@ -875,7 +875,7 @@ describe('MCP server + OAuth (integration)', () => {
 
   describe('editing transactions', () => {
     type Item = {
-      code: string;
+      id: string;
       date: string;
       type: string;
       amount: number;
@@ -982,7 +982,7 @@ describe('MCP server + OAuth (integration)', () => {
           .set('Cookie', cookie)
           .send({ type: 'expense', boxId: main, ...body })
           .expect(201);
-        return res.body.transaction.code as string;
+        return res.body.transaction.id as string;
       };
 
       const { access_token } = await connect(vault.token);
@@ -1001,12 +1001,12 @@ describe('MCP server + OAuth (integration)', () => {
       };
     }
 
-    async function row(vaultId: string, code: string) {
+    async function row(vaultId: string, id: string) {
       const rows = await db
         .select()
         .from(schema.transaction)
         .where(eq(schema.transaction.vaultId, vaultId));
-      return rows.find((r) => r.code === code);
+      return rows.find((r) => r.id === id);
     }
 
     async function budgetSpent(accessToken: string, categoryId: string) {
@@ -1019,16 +1019,16 @@ describe('MCP server + OAuth (integration)', () => {
       ).find((b) => b.categoryId === categoryId)!.spent;
     }
 
-    async function listed(accessToken: string, code: string) {
+    async function listed(accessToken: string, id: string) {
       const res = await callTool(accessToken, 'listTransactions', {
         allPeriods: true,
       });
-      return (res.data.items as Item[]).find((t) => t.code === code);
+      return (res.data.items as Item[]).find((t) => t.id === id);
     }
 
     it('changes only the fields sent and moves spending between category budgets', async () => {
       const s = await seed();
-      const code = await s.add({
+      const id = await s.add({
         amount: 100,
         date: '2026-01-10',
         categoryId: s.food,
@@ -1037,12 +1037,12 @@ describe('MCP server + OAuth (integration)', () => {
       expect(await budgetSpent(s.access_token, s.food)).toBe(100);
 
       const recategorized = await callTool(s.access_token, 'editTransaction', {
-        code,
+        id,
         categoryId: s.transport,
       });
       expect(recategorized.isError).toBe(false);
       expect(recategorized.data).toMatchObject({
-        code,
+        id,
         amount: 100,
         type: 'expense',
         date: '2026-01-10',
@@ -1057,7 +1057,7 @@ describe('MCP server + OAuth (integration)', () => {
       expect(await budgetSpent(s.access_token, s.transport)).toBe(100);
 
       const edited = await callTool(s.access_token, 'editTransaction', {
-        code,
+        id,
         amount: 80,
         date: '2026-01-20',
         description: 'Uber',
@@ -1071,60 +1071,86 @@ describe('MCP server + OAuth (integration)', () => {
         category: { id: s.transport },
       });
       // Same shape as listTransactions.
-      expect(await listed(s.access_token, code)).toEqual(edited.data);
+      expect(await listed(s.access_token, id)).toEqual(edited.data);
       // Stored as UTC midnight, like addTransaction.
-      expect((await row(s.vault.id, code))!.date!.toISOString()).toBe(
+      expect((await row(s.vault.id, id))!.date!.toISOString()).toBe(
         '2026-01-20T00:00:00.000Z',
       );
 
       const cleared = await callTool(s.access_token, 'editTransaction', {
-        code,
+        id,
         categoryId: null,
       });
       expect(cleared.data.category).toBeNull();
       expect(cleared.data.amount).toBe(80);
-      expect((await row(s.vault.id, code))!.categoryId).toBeNull();
+      expect((await row(s.vault.id, id))!.categoryId).toBeNull();
 
       const income = await callTool(s.access_token, 'editTransaction', {
-        code,
+        id,
         type: 'income',
       });
       expect(income.data.type).toBe('income');
     });
 
+    it('edits and deletes by id even when two transactions share a code', async () => {
+      // Codes are 4 random hex chars and did repeat in production.
+      const s = await seed();
+      const first = await s.add({ amount: 10, date: '2026-01-10' });
+      const second = await s.add({ amount: 20, date: '2026-01-11' });
+      for (const id of [first, second]) {
+        await db
+          .update(schema.transaction)
+          .set({ code: 'abcd' })
+          .where(eq(schema.transaction.id, id));
+      }
+
+      const edited = await callTool(s.access_token, 'editTransaction', {
+        id: second,
+        amount: 25,
+      });
+      expect(edited.isError).toBe(false);
+      expect(await row(s.vault.id, first)).toMatchObject({ amount: 10 });
+      expect(await row(s.vault.id, second)).toMatchObject({ amount: 25 });
+
+      await http()
+        .post('/vault/delete-transaction')
+        .set('Cookie', s.cookie)
+        .send({ transactionId: second })
+        .expect(201);
+      expect(await row(s.vault.id, first)).toMatchObject({ amount: 10 });
+      expect(await row(s.vault.id, second)).toBeUndefined();
+    });
+
     it('rejects invalid edits with a message', async () => {
       const s = await seed();
-      const code = await s.add({ amount: 50, date: '2026-01-10' });
+      const id = await s.add({ amount: 50, date: '2026-01-10' });
       const cases: [Record<string, unknown>, string][] = [
-        [{ code }, 'ao menos um campo'],
-        [{ code: 'nope', amount: 10 }, 'não encontrada'],
-        [{ code, categoryId: crypto.randomUUID() }, 'Categoria não encontrada'],
-        [{ code, estratoId: crypto.randomUUID() }, 'Estrato não encontrado'],
-        [{ code, withdrawalType: 'withdrawal' }, 'allocationId'],
-        [
-          { code, allocationId: crypto.randomUUID() },
-          'Alocação não encontrada',
-        ],
+        [{ id }, 'ao menos um campo'],
+        [{ id: 'nope', amount: 10 }, 'não encontrada'],
+        [{ id, categoryId: crypto.randomUUID() }, 'Categoria não encontrada'],
+        [{ id, estratoId: crypto.randomUUID() }, 'Estrato não encontrado'],
+        [{ id, withdrawalType: 'withdrawal' }, 'allocationId'],
+        [{ id, allocationId: crypto.randomUUID() }, 'Alocação não encontrada'],
       ];
       for (const [args, message] of cases) {
         const res = await callTool(s.access_token, 'editTransaction', args);
         expect(res.isError, JSON.stringify(args)).toBe(true);
         expect(res.text).toContain(message);
       }
-      const unchanged = await row(s.vault.id, code);
+      const unchanged = await row(s.vault.id, id);
       expect(unchanged).toMatchObject({ amount: 50, categoryId: null });
     });
 
     it('links to plan allocations with the same rules as the app', async () => {
       const s = await seed();
-      const code = await s.add({
+      const id = await s.add({
         amount: 1200,
         date: '2026-01-10',
         categoryId: s.food,
         description: 'Parcela',
       });
       const edit = (args: Record<string, unknown>) =>
-        callTool(s.access_token, 'editTransaction', { code, ...args });
+        callTool(s.access_token, 'editTransaction', { id, ...args });
 
       const rejected: [Record<string, unknown>, string][] = [
         [
@@ -1163,7 +1189,7 @@ describe('MCP server + OAuth (integration)', () => {
         withdrawalType: 'realization',
       });
       expect(reserve.data.allocationId).toBe(s.trip);
-      expect(await row(s.vault.id, code)).toMatchObject({
+      expect(await row(s.vault.id, id)).toMatchObject({
         allocationId: s.trip,
         withdrawalType: 'realization',
       });
@@ -1175,7 +1201,7 @@ describe('MCP server + OAuth (integration)', () => {
 
       // Back to a Pagamento: the Reserva withdrawalType does not linger.
       await edit({ allocationId: s.financing });
-      expect(await row(s.vault.id, code)).toMatchObject({
+      expect(await row(s.vault.id, id)).toMatchObject({
         allocationId: s.financing,
         withdrawalType: null,
       });
@@ -1185,7 +1211,7 @@ describe('MCP server + OAuth (integration)', () => {
         allocationId: null,
         category: { id: s.food },
       });
-      expect(await row(s.vault.id, code)).toMatchObject({
+      expect(await row(s.vault.id, id)).toMatchObject({
         allocationId: null,
         withdrawalType: null,
         categoryId: s.food,
@@ -1220,10 +1246,9 @@ describe('MCP server + OAuth (integration)', () => {
         date: '2026-01-15',
       });
       expect(created.isError).toBe(false);
-      const { transferId, code } = created.data;
+      const { transferId } = created.data;
       expect(created.data).toEqual({
         transferId,
-        code,
         amount: 300,
         date: '2026-01-15',
         fromEstratoId: s.main,
@@ -1233,29 +1258,29 @@ describe('MCP server + OAuth (integration)', () => {
         [s.main]: -300,
         [s.reserve]: 300,
       });
-      expect(await listed(s.access_token, code)).toMatchObject({
+      const sideRows = await db
+        .select()
+        .from(schema.transaction)
+        .where(eq(schema.transaction.transferId, transferId));
+      const id = sideRows.find((r) => r.type === 'expense')!.id;
+      expect(await listed(s.access_token, id)).toMatchObject({
         isTransfer: true,
         transferId,
         estratoId: s.main,
       });
 
       // Either side, through the single-transaction tools, is refused.
-      const sides = (
-        await db
-          .select()
-          .from(schema.transaction)
-          .where(eq(schema.transaction.transferId, transferId))
-      ).map((r) => r.code);
+      const sides = sideRows.map((r) => r.id);
       expect(sides).toHaveLength(2);
       for (const side of sides) {
         const edit = await callTool(s.access_token, 'editTransaction', {
-          code: side,
+          id: side,
           amount: 1,
         });
         expect(edit.isError).toBe(true);
         expect(edit.text).toContain('editTransfer');
         const del = await callTool(s.access_token, 'deleteTransaction', {
-          code: side,
+          id: side,
         });
         expect(del.isError).toBe(true);
         expect(del.text).toContain('deleteTransfer');
@@ -1263,7 +1288,7 @@ describe('MCP server + OAuth (integration)', () => {
       const categorize = await callTool(
         s.access_token,
         'categorizeTransactions',
-        { codes: [code], categoryId: s.food },
+        { ids: [id], categoryId: s.food },
       );
       expect(categorize.isError).toBe(true);
       expect(await balances()).toMatchObject({
@@ -1316,7 +1341,7 @@ describe('MCP server + OAuth (integration)', () => {
       ).toBe(true);
     });
 
-    it('categorizes in bulk, reporting per-code failures without aborting', async () => {
+    it('categorizes in bulk, reporting per-id failures without aborting', async () => {
       const s = await seed();
       const a = await s.add({ amount: 10, date: '2026-01-05' });
       const b = await s.add({
@@ -1332,13 +1357,13 @@ describe('MCP server + OAuth (integration)', () => {
       });
 
       const res = await callTool(s.access_token, 'categorizeTransactions', {
-        codes: [a, b, 'nope', c, planned, a],
+        ids: [a, b, 'nope', c, planned, a],
         categoryId: s.food,
       });
       expect(res.isError).toBe(false);
       expect(res.data.category).toEqual({ id: s.food, name: 'Alimentação' });
       expect(res.data.updated).toEqual([a, b, c]);
-      expect(res.data.failed.map((f: { code: string }) => f.code)).toEqual([
+      expect(res.data.failed.map((f: { id: string }) => f.id)).toEqual([
         'nope',
         planned,
       ]);
@@ -1349,13 +1374,13 @@ describe('MCP server + OAuth (integration)', () => {
       const allFailed = await callTool(
         s.access_token,
         'categorizeTransactions',
-        { codes: ['nope'], categoryId: s.food },
+        { ids: ['nope'], categoryId: s.food },
       );
       expect(allFailed.isError).toBe(true);
       expect(
         (
           await callTool(s.access_token, 'categorizeTransactions', {
-            codes: [a],
+            ids: [a],
             categoryId: crypto.randomUUID(),
           })
         ).isError,
@@ -1365,12 +1390,12 @@ describe('MCP server + OAuth (integration)', () => {
     it("cannot edit another vault's transactions or use its ids", async () => {
       const mine = await seed();
       const other = await seed();
-      const myCode = await mine.add({
+      const myId = await mine.add({
         amount: 10,
         date: '2026-01-05',
         categoryId: mine.food,
       });
-      const otherCode = await other.add({
+      const otherId = await other.add({
         amount: 99,
         date: '2026-01-05',
         categoryId: other.food,
@@ -1396,10 +1421,10 @@ describe('MCP server + OAuth (integration)', () => {
       };
 
       // Their transactions and transfers.
-      await expectError('editTransaction', { code: otherCode, amount: 1 });
-      await expectError('deleteTransaction', { code: otherCode });
+      await expectError('editTransaction', { id: otherId, amount: 1 });
+      await expectError('deleteTransaction', { id: otherId });
       await expectError('categorizeTransactions', {
-        codes: [otherCode],
+        ids: [otherId],
         categoryId: mine.transport,
       });
       const transferId = otherTransfer.data.transferId;
@@ -1408,19 +1433,19 @@ describe('MCP server + OAuth (integration)', () => {
 
       // Their ids on my transaction.
       await expectError('editTransaction', {
-        code: myCode,
+        id: myId,
         categoryId: other.transport,
       });
       await expectError('categorizeTransactions', {
-        codes: [myCode],
+        ids: [myId],
         categoryId: other.transport,
       });
       await expectError('editTransaction', {
-        code: myCode,
+        id: myId,
         estratoId: other.reserve,
       });
       const alloc = await expectError('editTransaction', {
-        code: myCode,
+        id: myId,
         allocationId: other.financing,
       });
       expect(alloc.text).toContain('não pertence a este vault');
@@ -1431,11 +1456,11 @@ describe('MCP server + OAuth (integration)', () => {
         date: '2026-01-07',
       });
 
-      expect(await row(other.vault.id, otherCode)).toMatchObject({
+      expect(await row(other.vault.id, otherId)).toMatchObject({
         amount: 99,
         categoryId: other.food,
       });
-      expect(await row(mine.vault.id, myCode)).toMatchObject({
+      expect(await row(mine.vault.id, myId)).toMatchObject({
         amount: 10,
         categoryId: mine.food,
         boxId: mine.main,
