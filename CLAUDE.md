@@ -123,6 +123,14 @@ Editing rules (MCP edit tools):
 - **Transfers are pairs.** Single-transaction tools (`editTransaction`, `deleteTransaction`, `categorizeTransactions`) refuse a transaction with `transferId`; only `editTransfer`/`deleteTransfer` touch both sides. `listTransactions` shows only the expense side, but the income side's code still works in tools, so guard by `transferId`, not by what is listed.
 - **Category and allocation are exclusive in effect:** the budget ignores the category of a transaction with `allocationId`. Linking to an allocation clears the category; categorizing a linked one requires `allocationId: null` in the same call.
 
+Cartão / fatura (ver `../docs/product/spec-operational.md` §9):
+- **Card purchases never count by themselves.** A transaction with `invoiceRole = 'purchase'` is excluded from every aggregation (`Transaction.countsInLedger`; SQL `countsInLedger` condition in `transaction-drizzle.repository.ts`). What counts are the derived rows `part` (piece of a purchase paid by a payment, dated on the payment) and `remainder` ("não discriminado"). **Any new aggregation over transactions must skip `purchase` rows**, or card spending is counted twice.
+- Derived rows are owned by `Vault.recomputeCard` (FIFO in `allocateCard`, whole-card queue, cents). Never write them by hand; call the aggregate method that changed the purchase/payment/invoice/card and it recomputes. Tools and endpoints refuse editing/deleting derived rows via `derivedTransactionError`.
+- Invariant tested everywhere: card spending in a month == sum of invoice payments in that month.
+- The data migration `drizzle/0016_card_invoice_data.sql` reimplements `allocateCard` in SQL (window functions + interval overlap). If the allocation rule changes, historical rows stay as migrated until the next recompute of that card — keep `card-migration.integration.spec.ts` green (it asserts "migration output == domain recompute").
+
+Testing gotcha: in integration tests that query with raw `pg` (`pool.query`), `timestamp without time zone` columns come back parsed in the **local** timezone (03:00Z in UTC-3), unlike drizzle. Compare dates with `to_char(col, 'YYYY-MM-DD')` in SQL. The migration test runs migrations up to an index by copying `drizzle/` to a temp dir and truncating `_journal.json`.
+
 Tool schemas use plain zod `.optional()`. The OpenAI rule "`.nullable()` instead of `.optional()`" applies only to OpenAI structured outputs (`AiService`), not to MCP.
 
 ## Verification Commands
