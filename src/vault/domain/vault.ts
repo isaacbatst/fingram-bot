@@ -75,6 +75,13 @@ export type BudgetSummary = {
   amount: number;
   percentageUsed: number;
 };
+/**
+ * Até quantos dias o débito importado pode estar da data informada numa fatura
+ * criada à mão para ser reconhecido como o pagamento dela.
+ */
+const PAYMENT_MATCH_DAYS = 7;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export class Vault {
   static generateId(): string {
     return crypto.randomUUID();
@@ -264,6 +271,8 @@ export class Vault {
     paymentDate: Date;
     boxId: string;
     cardLabel?: string | null;
+    /** Falso para a fatura criada à mão, antes de o débito ser importado. */
+    hasPaymentLine?: boolean;
   }): Either<string, CardInvoice> {
     if (!(input.amount > 0)) return left('O valor da fatura deve ser positivo');
     if (!this.boxes.get(input.boxId)) return left('Estrato não encontrado');
@@ -274,11 +283,62 @@ export class Vault {
       amount: input.amount,
       paymentDate: input.paymentDate,
       cardLabel: input.cardLabel ?? null,
+      hasPaymentLine: input.hasPaymentLine ?? true,
     });
     this.invoices.set(invoice.id, invoice);
     this.invoicesTracker.registerNew(invoice);
     this.recomputeInvoice(invoice.id);
     return right(invoice);
+  }
+
+  /**
+   * A fatura criada à mão que espera por este débito: sem linha de pagamento
+   * ainda, no mesmo estrato, com o mesmo valor ao centavo e paga até
+   * `PAYMENT_MATCH_DAYS` dias de distância. Havendo mais de uma, a de data mais
+   * próxima. É o que impede o débito importado de virar uma segunda fatura.
+   */
+  findInvoiceAwaitingPayment(payment: {
+    amount: number;
+    date: Date;
+    boxId: string;
+  }): CardInvoice | null {
+    const cents = Math.round(payment.amount * 100);
+    const distance = (invoice: CardInvoice) =>
+      Math.abs(invoice.paymentDate.getTime() - payment.date.getTime());
+    const candidates = [...this.invoices.values()].filter(
+      (invoice) =>
+        !invoice.hasPaymentLine &&
+        invoice.boxId === payment.boxId &&
+        Math.round(invoice.amount * 100) === cents &&
+        distance(invoice) <= PAYMENT_MATCH_DAYS * DAY_MS,
+    );
+    candidates.sort((a, b) => distance(a) - distance(b));
+    return candidates[0] ?? null;
+  }
+
+  /**
+   * O débito importado chegou para uma fatura criada à mão. A data do extrato é
+   * a real: a fatura, o não discriminado e as compras ligadas passam a contar
+   * nela.
+   */
+  attachPaymentLine(
+    invoiceId: string,
+    paymentDate: Date,
+  ): Either<string, true> {
+    const invoice = this.invoices.get(invoiceId);
+    if (!invoice) return left('Fatura não encontrada');
+    if (invoice.hasPaymentLine) {
+      return left('Esta fatura já tem o débito do pagamento');
+    }
+    invoice.hasPaymentLine = true;
+    invoice.paymentDate = paymentDate;
+    this.invoicesTracker.registerDirty(invoice);
+    for (const tx of this.transactions.values()) {
+      if (tx.invoiceId !== invoiceId) continue;
+      tx.date = paymentDate;
+      this.transactionsTracker.registerDirty(tx);
+    }
+    return right(true);
   }
 
   /**

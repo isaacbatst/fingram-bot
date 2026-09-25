@@ -196,6 +196,10 @@ export const cardInvoice = pgTable('card_invoice', {
   amount: doublePrecision('amount').notNull(),
   paymentDate: timestamp('payment_date').notNull(),
   cardLabel: text('card_label'),
+  // Se o débito do pagamento já foi importado. Uma fatura criada à mão (MCP)
+  // nasce sem ele; quando o extrato traz o pagamento, a linha é ligada a ela em
+  // vez de criar uma segunda fatura. As existentes vieram todas do import.
+  hasPaymentLine: boolean('has_payment_line').notNull().default(true),
   createdAt: timestamp('created_at').notNull(),
 });
 

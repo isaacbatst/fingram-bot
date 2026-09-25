@@ -27,12 +27,15 @@ type CreateParams = {
   amount: number;
   paymentDate: Date;
   cardLabel?: string | null;
+  /** Falso quando a fatura é criada à mão, antes de o débito ser importado. */
+  hasPaymentLine?: boolean;
   createdAt?: Date;
 };
 
 type RestoreParams = CreateParams & {
   id: string;
   cardLabel: string | null;
+  hasPaymentLine: boolean;
   createdAt: Date;
 };
 
@@ -125,6 +128,7 @@ export class CardInvoice {
       ...params,
       id: crypto.randomUUID(),
       cardLabel: params.cardLabel ?? null,
+      hasPaymentLine: params.hasPaymentLine ?? true,
       createdAt: params.createdAt ?? new Date(),
     });
   }
@@ -137,9 +141,11 @@ export class CardInvoice {
   readonly vaultId: string;
   readonly boxId: string;
   readonly amount: number;
-  readonly paymentDate: Date;
+  /** Muda só quando o débito importado confirma a data de uma fatura criada à mão. */
+  paymentDate: Date;
   readonly createdAt: Date;
   cardLabel: string | null;
+  hasPaymentLine: boolean;
 
   private constructor(params: RestoreParams) {
     this.id = params.id;
@@ -148,6 +154,7 @@ export class CardInvoice {
     this.amount = params.amount;
     this.paymentDate = params.paymentDate;
     this.cardLabel = params.cardLabel;
+    this.hasPaymentLine = params.hasPaymentLine;
     this.createdAt = params.createdAt;
   }
 }

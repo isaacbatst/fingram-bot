@@ -169,7 +169,7 @@ export class DunaMcpServerFactory {
           'Para registrar uma transação, busque as categorias com getCategories e use a mais provável; o usuário pode corrigir depois.',
           'O orçamento é mensal, mas o período pode não começar no dia 1: use getBudgetSummary para saber as datas do período.',
           'Para totais e comparações (por categoria, por mês, por estrato), use getSpendingBreakdown em vez de somar listTransactions.',
-          'Fatura de cartão: o pagamento da fatura vira uma fatura com uma parte "não discriminada" que conta no mês do pagamento. As compras do extrato do cartão ligadas a ela contam na data do pagamento (a data da compra fica em purchaseDate) e abatem o não discriminado. Use listInvoices para saber o que falta detalhar.',
+          'Fatura de cartão: o pagamento da fatura vira uma fatura (importado do extrato da conta, ou com createInvoice quando o usuário conta que pagou) com uma parte "não discriminada" que conta no mês do pagamento. As compras do extrato do cartão ligadas a ela contam na data do pagamento (a data da compra fica em purchaseDate) e abatem o não discriminado. Use listInvoices para saber o que falta detalhar.',
           'Para corrigir uma transação, use editTransaction com o id de listTransactions (só os campos enviados mudam); para recategorizar várias de uma vez, categorizeTransactions.',
           'Transferências entre estratos (isTransfer) são um par de lançamentos: altere ou remova com editTransfer/deleteTransfer, pelo transferId.',
         ].join('\n'),
@@ -189,6 +189,7 @@ export class DunaMcpServerFactory {
       paymentDate: invoice.paymentDate.toISOString().slice(0, 10),
       estratoId: invoice.boxId,
       cardLabel: invoice.cardLabel,
+      paymentImported: invoice.hasPaymentLine,
       status: invoice.status,
       itemized: invoice.itemized,
       remainder: invoice.remainder,
@@ -223,6 +224,55 @@ export class DunaMcpServerFactory {
             total: st.total,
           })),
         });
+      },
+    );
+
+    server.registerTool(
+      'createInvoice',
+      {
+        title: 'Registrar fatura de cartão',
+        description:
+          'Registra uma fatura de cartão paga, quando o usuário conta que pagou e o extrato da conta ainda não foi importado. O valor passa a contar no mês do pagamento como "não discriminado" até as compras do extrato do cartão serem ligadas. Quando o extrato da conta trouxer o débito, ele é reconhecido como o pagamento desta fatura (mesmo valor e estrato, até 7 dias de diferença) e a data passa a ser a do extrato. Confira listInvoices antes: se já houver fatura de mesmo valor em data próxima, a criação é recusada, a menos que allowDuplicate seja true.',
+        inputSchema: {
+          amount: z.number().positive().describe('Valor pago em R$'),
+          paymentDate: z
+            .string()
+            .date()
+            .describe('Data do pagamento (AAAA-MM-DD)'),
+          estratoId: z
+            .string()
+            .optional()
+            .describe('Estrato que pagou (padrão: o estrato padrão)'),
+          cardLabel: z
+            .string()
+            .optional()
+            .describe('Nome do cartão, ex.: "Nubank"'),
+          allowDuplicate: z
+            .boolean()
+            .optional()
+            .describe(
+              'Confirma que é outra fatura, mesmo havendo uma de mesmo valor em data próxima',
+            ),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+      },
+      async (input) => {
+        const [err, invoice] = await this.cardInvoiceService.createInvoice({
+          vaultId,
+          amount: input.amount,
+          // Como as demais datas: AAAA-MM-DD vira meia-noite UTC.
+          paymentDate: new Date(input.paymentDate),
+          boxId: input.estratoId,
+          cardLabel: input.cardLabel ?? null,
+          allowDuplicate: input.allowDuplicate,
+        });
+        if (err !== null) return error(err);
+        return json(toInvoiceItem(invoice));
       },
     );
 

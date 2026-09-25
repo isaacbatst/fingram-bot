@@ -19,6 +19,7 @@ import {
 } from './repositories/import-entry.repository';
 import { PlanQueryService } from '@/plan/shared/plan-query.service';
 import { CardInvoiceService, isInvoiceLine } from './card-invoice.service';
+import { CardInvoice } from './domain/card-invoice';
 import { OfxParseError, OfxStatement, parseOfx } from '@/shared/ofx-parser';
 
 export type ImportReview = {
@@ -709,21 +710,38 @@ export class ImportService {
         continue;
       }
 
-      const [error, invoice] = vault.registerInvoice({
+      // A fatura pode ter sido criada à mão antes (pelo assistente, via MCP):
+      // o débito é o pagamento dela, não uma fatura nova.
+      const awaiting = vault.findInvoiceAwaitingPayment({
         amount: entry.amount,
-        paymentDate: entry.date,
+        date: entry.date,
         boxId,
       });
-      if (error !== null) {
-        skipped.push(entryId);
-        continue;
+      let invoice: CardInvoice;
+      if (awaiting) {
+        vault.attachPaymentLine(awaiting.id, entry.date);
+        invoice = awaiting;
+      } else {
+        const [error, created] = vault.registerInvoice({
+          amount: entry.amount,
+          paymentDate: entry.date,
+          boxId,
+        });
+        if (error !== null) {
+          skipped.push(entryId);
+          continue;
+        }
+        invoice = created;
       }
       invoiceIds.push(invoice.id);
 
-      const match = await this.cardInvoiceService.findStatementForInvoice(
-        invoice,
-        batches,
-      );
+      const hasStatement = batches.some((b) => b.invoiceId === invoice.id);
+      const match = hasStatement
+        ? null
+        : await this.cardInvoiceService.findStatementForInvoice(
+            invoice,
+            batches,
+          );
       if (match) {
         this.cardInvoiceService.applyBatchLink(
           vault,

@@ -439,6 +439,112 @@ describe('MCP: faturas de cartão (integration)', () => {
     );
   });
 
+  describe('createInvoice', () => {
+    const septemberSpent = async (token: string) =>
+      (await callTool(token, 'getBudgetSummary', { month: 9, year: 2026 })).data
+        .spent as number;
+
+    it('cria a fatura antes do débito e o débito importado vira o pagamento dela, sem duplicar', async () => {
+      const vault = await createVault();
+      const token = await connect(vault);
+
+      const created = await callTool(token, 'createInvoice', {
+        amount: 3200,
+        paymentDate: '2026-09-08',
+        cardLabel: 'Nubank',
+      });
+      expect(created.isError).toBe(false);
+      expect(created.data).toMatchObject({
+        amount: 3200,
+        paymentDate: '2026-09-08',
+        estratoId: vault.boxId,
+        cardLabel: 'Nubank',
+        paymentImported: false,
+        status: 'awaiting',
+        remainder: 3200,
+      });
+      expect(await septemberSpent(token)).toBe(3200);
+
+      // O extrato da conta traz o débito dois dias depois.
+      const invoiceId = await registerInvoice(vault);
+      expect(invoiceId).toBe(created.data.id);
+
+      const listed = await callTool(token, 'listInvoices');
+      expect(listed.data.invoices).toHaveLength(1);
+      expect(listed.data.invoices[0]).toMatchObject({
+        id: created.data.id,
+        paymentImported: true,
+        paymentDate: '2026-09-10',
+        remainder: 3200,
+      });
+      expect(await septemberSpent(token)).toBe(3200);
+
+      const remainders = (
+        await callTool(token, 'listTransactions', { month: 9, year: 2026 })
+      ).data.items.filter(
+        (t: { invoiceRole: string }) => t.invoiceRole === 'remainder',
+      );
+      expect(remainders).toHaveLength(1);
+      expect(remainders[0].date).toBe('2026-09-10');
+    });
+
+    it('liga na hora um extrato de cartão pendente que bate com ela', async () => {
+      const vault = await createVault();
+      const token = await connect(vault);
+      const statementId = await importCard(vault, '-3200.00');
+
+      const created = await callTool(token, 'createInvoice', {
+        amount: 3200,
+        paymentDate: '2026-09-10',
+      });
+      expect(created.data).toMatchObject({
+        status: 'partial',
+        remainder: 1150,
+        statements: [expect.objectContaining({ statementId })],
+      });
+      expect(await septemberSpent(token)).toBe(3200);
+    });
+
+    it('recusa o que parece a mesma fatura, a menos que allowDuplicate confirme', async () => {
+      const vault = await createVault();
+      const token = await connect(vault);
+      await registerInvoice(vault); // 3200 em 10/09, vinda do import
+
+      const dup = await callTool(token, 'createInvoice', {
+        amount: 3200,
+        paymentDate: '2026-09-12',
+      });
+      expect(dup.isError).toBe(true);
+      expect(dup.text).toMatch(/allowDuplicate/);
+      expect(
+        (await callTool(token, 'listInvoices')).data.invoices,
+      ).toHaveLength(1);
+
+      const forced = await callTool(token, 'createInvoice', {
+        amount: 3200,
+        paymentDate: '2026-09-12',
+        allowDuplicate: true,
+      });
+      expect(forced.isError).toBe(false);
+      expect(
+        (await callTool(token, 'listInvoices')).data.invoices,
+      ).toHaveLength(2);
+    });
+
+    it('não aceita estrato de outro vault', async () => {
+      const mine = await createVault();
+      const other = await createVault();
+      const token = await connect(mine);
+      const res = await callTool(token, 'createInvoice', {
+        amount: 100,
+        paymentDate: '2026-09-10',
+        estratoId: other.boxId,
+      });
+      expect(res.isError).toBe(true);
+      expect((await callTool(token, 'listInvoices')).data.invoices).toEqual([]);
+    });
+  });
+
   it('não enxerga nem altera faturas de outro vault', async () => {
     const mine = await createVault();
     const other = await createVault();

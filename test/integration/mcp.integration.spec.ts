@@ -354,6 +354,7 @@ describe('MCP server + OAuth (integration)', () => {
           'addAllocation',
           'addTransaction',
           'categorizeTransactions',
+          'createInvoice',
           'createTransfer',
           'deleteTransaction',
           'deleteTransfer',
@@ -1500,7 +1501,7 @@ describe('MCP server + OAuth (integration)', () => {
         expect(client.getInstructions()).toContain('Duna');
 
         const { tools } = await client.listTools();
-        expect(tools.length).toBe(23);
+        expect(tools.length).toBe(24);
 
         const result = await client.callTool({
           name: 'getBudgetSummary',

@@ -78,6 +78,7 @@ export class VaultDrizzleRepository extends VaultRepository {
           amount: i.amount,
           paymentDate: i.paymentDate,
           cardLabel: i.cardLabel,
+          hasPaymentLine: i.hasPaymentLine,
           createdAt: i.createdAt,
         }),
       );
@@ -147,7 +148,11 @@ export class VaultDrizzleRepository extends VaultRepository {
       queries.push(
         this.db
           .update(cardInvoice)
-          .set({ cardLabel: i.cardLabel })
+          .set({
+            cardLabel: i.cardLabel,
+            paymentDate: i.paymentDate,
+            hasPaymentLine: i.hasPaymentLine,
+          })
           .where(eq(cardInvoice.id, i.id)),
       );
     }
@@ -336,6 +341,7 @@ export class VaultDrizzleRepository extends VaultRepository {
           amount: i.amount,
           paymentDate: i.paymentDate,
           cardLabel: i.cardLabel,
+          hasPaymentLine: i.hasPaymentLine,
           createdAt: i.createdAt,
         }),
       );

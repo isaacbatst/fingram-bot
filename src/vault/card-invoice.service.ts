@@ -18,6 +18,8 @@ export type InvoiceView = {
   paymentDate: Date;
   boxId: string;
   cardLabel: string | null;
+  /** Falso numa fatura criada à mão cujo débito ainda não foi importado. */
+  hasPaymentLine: boolean;
   createdAt: Date;
   /** Extratos de cartão ligados a esta fatura. */
   statements: { batchId: string; accountLabel: string | null }[];
@@ -164,6 +166,7 @@ export class CardInvoiceService {
         paymentDate: invoice.paymentDate,
         boxId: invoice.boxId,
         cardLabel: invoice.cardLabel,
+        hasPaymentLine: invoice.hasPaymentLine,
         createdAt: invoice.createdAt,
         statements: batches
           .filter((b) => b.invoiceId === invoice.id)
@@ -202,6 +205,85 @@ export class CardInvoiceService {
     }
 
     return right({ invoices, unlinkedStatements });
+  }
+
+  /**
+   * Cria uma fatura à mão, antes de o débito do pagamento ser importado (o
+   * assistente, via MCP, quando o usuário conta que pagou a fatura). Conta desde
+   * já como não discriminado. Quando o extrato da conta trouxer o débito, a
+   * triagem o liga a esta fatura em vez de criar outra
+   * (`Vault.findInvoiceAwaitingPayment`).
+   *
+   * Recusa o que parece a mesma fatura de novo — mesmo estrato, mesmo valor,
+   * até 7 dias de distância — a menos que `allowDuplicate` confirme que são
+   * duas. Um extrato de cartão pendente que bata com ela é ligado na hora.
+   */
+  async createInvoice(input: {
+    vaultId: string;
+    amount: number;
+    paymentDate: Date;
+    boxId?: string;
+    cardLabel?: string | null;
+    allowDuplicate?: boolean;
+  }): Promise<Either<string, InvoiceView>> {
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) return left('Dados não encontrados');
+    const boxId =
+      input.boxId ?? [...vault.boxes.values()].find((b) => b.isDefault)?.id;
+    if (!boxId || !vault.boxes.get(boxId))
+      return left('Estrato não encontrado');
+
+    if (!input.allowDuplicate) {
+      const cents = Math.round(input.amount * 100);
+      const duplicate = [...vault.invoices.values()].find(
+        (invoice) =>
+          invoice.boxId === boxId &&
+          Math.round(invoice.amount * 100) === cents &&
+          Math.abs(
+            invoice.paymentDate.getTime() - input.paymentDate.getTime(),
+          ) <=
+            7 * 24 * 60 * 60 * 1000,
+      );
+      if (duplicate) {
+        return left(
+          `Já existe uma fatura de mesmo valor paga em ${duplicate.paymentDate.toISOString().slice(0, 10)} (id ${duplicate.id}). Se for mesmo outra fatura, envie allowDuplicate: true.`,
+        );
+      }
+    }
+
+    const [error, invoice] = vault.registerInvoice({
+      amount: input.amount,
+      paymentDate: input.paymentDate,
+      boxId,
+      cardLabel: input.cardLabel ?? null,
+      hasPaymentLine: false,
+    });
+    if (error !== null) return left(error);
+
+    const batches = await this.importBatchRepository.findByVaultId(
+      input.vaultId,
+    );
+    const match = await this.findStatementForInvoice(invoice, batches);
+    if (match) {
+      this.applyBatchLink(vault, match.batch, match.entries, invoice.id);
+    }
+
+    await this.vaultRepository.update(vault);
+    if (match) await this.importBatchRepository.update(match.batch);
+
+    return right({
+      id: invoice.id,
+      amount: invoice.amount,
+      paymentDate: invoice.paymentDate,
+      boxId: invoice.boxId,
+      cardLabel: invoice.cardLabel,
+      hasPaymentLine: invoice.hasPaymentLine,
+      createdAt: invoice.createdAt,
+      statements: match
+        ? [{ batchId: match.batch.id, accountLabel: match.batch.accountLabel }]
+        : [],
+      ...vault.getInvoiceBreakdown(invoice.id)!,
+    });
   }
 
   async setBatchInvoice(input: {

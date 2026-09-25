@@ -1,0 +1,1 @@
+ALTER TABLE "card_invoice" ADD COLUMN IF NOT EXISTS "has_payment_line" boolean DEFAULT true NOT NULL;

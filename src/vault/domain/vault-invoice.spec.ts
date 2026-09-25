@@ -250,4 +250,91 @@ describe('Vault — fatura de cartão', () => {
     )!;
     expect(vault.linkToInvoice(leg.id, invoice.id)[0]).not.toBeNull();
   });
+
+  describe('fatura criada à mão, antes do débito', () => {
+    const manual = (amount = 3200, date = day(9, 10), boxId = conta.id) => {
+      const [error, invoice] = vault.registerInvoice({
+        amount,
+        paymentDate: date,
+        boxId,
+        hasPaymentLine: false,
+      });
+      expect(error).toBeNull();
+      return invoice!;
+    };
+
+    it('should find the manual invoice waiting for a matching debit', () => {
+      const invoice = manual();
+      const payment = { amount: 3200, boxId: conta.id };
+
+      expect(
+        vault.findInvoiceAwaitingPayment({ ...payment, date: day(9, 12) })?.id,
+      ).toBe(invoice.id);
+      // Mais de 7 dias, outro valor ou outro estrato: não é o pagamento dela.
+      expect(
+        vault.findInvoiceAwaitingPayment({ ...payment, date: day(9, 18) }),
+      ).toBeNull();
+      expect(
+        vault.findInvoiceAwaitingPayment({
+          ...payment,
+          amount: 3200.01,
+          date: day(9, 10),
+        }),
+      ).toBeNull();
+      expect(
+        vault.findInvoiceAwaitingPayment({
+          amount: 3200,
+          boxId: cartao.id,
+          date: day(9, 10),
+        }),
+      ).toBeNull();
+    });
+
+    it('should ignore invoices that already have their debit, and prefer the closest date', () => {
+      register(); // veio do import: já tem o débito
+      expect(
+        vault.findInvoiceAwaitingPayment({
+          amount: 3200,
+          boxId: conta.id,
+          date: day(9, 10),
+        }),
+      ).toBeNull();
+
+      manual(3200, day(9, 4));
+      const closer = manual(3200, day(9, 9));
+      expect(
+        vault.findInvoiceAwaitingPayment({
+          amount: 3200,
+          boxId: conta.id,
+          date: day(9, 10),
+        })?.id,
+      ).toBe(closer.id);
+    });
+
+    it('should move the invoice, remainder and linked purchases to the imported date', () => {
+      const invoice = manual(3200, day(8, 30));
+      const bought = purchase(1000, day(8, 12));
+      vault.linkToInvoice(bought.id, invoice.id);
+      expect(spentOn(AUGUST)).toBe(3200);
+
+      const [error] = vault.attachPaymentLine(invoice.id, day(9, 2));
+      expect(error).toBeNull();
+
+      expect(invoice.hasPaymentLine).toBe(true);
+      expect(invoice.paymentDate).toEqual(day(9, 2));
+      expect(remainderOf(invoice.id)!.date).toEqual(day(9, 2));
+      expect(bought.date).toEqual(day(9, 2));
+      expect(bought.purchaseDate).toEqual(day(8, 12));
+      expect(spentOn(AUGUST)).toBe(0);
+      expect(spentOn(SEPTEMBER)).toBe(3200);
+      expect(
+        vault.findInvoiceAwaitingPayment({
+          amount: 3200,
+          boxId: conta.id,
+          date: day(9, 2),
+        }),
+      ).toBeNull();
+      expect(vault.attachPaymentLine(invoice.id, day(9, 3))[0]).not.toBeNull();
+    });
+  });
 });
