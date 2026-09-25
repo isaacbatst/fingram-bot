@@ -662,9 +662,14 @@ export class Vault {
       return this.invoiceFor(cardId, day, options);
     }
 
+    // Uma fatura anterior que ainda não existe só é criada para o pagamento
+    // feito até o vencimento dela; depois disso é antecipação da atual.
     const current = cycleDatesFor(card, day);
     const previous = cycleDatesFor(card, addDays(current.periodStart, -1));
-    if (inWindow(previous.closingDate, previous.dueDate)) {
+    if (
+      previous.closingDate.getTime() < day.getTime() &&
+      day.getTime() <= previous.dueDate.getTime()
+    ) {
       return this.invoiceFor(cardId, previous.closingDate, options);
     }
     return this.invoiceFor(cardId, day, options);

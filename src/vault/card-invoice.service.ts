@@ -782,7 +782,7 @@ export class CardInvoiceService {
       }
       amount = source.amount;
       date = source.date;
-      boxId = boxId ?? source.boxId;
+      boxId = boxId ?? (source.boxId || undefined);
       entry = await this.importEntryRepository.findByTransactionId(source.id);
     }
     if (amount === undefined || date === undefined) {
