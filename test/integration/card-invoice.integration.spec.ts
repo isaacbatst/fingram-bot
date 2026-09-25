@@ -319,8 +319,7 @@ describe('Cartões, faturas e pagamentos (integration)', () => {
       purchaseAmount: 500,
       date: '2026-09-10T00:00:00.000Z',
     });
-    const aug = (await get('/vault/transactions?year=2026&month=8')).body
-      .items;
+    const aug = (await get('/vault/transactions?year=2026&month=8')).body.items;
     expect(aug.find((t: any) => t.description === 'CINEMA').amount).toBe(300);
 
     const detail = (await get(`/vault/invoices/${batch.invoiceId}`)).body;
@@ -668,9 +667,9 @@ describe('Cartões, faturas e pagamentos (integration)', () => {
 
     it('mostra a prévia por mês sem gravar, e aplica só quando pedido', async () => {
       await seedLegacy();
-      expect((await get('/vault/invoices')).body.pendingStatements).toHaveLength(
-        1,
-      );
+      expect(
+        (await get('/vault/invoices')).body.pendingStatements,
+      ).toHaveLength(1);
 
       const preview = (await get('/vault/invoices/reprocess/preview')).body;
       expect(preview.months).toEqual([
@@ -691,8 +690,9 @@ describe('Cartões, faturas e pagamentos (integration)', () => {
       expect((await summary(7)).spent).toBe(1000);
       expect((await get('/vault/cards')).body.cards).toEqual([]);
 
-      const applied = (await post('/vault/invoices/reprocess/apply').expect(201))
-        .body;
+      const applied = (
+        await post('/vault/invoices/reprocess/apply').expect(201)
+      ).body;
       expect(applied.months).toEqual(preview.months);
       expect(await summary(7)).toMatchObject({ spent: 0 });
       expect(await summary(8)).toMatchObject({ spent: 1000, mercado: 1000 });

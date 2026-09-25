@@ -272,7 +272,11 @@ export class CardInvoiceService {
   // Views
   // ---------------------------------------------------------------------------
 
-  toCardView(vault: Vault, card: Card, today = startOfUtcDay(new Date())): CardView {
+  toCardView(
+    vault: Vault,
+    card: Card,
+    today = startOfUtcDay(new Date()),
+  ): CardView {
     const current = vault
       .invoicesOfCard(card.id)
       .find((i) => i.contains(today) && i.isOpen(today));
@@ -402,7 +406,10 @@ export class CardInvoiceService {
     return right(this.toCardView(vault, card));
   }
 
-  async deleteCard(vaultId: string, cardId: string): Promise<Either<string, true>> {
+  async deleteCard(
+    vaultId: string,
+    cardId: string,
+  ): Promise<Either<string, true>> {
     const [error, vault] = await this.loadVault(vaultId);
     if (error !== null) return left(error);
     const invoiceIds = new Set(vault.invoicesOfCard(cardId).map((i) => i.id));
@@ -520,7 +527,10 @@ export class CardInvoiceService {
     if (pool.length === 1) return pool[0];
     const cents = toCents(line.amount);
     const byAmount = pool.find((card) => {
-      const figures = vault.getInvoiceFigures(card.id, startOfUtcDay(line.date));
+      const figures = vault.getInvoiceFigures(
+        card.id,
+        startOfUtcDay(line.date),
+      );
       return vault.invoicesOfCard(card.id).some((i) => {
         const inWindow =
           i.closingDate.getTime() < line.date.getTime() &&
@@ -791,9 +801,13 @@ export class CardInvoiceService {
 
     const cardId =
       input.cardId ??
-      (input.invoiceId ? vault.invoices.get(input.invoiceId)?.cardId : undefined);
+      (input.invoiceId
+        ? vault.invoices.get(input.invoiceId)?.cardId
+        : undefined);
     if (!cardId || !vault.cards.get(cardId)) {
-      return left(input.invoiceId ? 'Fatura não encontrada' : 'Cartão não encontrado');
+      return left(
+        input.invoiceId ? 'Fatura não encontrada' : 'Cartão não encontrado',
+      );
     }
     if (!input.allowDuplicate) {
       const cents = toCents(amount);
@@ -838,7 +852,12 @@ export class CardInvoiceService {
   async updatePayment(
     vaultId: string,
     paymentId: string,
-    changes: { amount?: number; date?: Date; invoiceId?: string; boxId?: string },
+    changes: {
+      amount?: number;
+      date?: Date;
+      invoiceId?: string;
+      boxId?: string;
+    },
   ): Promise<Either<string, { payment: PaymentView; invoice: InvoiceView }>> {
     const [error, vault] = await this.loadVault(vaultId);
     if (error !== null) return left(error);
@@ -889,7 +908,11 @@ export class CardInvoiceService {
   > {
     const [error, vault] = await this.loadVault(vaultId);
     if (error !== null) return left(error);
-    if (target && 'invoiceId' in target && !vault.invoices.get(target.invoiceId)) {
+    if (
+      target &&
+      'invoiceId' in target &&
+      !vault.invoices.get(target.invoiceId)
+    ) {
       return left('Fatura não encontrada');
     }
     if (target && 'cardId' in target && !vault.cards.get(target.cardId)) {
@@ -995,7 +1018,9 @@ export class CardInvoiceService {
     if (error !== null) return left(error);
     const entries = await this.importEntryRepository.findAllByVaultId(vaultId);
     const batches = await this.importBatchRepository.findByVaultId(vaultId);
-    return right(this.findDuplicates(vault, entries, batches, filter.invoiceId));
+    return right(
+      this.findDuplicates(vault, entries, batches, filter.invoiceId),
+    );
   }
 
   private findDuplicates(
@@ -1059,8 +1084,11 @@ export class CardInvoiceService {
     }
     return pairs.sort(
       (a, b) =>
-        (a.confidence === b.confidence ? 0 : a.confidence === 'high' ? -1 : 1) ||
-        a.dayDistance - b.dayDistance,
+        (a.confidence === b.confidence
+          ? 0
+          : a.confidence === 'high'
+            ? -1
+            : 1) || a.dayDistance - b.dayDistance,
     );
   }
 
@@ -1128,7 +1156,9 @@ export class CardInvoiceService {
     const extra = [...vault.transactions.values()]
       .filter(
         (t) =>
-          t.isCardPurchase && t.invoiceId === invoiceId && !fromStatement.has(t.id),
+          t.isCardPurchase &&
+          t.invoiceId === invoiceId &&
+          !fromStatement.has(t.id),
       )
       .map((t) => ({
         transactionId: t.id,
@@ -1183,7 +1213,9 @@ export class CardInvoiceService {
     return this.reprocess(vaultId, false);
   }
 
-  async applyReprocess(vaultId: string): Promise<Either<string, ReprocessReport>> {
+  async applyReprocess(
+    vaultId: string,
+  ): Promise<Either<string, ReprocessReport>> {
     return this.reprocess(vaultId, true);
   }
 
@@ -1354,7 +1386,12 @@ export class CardInvoiceService {
       const after = vault.totalSpentAmount(p);
       const was = before.get(key)!;
       if (toCents(after) !== toCents(was)) {
-        report.months.push({ year: p.year, month: p.month, before: was, after });
+        report.months.push({
+          year: p.year,
+          month: p.month,
+          before: was,
+          after,
+        });
       }
     }
     report.months.sort((a, b) => a.year - b.year || a.month - b.month);
@@ -1371,4 +1408,3 @@ export class CardInvoiceService {
     return right(report);
   }
 }
-

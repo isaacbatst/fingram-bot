@@ -171,7 +171,10 @@ describe('allocateCard', () => {
         purchase('ago', 800, day(8, 10)),
         purchase('set', 600, day(9, 10), { invoiceClosingDate: SEP_CLOSING }),
       ],
-      payments: [payment('p1', 1000, day(9, 9)), payment('p2', 400, day(10, 9))],
+      payments: [
+        payment('p1', 1000, day(9, 9)),
+        payment('p2', 400, day(10, 9)),
+      ],
     });
     expect(result.parts).toEqual([
       { paymentId: 'p1', purchaseId: 'ago', cents: 80000 },
@@ -187,7 +190,11 @@ describe('computeInvoiceFigures', () => {
     id: string,
     closingDate: Date,
     dueDate: Date,
-    extra: { isOpen?: boolean; purchasesCents?: number; paidCents?: number } = {},
+    extra: {
+      isOpen?: boolean;
+      purchasesCents?: number;
+      paidCents?: number;
+    } = {},
   ) => ({
     id,
     closingDate,

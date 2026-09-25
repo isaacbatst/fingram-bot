@@ -201,12 +201,16 @@ export class VaultDrizzleRepository extends VaultRepository {
     const deletedInvoiceIds = invoiceChanges.deleted.map((i) => i.id);
     if (deletedInvoiceIds.length > 0) {
       queries.push(
-        this.db.delete(cardCycle).where(inArray(cardCycle.id, deletedInvoiceIds)),
+        this.db
+          .delete(cardCycle)
+          .where(inArray(cardCycle.id, deletedInvoiceIds)),
       );
     }
     const deletedCardIds = cardChanges.deleted.map((c) => c.id);
     if (deletedCardIds.length > 0) {
-      queries.push(this.db.delete(card).where(inArray(card.id, deletedCardIds)));
+      queries.push(
+        this.db.delete(card).where(inArray(card.id, deletedCardIds)),
+      );
     }
 
     const budgetChanges = vaultEntity.budgetsTracker.getChanges();

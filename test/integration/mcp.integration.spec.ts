@@ -354,8 +354,12 @@ describe('MCP server + OAuth (integration)', () => {
           'addAllocation',
           'addTransaction',
           'categorizeTransactions',
-          'createInvoice',
+          'addInvoicePayment',
+          'applyInvoiceReprocess',
+          'closeInvoice',
+          'createCard',
           'createTransfer',
+          'deleteInvoicePayment',
           'deleteTransaction',
           'deleteTransfer',
           'editTransaction',
@@ -366,9 +370,14 @@ describe('MCP server + OAuth (integration)', () => {
           'getPlan',
           'getProjection',
           'getSpendingBreakdown',
-          'deleteInvoice',
-          'linkStatementToInvoice',
           'linkTransactionsToInvoice',
+          'listCards',
+          'listSuspectedDuplicates',
+          'previewInvoiceReprocess',
+          'reconcileInvoice',
+          'updateCard',
+          'updateInvoice',
+          'updateInvoicePayment',
           'listEstratos',
           'listInvoices',
           'listPlans',
@@ -392,6 +401,26 @@ describe('MCP server + OAuth (integration)', () => {
         expect(byName[name].annotations.destructiveHint, name).toBe(false);
       }
       expect(byName.deleteTransfer.annotations.destructiveHint).toBe(true);
+      for (const name of [
+        'listCards',
+        'listInvoices',
+        'getInvoice',
+        'reconcileInvoice',
+        'listSuspectedDuplicates',
+        'previewInvoiceReprocess',
+      ]) {
+        expect(byName[name].annotations.readOnlyHint, name).toBe(true);
+      }
+      for (const name of ['deleteInvoicePayment', 'applyInvoiceReprocess']) {
+        expect(byName[name].annotations.destructiveHint, name).toBe(true);
+      }
+      for (const name of [
+        'createCard',
+        'addInvoicePayment',
+        'linkTransactionsToInvoice',
+      ]) {
+        expect(byName[name].annotations.destructiveHint, name).toBe(false);
+      }
     });
 
     it('adds, lists, summarizes and deletes transactions of the authorized vault', async () => {
@@ -1502,7 +1531,7 @@ describe('MCP server + OAuth (integration)', () => {
         expect(client.getInstructions()).toContain('Duna');
 
         const { tools } = await client.listTools();
-        expect(tools.length).toBe(25);
+        expect(tools.length).toBe(34);
 
         const result = await client.callTool({
           name: 'getBudgetSummary',

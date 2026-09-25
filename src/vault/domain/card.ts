@@ -23,7 +23,11 @@ type RestoreParams = CreateParams & {
 };
 
 export function validateCardDay(value: unknown, label: string): string | null {
-  if (!Number.isInteger(value) || (value as number) < 1 || (value as number) > 31) {
+  if (
+    !Number.isInteger(value) ||
+    (value as number) < 1 ||
+    (value as number) > 31
+  ) {
     return `O dia de ${label} deve ser um número inteiro entre 1 e 31`;
   }
   return null;
@@ -79,7 +83,11 @@ export class Card {
 }
 
 /** Meia-noite UTC do dia, com o dia limitado ao tamanho do mês (31 → 30/28). */
-export function clampedDay(year: number, monthIndex: number, day: number): Date {
+export function clampedDay(
+  year: number,
+  monthIndex: number,
+  day: number,
+): Date {
   const normalized = new Date(Date.UTC(year, monthIndex, 1));
   const y = normalized.getUTCFullYear();
   const m = normalized.getUTCMonth();

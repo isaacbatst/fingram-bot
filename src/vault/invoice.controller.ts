@@ -70,8 +70,14 @@ export class CardController {
 
   @Post('cards')
   async create(@VaultSession() vaultId: string, @Body() data: CardBody) {
-    if (!data.name || data.closingDay === undefined || data.dueDay === undefined) {
-      throw new BadRequestException('name, closingDay e dueDay são obrigatórios');
+    if (
+      !data.name ||
+      data.closingDay === undefined ||
+      data.dueDay === undefined
+    ) {
+      throw new BadRequestException(
+        'name, closingDay e dueDay são obrigatórios',
+      );
     }
     const [error, card] = await this.cardInvoiceService.createCard(vaultId, {
       name: data.name,
@@ -243,7 +249,12 @@ export class InvoiceController {
     @VaultSession() vaultId: string,
     @Param('paymentId') paymentId: string,
     @Body()
-    data: { amount?: number; date?: string; invoiceId?: string; boxId?: string },
+    data: {
+      amount?: number;
+      date?: string;
+      invoiceId?: string;
+      boxId?: string;
+    },
   ) {
     const [error, result] = await this.cardInvoiceService.updatePayment(
       vaultId,

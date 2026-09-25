@@ -102,7 +102,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * Por que uma linha derivada da fatura não pode ser editada nem excluída
  * direto, e o que fazer no lugar. Null para as demais transações.
  */
-export function derivedTransactionError(transaction: Transaction): string | null {
+export function derivedTransactionError(
+  transaction: Transaction,
+): string | null {
   if (transaction.isInvoicePart) {
     return `Esta transação é a parte de uma compra de cartão paga por um pagamento de fatura, e é recalculada sozinha. Edite ou exclua a compra (id ${transaction.sourceTransactionId}).`;
   }
@@ -706,7 +708,8 @@ export class Vault {
     imported?: boolean;
     importEntryId?: string | null;
   }): Either<string, CardPayment> {
-    if (!(input.amount > 0)) return left('O valor do pagamento deve ser positivo');
+    if (!(input.amount > 0))
+      return left('O valor do pagamento deve ser positivo');
     let invoice: CardInvoice | undefined;
     if (input.invoiceId) {
       invoice = this.invoices.get(input.invoiceId);
@@ -757,7 +760,10 @@ export class Vault {
     if (changes.amount !== undefined && !(changes.amount > 0)) {
       return left('O valor do pagamento deve ser positivo');
     }
-    if (changes.invoiceId !== undefined && !this.invoices.get(changes.invoiceId)) {
+    if (
+      changes.invoiceId !== undefined &&
+      !this.invoices.get(changes.invoiceId)
+    ) {
       return left('Fatura não encontrada');
     }
     if (changes.boxId !== undefined && !this.boxes.get(changes.boxId)) {
@@ -818,7 +824,8 @@ export class Vault {
   ): Either<string, CardPayment> {
     const payment = this.payments.get(paymentId);
     if (!payment) return left('Pagamento não encontrado');
-    if (payment.imported) return left('Este pagamento já tem o débito do extrato');
+    if (payment.imported)
+      return left('Este pagamento já tem o débito do extrato');
     payment.imported = true;
     payment.date = line.date;
     payment.importEntryId = line.importEntryId;

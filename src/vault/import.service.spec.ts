@@ -1241,7 +1241,12 @@ ${ledgerBalance === null ? '' : `<LEDGERBAL>\n<BALAMT>${ledgerBalance}\n<DTASOF>
       await service.confirmBatch({ vaultId: vault.id, batchId: cardBatch.id });
 
       const [bank] = await ingest([
-        { fitId: 'P1', amount: '-3200.00', memo: 'PAGAMENTO FATURA', date: '20260910' },
+        {
+          fitId: 'P1',
+          amount: '-3200.00',
+          memo: 'PAGAMENTO FATURA',
+          date: '20260910',
+        },
       ]);
       const [, groups] = await service.getGroups({
         vaultId: vault.id,

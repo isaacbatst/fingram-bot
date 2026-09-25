@@ -51,13 +51,13 @@ describe('datas do ciclo', () => {
   it('vencimento com dia menor que o fechamento cai no mês seguinte', () => {
     expect(dueDateAfter(d(2026, 8, 25), 5)).toEqual(d(2026, 9, 5));
     expect(dueDateAfter(d(2026, 8, 25), 30)).toEqual(d(2026, 8, 30));
-    expect(cycleDatesFor({ closingDay: 25, dueDay: 5 }, d(2026, 12, 26))).toEqual(
-      {
-        periodStart: d(2026, 12, 26),
-        closingDate: d(2027, 1, 25),
-        dueDate: d(2027, 2, 5),
-      },
-    );
+    expect(
+      cycleDatesFor({ closingDay: 25, dueDay: 5 }, d(2026, 12, 26)),
+    ).toEqual({
+      periodStart: d(2026, 12, 26),
+      closingDate: d(2027, 1, 25),
+      dueDate: d(2027, 2, 5),
+    });
   });
 
   it('sugere os dias a partir do fim do extrato (vencimento 7 dias depois)', () => {

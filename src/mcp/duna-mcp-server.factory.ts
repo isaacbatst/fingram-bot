@@ -286,12 +286,19 @@ export class DunaMcpServerFactory {
           'Cadastra um cartão de crédito. O cartão não é estrato: as compras dele só contam quando um pagamento de fatura as paga. Um extrato de cartão importado de uma conta desconhecida já cria o cartão sozinho; use esta tool quando o usuário quiser cadastrar antes.',
         inputSchema: {
           name: z.string().min(1).describe('Nome do cartão (ex.: "Nubank")'),
-          closingDay: z.number().int().min(1).max(31).describe('Dia do fechamento'),
+          closingDay: z
+            .number()
+            .int()
+            .min(1)
+            .max(31)
+            .describe('Dia do fechamento'),
           dueDay: z.number().int().min(1).max(31).describe('Dia do vencimento'),
           payingEstratoId: z
             .string()
             .optional()
-            .describe('Estrato de onde saem os pagamentos (padrão: o estrato padrão)'),
+            .describe(
+              'Estrato de onde saem os pagamentos (padrão: o estrato padrão)',
+            ),
         },
         annotations: write(false, false),
       },
@@ -421,13 +428,17 @@ export class DunaMcpServerFactory {
           invoiceId: z
             .string()
             .optional()
-            .describe('Fatura paga (listInvoices). Omita para sugerir pela data'),
+            .describe(
+              'Fatura paga (listInvoices). Omita para sugerir pela data',
+            ),
           amount: z.number().positive().optional().describe('Valor em R$'),
           date: dayField('Data do pagamento'),
           estratoId: z
             .string()
             .optional()
-            .describe('Estrato de onde saiu o dinheiro (padrão: o pagador do cartão)'),
+            .describe(
+              'Estrato de onde saiu o dinheiro (padrão: o pagador do cartão)',
+            ),
           transactionId: z
             .string()
             .optional()
@@ -440,15 +451,18 @@ export class DunaMcpServerFactory {
         if (!input.cardId && !input.invoiceId) {
           return error('Informe cardId ou invoiceId');
         }
-        const [err, result] = await this.cardInvoiceService.addPayment(vaultId, {
-          cardId: input.cardId,
-          invoiceId: input.invoiceId,
-          amount: input.amount,
-          date: toDay(input.date),
-          boxId: input.estratoId,
-          transactionId: input.transactionId,
-          allowDuplicate: input.allowDuplicate,
-        });
+        const [err, result] = await this.cardInvoiceService.addPayment(
+          vaultId,
+          {
+            cardId: input.cardId,
+            invoiceId: input.invoiceId,
+            amount: input.amount,
+            date: toDay(input.date),
+            boxId: input.estratoId,
+            transactionId: input.transactionId,
+            allowDuplicate: input.allowDuplicate,
+          },
+        );
         if (err !== null) return error(err);
         return json({
           payment: toPaymentItem(result.payment),
@@ -577,7 +591,11 @@ export class DunaMcpServerFactory {
         description:
           'Faz de transações (ids de listTransactions) compras de cartão: numa fatura (invoiceId) ou no cartão (cardId, a fatura sai da data de cada compra). Uma compra de cartão deixa de contar na data dela e passa a contar quando um pagamento a paga; enquanto isso fica "a pagar". Mover de fatura não conta duas vezes. invoiceId: null desliga (a compra volta a contar na data dela). Cada id é tratado à parte; falhas voltam em "failed".',
         inputSchema: {
-          ids: z.array(z.string()).min(1).max(100).describe('IDs das transações'),
+          ids: z
+            .array(z.string())
+            .min(1)
+            .max(100)
+            .describe('IDs das transações'),
           invoiceId: z
             .string()
             .nullable()
@@ -594,12 +612,9 @@ export class DunaMcpServerFactory {
         if (invoiceId === undefined && !cardId) {
           return error('Informe invoiceId (ou null para desligar) ou cardId');
         }
-        if (invoiceId && cardId) return error('Use invoiceId ou cardId, não os dois');
-        const target = invoiceId
-          ? { invoiceId }
-          : cardId
-            ? { cardId }
-            : null;
+        if (invoiceId && cardId)
+          return error('Use invoiceId ou cardId, não os dois');
+        const target = invoiceId ? { invoiceId } : cardId ? { cardId } : null;
         const [err, result] = await this.cardInvoiceService.linkTransactions(
           vaultId,
           ids,
@@ -611,7 +626,8 @@ export class DunaMcpServerFactory {
           failed: result.failed,
           invoice: result.invoice ? toInvoiceItem(result.invoice) : null,
         };
-        if (result.updated.length === 0) return { ...json(payload), isError: true };
+        if (result.updated.length === 0)
+          return { ...json(payload), isError: true };
         return json(payload);
       },
     );

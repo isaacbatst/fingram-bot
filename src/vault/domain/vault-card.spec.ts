@@ -113,7 +113,11 @@ describe('Vault — cartões, faturas e pagamentos', () => {
     const parts = derived().filter((t) => t.isInvoicePart);
     const lazerParts = parts.filter((t) => t.categoryId === lazer.id);
     expect(lazerParts.map((t) => t.amount).sort()).toEqual([200, 300]);
-    expect(lazerParts.every((t) => t.purchaseDate?.getTime() === day(8, 12).getTime())).toBe(true);
+    expect(
+      lazerParts.every(
+        (t) => t.purchaseDate?.getTime() === day(8, 12).getTime(),
+      ),
+    ).toBe(true);
   });
 
   it('invariante: o gasto de cartão do mês é a soma dos pagamentos do mês', () => {
