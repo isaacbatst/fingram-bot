@@ -361,10 +361,14 @@ describe('MCP server + OAuth (integration)', () => {
           'editTransfer',
           'getBudgetSummary',
           'getCategories',
+          'getInvoice',
           'getPlan',
           'getProjection',
           'getSpendingBreakdown',
+          'deleteInvoice',
+          'linkStatementToInvoice',
           'listEstratos',
+          'listInvoices',
           'listPlans',
           'listTransactions',
           'removeAllocation',
@@ -1496,7 +1500,7 @@ describe('MCP server + OAuth (integration)', () => {
         expect(client.getInstructions()).toContain('Duna');
 
         const { tools } = await client.listTools();
-        expect(tools.length).toBe(19);
+        expect(tools.length).toBe(23);
 
         const result = await client.callTool({
           name: 'getBudgetSummary',

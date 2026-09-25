@@ -21,7 +21,10 @@ const periodOf = (date: Date) => ({
 });
 
 function tx(
-  overrides: Partial<BreakdownTransaction> & { amount: number; date: string },
+  overrides: Omit<Partial<BreakdownTransaction>, 'date'> & {
+    amount: number;
+    date: string;
+  },
 ): BreakdownTransaction {
   return {
     type: 'expense',

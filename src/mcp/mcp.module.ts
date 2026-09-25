@@ -17,6 +17,7 @@ import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middlew
 import { RepositoriesModule } from '@/shared/persistence/repositories.module';
 import { PlanModule } from '@/plan/plan.module';
 import { VaultModule } from '@/vault/vault.module';
+import { ImportModule } from '@/vault/import.module';
 import { DunaMcpServerFactory } from './duna-mcp-server.factory';
 import { McpConfig } from './mcp.config';
 import { McpController } from './mcp.controller';
@@ -48,6 +49,8 @@ export class McpModule implements NestModule, OnModuleInit {
           sqlite: OAuthInMemoryRepositoriesModule,
         }),
         VaultModule.register(),
+        // CardInvoiceService, for the invoice tools
+        ImportModule.register(),
         PlanModule.register(),
       ],
       controllers: [

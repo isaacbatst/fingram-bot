@@ -41,7 +41,7 @@ export class ImportModule {
       ],
       controllers: [ImportController, InvoiceController],
       providers: [ImportService, CardInvoiceService],
-      exports: [ImportService],
+      exports: [ImportService, CardInvoiceService],
     };
   }
 }

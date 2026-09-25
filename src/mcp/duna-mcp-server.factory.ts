@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { PlanService } from '@/plan/plan.service';
 import { VaultService } from '@/vault/vault.service';
 import { VaultWebService } from '@/vault/vault-web.service';
+import { CardInvoiceService, InvoiceView } from '@/vault/card-invoice.service';
 import { Vault } from '@/vault/domain/vault';
 import { TransactionDTO } from '@/vault/dto/transaction.dto,';
 import { computeSpendingBreakdown } from './spending-breakdown';
@@ -97,6 +98,13 @@ function toTransactionItem(t: TransactionDTO) {
     transferId: t.transferId,
     transferToEstratoId: t.transferToBoxId,
     allocationId: t.allocationId ?? null,
+    invoiceId: t.invoiceId ?? null,
+    // 'purchase': compra de uma fatura de cartão, contada na data do pagamento
+    // da fatura; 'remainder': a parte da fatura ainda não discriminada.
+    invoiceRole: t.invoiceRole ?? null,
+    purchaseDate: t.purchaseDate
+      ? t.purchaseDate.toISOString().slice(0, 10)
+      : null,
   };
 }
 
@@ -116,6 +124,9 @@ function describeTransfer(vault: Vault, transferId: string) {
     toEstratoId: into.boxId,
   };
 }
+
+const INVOICE_REMAINDER_ERROR =
+  'Esta transação é a parte não discriminada de uma fatura de cartão: ela se ajusta sozinha conforme as compras são ligadas. Para removê-la, use deleteInvoice (as compras da fatura voltam às datas em que foram feitas).';
 
 function transferSideError(transferId: string, tool: string): string {
   return `Esta transação é um lado de uma transferência entre estratos (transferId ${transferId}). Use ${tool} para alterar a transferência inteira.`;
@@ -144,6 +155,7 @@ export class DunaMcpServerFactory {
     private readonly vaultService: VaultService,
     private readonly vaultWebService: VaultWebService,
     private readonly planService: PlanService,
+    private readonly cardInvoiceService: CardInvoiceService,
   ) {}
 
   create(vaultId: string): McpServer {
@@ -157,6 +169,7 @@ export class DunaMcpServerFactory {
           'Para registrar uma transação, busque as categorias com getCategories e use a mais provável; o usuário pode corrigir depois.',
           'O orçamento é mensal, mas o período pode não começar no dia 1: use getBudgetSummary para saber as datas do período.',
           'Para totais e comparações (por categoria, por mês, por estrato), use getSpendingBreakdown em vez de somar listTransactions.',
+          'Fatura de cartão: o pagamento da fatura vira uma fatura com uma parte "não discriminada" que conta no mês do pagamento. As compras do extrato do cartão ligadas a ela contam na data do pagamento (a data da compra fica em purchaseDate) e abatem o não discriminado. Use listInvoices para saber o que falta detalhar.',
           'Para corrigir uma transação, use editTransaction com o id de listTransactions (só os campos enviados mudam); para recategorizar várias de uma vez, categorizeTransactions.',
           'Transferências entre estratos (isTransfer) são um par de lançamentos: altere ou remova com editTransfer/deleteTransfer, pelo transferId.',
         ].join('\n'),
@@ -165,7 +178,170 @@ export class DunaMcpServerFactory {
 
     this.registerReadTools(server, vaultId);
     this.registerWriteTools(server, vaultId);
+    this.registerInvoiceTools(server, vaultId);
     return server;
+  }
+
+  private registerInvoiceTools(server: McpServer, vaultId: string) {
+    const toInvoiceItem = (invoice: InvoiceView) => ({
+      id: invoice.id,
+      amount: invoice.amount,
+      paymentDate: invoice.paymentDate.toISOString().slice(0, 10),
+      estratoId: invoice.boxId,
+      cardLabel: invoice.cardLabel,
+      status: invoice.status,
+      itemized: invoice.itemized,
+      remainder: invoice.remainder,
+      excess: invoice.excess,
+      purchaseCount: invoice.purchaseCount,
+      statements: invoice.statements.map((st) => ({
+        statementId: st.batchId,
+        accountLabel: st.accountLabel,
+      })),
+    });
+
+    server.registerTool(
+      'listInvoices',
+      {
+        title: 'Listar faturas de cartão',
+        description:
+          'Lista as faturas de cartão, da mais recente para a mais antiga: valor pago, data do pagamento, quanto já foi detalhado com as compras do extrato do cartão (itemized), o que falta detalhar (remainder), o excedente quando as compras passam do valor pago (excess) e a situação (awaiting, partial, detailed, exceeded). Traz também os extratos de cartão com compras confirmadas que ainda não pertencem a nenhuma fatura.',
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async () => {
+        const [err, result] =
+          await this.cardInvoiceService.listInvoices(vaultId);
+        if (err !== null) return error(err);
+        return json({
+          invoices: result.invoices.map(toInvoiceItem),
+          unlinkedStatements: result.unlinkedStatements.map((st) => ({
+            statementId: st.batchId,
+            accountLabel: st.accountLabel,
+            periodStart: st.periodStart?.toISOString().slice(0, 10) ?? null,
+            periodEnd: st.periodEnd?.toISOString().slice(0, 10) ?? null,
+            purchaseCount: st.purchaseCount,
+            total: st.total,
+          })),
+        });
+      },
+    );
+
+    server.registerTool(
+      'getInvoice',
+      {
+        title: 'Detalhar fatura de cartão',
+        description:
+          'Detalha uma fatura de cartão: os mesmos dados de listInvoices, as compras ligadas a ela (com a data da compra) e a transação do não discriminado, se ainda houver.',
+        inputSchema: { invoiceId: z.string().describe('ID da fatura') },
+        annotations: { readOnlyHint: true, openWorldHint: false },
+      },
+      async ({ invoiceId }) => {
+        const [err, result] =
+          await this.cardInvoiceService.listInvoices(vaultId);
+        if (err !== null) return error(err);
+        const invoice = result.invoices.find((i) => i.id === invoiceId);
+        if (!invoice) return error('Fatura não encontrada');
+
+        const [vaultErr, vault] = await this.vaultService.getVault({ vaultId });
+        if (vaultErr !== null) return error(vaultErr);
+        const categories = new Map(
+          (await this.vaultService.getCategories(vaultId)).map((c) => [
+            c.id,
+            c.name,
+          ]),
+        );
+        const linked = [...vault.transactions.values()].filter(
+          (t) => t.invoiceId === invoiceId,
+        );
+        const remainder = linked.find((t) => t.isInvoiceRemainder);
+        const purchases = linked
+          .filter((t) => t.isInvoicePurchase)
+          .sort((a, b) => a.purchaseDate!.getTime() - b.purchaseDate!.getTime())
+          .map((t) => ({
+            id: t.id,
+            purchaseDate: t.purchaseDate!.toISOString().slice(0, 10),
+            type: t.type,
+            amount: t.amount,
+            description: t.description ?? '',
+            category: t.categoryId
+              ? {
+                  id: t.categoryId,
+                  name: categories.get(t.categoryId) ?? null,
+                }
+              : null,
+          }));
+
+        return json({
+          ...toInvoiceItem(invoice),
+          remainderTransactionId: remainder?.id ?? null,
+          purchases,
+        });
+      },
+    );
+
+    server.registerTool(
+      'linkStatementToInvoice',
+      {
+        title: 'Ligar extrato do cartão a uma fatura',
+        description:
+          'Liga um extrato de cartão (statementId, de listInvoices) à fatura que ele detalha: as compras confirmadas dele passam a contar na data do pagamento da fatura e abatem o não discriminado. invoiceId: null desliga, e as compras voltam às datas em que foram feitas.',
+        inputSchema: {
+          statementId: z.string().describe('ID do extrato de cartão'),
+          invoiceId: z
+            .string()
+            .nullable()
+            .describe('ID da fatura, ou null para desligar'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ statementId, invoiceId }) => {
+        const [err] = await this.cardInvoiceService.setBatchInvoice({
+          vaultId,
+          batchId: statementId,
+          invoiceId,
+        });
+        if (err !== null) return error(err);
+        const [listErr, result] =
+          await this.cardInvoiceService.listInvoices(vaultId);
+        if (listErr !== null) return error(listErr);
+        const invoice = invoiceId
+          ? result.invoices.find((i) => i.id === invoiceId)
+          : undefined;
+        return json({
+          statementId,
+          invoice: invoice ? toInvoiceItem(invoice) : null,
+        });
+      },
+    );
+
+    server.registerTool(
+      'deleteInvoice',
+      {
+        title: 'Excluir fatura de cartão',
+        description:
+          'Exclui uma fatura de cartão e a parte não discriminada dela. As compras que estavam ligadas continuam registradas e voltam a contar nas datas em que foram feitas; os extratos ficam sem fatura.',
+        inputSchema: { invoiceId: z.string().describe('ID da fatura') },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ invoiceId }) => {
+        const [err] = await this.cardInvoiceService.deleteInvoice({
+          vaultId,
+          invoiceId,
+        });
+        if (err !== null) return error(err);
+        return json({ deleted: invoiceId });
+      },
+    );
   }
 
   private registerReadTools(server: McpServer, vaultId: string) {
@@ -598,9 +774,10 @@ export class DunaMcpServerFactory {
       async ({ id }) => {
         const [vaultErr, vault] = await this.vaultService.getVault({ vaultId });
         if (vaultErr !== null) return error(vaultErr);
-        const transferId = vault.transactions.get(id)?.transferId;
-        if (transferId)
-          return error(transferSideError(transferId, 'deleteTransfer'));
+        const current = vault.transactions.get(id);
+        if (current?.transferId)
+          return error(transferSideError(current.transferId, 'deleteTransfer'));
+        if (current?.isInvoiceRemainder) return error(INVOICE_REMAINDER_ERROR);
         const [err] = await this.vaultService.deleteTransaction({
           vaultId,
           transactionId: id,
@@ -838,6 +1015,7 @@ export class DunaMcpServerFactory {
         if (current.transferId) {
           return error(transferSideError(current.transferId, 'editTransfer'));
         }
+        if (current.isInvoiceRemainder) return error(INVOICE_REMAINDER_ERROR);
         if (
           fields.categoryId &&
           fields.allocationId === undefined &&
@@ -920,6 +1098,14 @@ export class DunaMcpServerFactory {
             failed.push({
               id,
               error: 'Transferência entre estratos não tem categoria',
+            });
+            continue;
+          }
+          if (current.isInvoiceRemainder) {
+            failed.push({
+              id,
+              error:
+                'Parte não discriminada de uma fatura: não tem categoria até as compras serem ligadas',
             });
             continue;
           }
