@@ -87,6 +87,36 @@ export class CategorySqliteRepository extends CategoryRepository {
     );
   }
 
+  async create(vaultId: string, category: Category): Promise<void> {
+    this.db
+      .prepare(
+        `INSERT INTO vault_category (id, vault_id, base_category_id, name, code, description, transaction_type)
+         VALUES (?, ?, NULL, ?, ?, ?, ?)`,
+      )
+      .run(
+        category.id,
+        vaultId,
+        category.name,
+        category.code,
+        category.description,
+        category.transactionType,
+      );
+  }
+
+  async update(vaultId: string, category: Category): Promise<void> {
+    this.db
+      .prepare(
+        'UPDATE vault_category SET name = ?, description = ?, transaction_type = ? WHERE id = ? AND vault_id = ?',
+      )
+      .run(
+        category.name,
+        category.description,
+        category.transactionType,
+        category.id,
+        vaultId,
+      );
+  }
+
   // Seed vault categories from base categories
   async seedForVault(vaultId: string): Promise<void> {
     // Check if vault already has categories

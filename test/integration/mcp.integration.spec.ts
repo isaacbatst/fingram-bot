@@ -358,6 +358,7 @@ describe('MCP server + OAuth (integration)', () => {
           'applyInvoiceReprocess',
           'closeInvoice',
           'createCard',
+          'createCategory',
           'createTransfer',
           'deleteInvoicePayment',
           'deleteTransaction',
@@ -384,6 +385,7 @@ describe('MCP server + OAuth (integration)', () => {
           'listTransactions',
           'removeAllocation',
           'updateAllocation',
+          'updateCategory',
           'updatePremises',
         ].sort(),
       );
@@ -396,6 +398,8 @@ describe('MCP server + OAuth (integration)', () => {
         'categorizeTransactions',
         'createTransfer',
         'editTransfer',
+        'createCategory',
+        'updateCategory',
       ]) {
         expect(byName[name].annotations.readOnlyHint, name).toBe(false);
         expect(byName[name].annotations.destructiveHint, name).toBe(false);
@@ -1509,6 +1513,154 @@ describe('MCP server + OAuth (integration)', () => {
     });
   });
 
+  describe('categories', () => {
+    type CategoryItem = { id: string; name: string; description: string };
+
+    it('creates a vault category usable in transactions and budgets, and renames it', async () => {
+      const vault = await createVault();
+      const { access_token } = await connect(vault.token);
+
+      const created = await callTool(access_token, 'createCategory', {
+        name: 'Pets',
+        transactionType: 'expense',
+        description: 'ração, veterinário',
+      });
+      expect(created.isError).toBe(false);
+      expect(created.data).toEqual({
+        id: expect.any(String),
+        name: 'Pets',
+        description: 'ração, veterinário',
+        transactionType: 'expense',
+      });
+      const petsId = created.data.id as string;
+
+      const [stored] = await db
+        .select()
+        .from(schema.vaultCategory)
+        .where(eq(schema.vaultCategory.id, petsId));
+      expect(stored.vaultId).toBe(vault.id);
+      expect(stored.baseCategoryId).toBeNull();
+      const codes = (
+        await db
+          .select()
+          .from(schema.vaultCategory)
+          .where(eq(schema.vaultCategory.vaultId, vault.id))
+      ).map((c) => Number(c.code));
+      expect(Number(stored.code)).toBe(Math.max(...codes));
+
+      const listed = await callTool(access_token, 'getCategories');
+      expect((listed.data as CategoryItem[]).some((c) => c.id === petsId)).toBe(
+        true,
+      );
+
+      const added = await callTool(access_token, 'addTransaction', {
+        amount: 80,
+        type: 'expense',
+        date: '2026-01-10',
+        description: 'Ração',
+        categoryId: petsId,
+      });
+      expect(added.data.category).toBe('Pets');
+
+      // The Telegram /setbudget path addresses categories by code.
+      await http()
+        .post('/vault/set-budgets')
+        .set('Cookie', `vault_access_token=${vault.token}`)
+        .send({ budgets: [{ categoryCode: stored.code, amount: 200 }] })
+        .expect(201);
+      const summary = await callTool(access_token, 'getBudgetSummary', {
+        month: 1,
+        year: 2026,
+      });
+      expect(
+        (
+          summary.data.budgets as {
+            categoryId: string;
+            spent: number;
+            budgeted: number;
+          }[]
+        ).find((b) => b.categoryId === petsId),
+      ).toMatchObject({ spent: 80, budgeted: 200 });
+
+      const renamed = await callTool(access_token, 'updateCategory', {
+        categoryId: petsId,
+        name: 'Pets e veterinário',
+      });
+      expect(renamed.data).toMatchObject({
+        id: petsId,
+        name: 'Pets e veterinário',
+        description: 'ração, veterinário',
+      });
+      const breakdown = await callTool(access_token, 'getSpendingBreakdown', {
+        from: '2026-01-01',
+        to: '2026-01-31',
+      });
+      expect(breakdown.data.groups).toContainEqual({
+        categoryId: petsId,
+        categoryName: 'Pets e veterinário',
+        total: 80,
+        count: 1,
+      });
+    });
+
+    it('rejects duplicate and empty names', async () => {
+      const vault = await createVault();
+      const { access_token } = await connect(vault.token);
+      await callTool(access_token, 'createCategory', {
+        name: 'Pets',
+        transactionType: 'expense',
+      });
+
+      const duplicate = await callTool(access_token, 'createCategory', {
+        name: ' PETS ',
+        transactionType: 'expense',
+      });
+      expect(duplicate.isError).toBe(true);
+      expect(duplicate.text).toBe('Já existe a categoria "Pets"');
+
+      const empty = await callTool(access_token, 'createCategory', {
+        name: '  ',
+        transactionType: 'expense',
+      });
+      expect(empty.isError).toBe(true);
+    });
+
+    it("keeps categories per vault and cannot update another vault's", async () => {
+      const mine = await createVault();
+      const other = await createVault();
+      const myToken = (await connect(mine.token)).access_token;
+      const otherToken = (await connect(other.token)).access_token;
+
+      const pets = await callTool(myToken, 'createCategory', {
+        name: 'Pets',
+        transactionType: 'expense',
+      });
+      const otherList = await callTool(otherToken, 'getCategories');
+      expect(
+        (otherList.data as CategoryItem[]).some((c) => c.name === 'Pets'),
+      ).toBe(false);
+
+      // The same name is free in another vault.
+      const otherPets = await callTool(otherToken, 'createCategory', {
+        name: 'Pets',
+        transactionType: 'expense',
+      });
+      expect(otherPets.isError).toBe(false);
+
+      const hijack = await callTool(otherToken, 'updateCategory', {
+        categoryId: pets.data.id,
+        name: 'Hackeado',
+      });
+      expect(hijack.isError).toBe(true);
+      expect(hijack.text).toBe('Categoria não encontrada');
+      const [stored] = await db
+        .select()
+        .from(schema.vaultCategory)
+        .where(eq(schema.vaultCategory.id, pets.data.id));
+      expect(stored.name).toBe('Pets');
+    });
+  });
+
   describe('real MCP client', () => {
     it('initializes and calls tools through the SDK client over HTTP', async () => {
       const vault = await createVault();
@@ -1531,7 +1683,7 @@ describe('MCP server + OAuth (integration)', () => {
         expect(client.getInstructions()).toContain('Duna');
 
         const { tools } = await client.listTools();
-        expect(tools.length).toBe(34);
+        expect(tools.length).toBe(36);
 
         const result = await client.callTool({
           name: 'getBudgetSummary',

@@ -94,6 +94,31 @@ export class CategoryDrizzleRepository extends CategoryRepository {
     );
   }
 
+  async create(vaultId: string, cat: Category): Promise<void> {
+    await this.db.insert(vaultCategory).values({
+      id: cat.id,
+      vaultId,
+      baseCategoryId: null,
+      name: cat.name,
+      code: cat.code,
+      description: cat.description,
+      transactionType: cat.transactionType,
+    });
+  }
+
+  async update(vaultId: string, cat: Category): Promise<void> {
+    await this.db
+      .update(vaultCategory)
+      .set({
+        name: cat.name,
+        description: cat.description,
+        transactionType: cat.transactionType,
+      })
+      .where(
+        and(eq(vaultCategory.id, cat.id), eq(vaultCategory.vaultId, vaultId)),
+      );
+  }
+
   // Seed vault categories from base categories
   async seedForVault(vaultId: string): Promise<void> {
     // Check if vault already has categories
