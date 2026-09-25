@@ -225,7 +225,14 @@ export class CardInvoiceService {
     boxId?: string;
     cardLabel?: string | null;
     allowDuplicate?: boolean;
-  }): Promise<Either<string, InvoiceView>> {
+    /** Compras avulsas para ligar já na criação (ver `applyTransactionLinks`). */
+    transactionIds?: string[];
+  }): Promise<
+    Either<
+      string,
+      { invoice: InvoiceView; linkFailed: { id: string; error: string }[] }
+    >
+  > {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) return left('Dados não encontrados');
     const boxId =
@@ -267,11 +274,16 @@ export class CardInvoiceService {
     if (match) {
       this.applyBatchLink(vault, match.batch, match.entries, invoice.id);
     }
+    const { failed: linkFailed } = this.applyTransactionLinks(
+      vault,
+      input.transactionIds ?? [],
+      invoice.id,
+    );
 
     await this.vaultRepository.update(vault);
     if (match) await this.importBatchRepository.update(match.batch);
 
-    return right({
+    const view: InvoiceView = {
       id: invoice.id,
       amount: invoice.amount,
       paymentDate: invoice.paymentDate,
@@ -283,7 +295,89 @@ export class CardInvoiceService {
         ? [{ batchId: match.batch.id, accountLabel: match.batch.accountLabel }]
         : [],
       ...vault.getInvoiceBreakdown(invoice.id)!,
-    });
+    };
+    return right({ invoice: view, linkFailed });
+  }
+
+  /**
+   * Liga (ou, com `invoiceId: null`, desliga) transações avulsas a uma fatura:
+   * uma compra lançada à mão, uma que caiu na fatura errada. Cada id é tratado
+   * à parte; os que não podem ser ligados voltam em `failed`. Ligar muda a data
+   * de contagem para a do pagamento e guarda a da compra (`Vault.linkToInvoice`);
+   * desligar devolve a data da compra.
+   *
+   * O vínculo por extrato (`setBatchInvoice`) continua valendo para o lote: se
+   * o extrato for religado depois, as compras dele voltam para a fatura dele.
+   */
+  applyTransactionLinks(
+    vault: Vault,
+    transactionIds: string[],
+    invoiceId: string | null,
+  ): { updated: string[]; failed: { id: string; error: string }[] } {
+    const updated: string[] = [];
+    const failed: { id: string; error: string }[] = [];
+    for (const id of new Set(transactionIds)) {
+      const transaction = vault.transactions.get(id);
+      if (!transaction) {
+        failed.push({ id, error: 'Transação não encontrada' });
+        continue;
+      }
+      if (transaction.transferId) {
+        failed.push({
+          id,
+          error: 'Transferência entre estratos não entra em fatura',
+        });
+        continue;
+      }
+      if (transaction.isInvoiceRemainder) {
+        failed.push({
+          id,
+          error: 'É a parte não discriminada de uma fatura, não uma compra',
+        });
+        continue;
+      }
+      const [error] = invoiceId
+        ? vault.linkToInvoice(id, invoiceId)
+        : vault.unlinkFromInvoice(id);
+      if (error !== null) failed.push({ id, error });
+      else updated.push(id);
+    }
+    return { updated, failed };
+  }
+
+  async linkTransactions(input: {
+    vaultId: string;
+    transactionIds: string[];
+    invoiceId: string | null;
+  }): Promise<
+    Either<
+      string,
+      {
+        updated: string[];
+        failed: { id: string; error: string }[];
+        invoice: InvoiceView | null;
+      }
+    >
+  > {
+    const vault = await this.vaultRepository.findById(input.vaultId);
+    if (!vault) return left('Dados não encontrados');
+    if (input.invoiceId && !vault.invoices.get(input.invoiceId)) {
+      return left('Fatura não encontrada');
+    }
+    const result = this.applyTransactionLinks(
+      vault,
+      input.transactionIds,
+      input.invoiceId,
+    );
+    if (result.updated.length > 0) await this.vaultRepository.update(vault);
+
+    let invoice: InvoiceView | null = null;
+    if (input.invoiceId) {
+      const [error, list] = await this.listInvoices(input.vaultId);
+      if (error !== null) return left(error);
+      invoice = list.invoices.find((i) => i.id === input.invoiceId) ?? null;
+    }
+    return right({ ...result, invoice });
   }
 
   async setBatchInvoice(input: {

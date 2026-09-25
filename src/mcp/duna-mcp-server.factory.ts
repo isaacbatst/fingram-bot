@@ -232,7 +232,7 @@ export class DunaMcpServerFactory {
       {
         title: 'Registrar fatura de cartão',
         description:
-          'Registra uma fatura de cartão paga, quando o usuário conta que pagou e o extrato da conta ainda não foi importado. O valor passa a contar no mês do pagamento como "não discriminado" até as compras do extrato do cartão serem ligadas. Quando o extrato da conta trouxer o débito, ele é reconhecido como o pagamento desta fatura (mesmo valor e estrato, até 7 dias de diferença) e a data passa a ser a do extrato. Confira listInvoices antes: se já houver fatura de mesmo valor em data próxima, a criação é recusada, a menos que allowDuplicate seja true.',
+          'Registra uma fatura de cartão paga, quando o usuário conta que pagou e o extrato da conta ainda não foi importado. O valor passa a contar no mês do pagamento como "não discriminado" até as compras do extrato do cartão serem ligadas. Quando o extrato da conta trouxer o débito, ele é reconhecido como o pagamento desta fatura (mesmo valor e estrato, até 7 dias de diferença) e a data passa a ser a do extrato. Confira listInvoices antes: se já houver fatura de mesmo valor em data próxima, a criação é recusada, a menos que allowDuplicate seja true. Compras já registradas podem ser ligadas na mesma chamada (transactionIds); as que não puderem voltam em linkFailed.',
         inputSchema: {
           amount: z.number().positive().describe('Valor pago em R$'),
           paymentDate: z
@@ -253,6 +253,13 @@ export class DunaMcpServerFactory {
             .describe(
               'Confirma que é outra fatura, mesmo havendo uma de mesmo valor em data próxima',
             ),
+          transactionIds: z
+            .array(z.string())
+            .max(200)
+            .optional()
+            .describe(
+              'Compras (ids de listTransactions) para ligar já à fatura criada',
+            ),
         },
         annotations: {
           readOnlyHint: false,
@@ -270,9 +277,13 @@ export class DunaMcpServerFactory {
           boxId: input.estratoId,
           cardLabel: input.cardLabel ?? null,
           allowDuplicate: input.allowDuplicate,
+          transactionIds: input.transactionIds,
         });
         if (err !== null) return error(err);
-        return json(toInvoiceItem(invoice));
+        return json({
+          ...toInvoiceItem(invoice.invoice),
+          linkFailed: invoice.linkFailed,
+        });
       },
     );
 
@@ -366,6 +377,52 @@ export class DunaMcpServerFactory {
           statementId,
           invoice: invoice ? toInvoiceItem(invoice) : null,
         });
+      },
+    );
+
+    server.registerTool(
+      'linkTransactionsToInvoice',
+      {
+        title: 'Ligar compras a uma fatura',
+        description:
+          'Liga compras avulsas (ids de listTransactions) a uma fatura de cartão: cada uma passa a contar na data do pagamento da fatura, guarda a data da compra em purchaseDate e abate o não discriminado. Serve para compras lançadas à mão ou que caíram na fatura errada (uma compra de outra fatura muda de fatura sem contar duas vezes). invoiceId: null desliga, e as compras voltam às datas em que foram feitas. Transferências e o próprio não discriminado são recusados; cada id é tratado à parte e os que falham voltam em "failed". Para ligar um extrato de cartão inteiro, use linkStatementToInvoice.',
+        inputSchema: {
+          ids: z
+            .array(z.string())
+            .min(1)
+            .max(200)
+            .describe('Ids das transações'),
+          invoiceId: z
+            .string()
+            .nullable()
+            .describe('ID da fatura, ou null para desligar'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ ids, invoiceId }) => {
+        const [err, result] = await this.cardInvoiceService.linkTransactions({
+          vaultId,
+          transactionIds: ids,
+          invoiceId,
+        });
+        if (err !== null) return error(err);
+        const payload = {
+          updated: result.updated,
+          failed: result.failed,
+          invoice: result.invoice ? toInvoiceItem(result.invoice) : null,
+        };
+        if (result.updated.length === 0) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: JSON.stringify(payload) }],
+          };
+        }
+        return json(payload);
       },
     );
 

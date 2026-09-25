@@ -439,6 +439,207 @@ describe('MCP: faturas de cartão (integration)', () => {
     );
   });
 
+  describe('linkTransactionsToInvoice', () => {
+    const spent = async (token: string, month: number) =>
+      (await callTool(token, 'getBudgetSummary', { month, year: 2026 })).data
+        .spent as number;
+
+    const addPurchase = async (
+      token: string,
+      amount: number,
+      date: string,
+      categoryId: string,
+    ) =>
+      (
+        await callTool(token, 'addTransaction', {
+          amount,
+          type: 'expense',
+          date,
+          description: 'Compra no cartão',
+          categoryId,
+        })
+      ).data.id as string;
+
+    it('liga compras avulsas, devolve as desligadas e recusa o que não é compra', async () => {
+      const vault = await createVault();
+      const token = await connect(vault);
+      const invoiceId = await registerInvoice(vault); // 3200 em 10/09
+      const a = await addPurchase(token, 700, '2026-08-15', vault.categoryId);
+      const b = await addPurchase(token, 300, '2026-08-22', vault.categoryId);
+      expect(await spent(token, 8)).toBe(1000);
+      expect(await spent(token, 9)).toBe(3200);
+
+      const linked = await callTool(token, 'linkTransactionsToInvoice', {
+        ids: [a, b, 'nao-existe'],
+        invoiceId,
+      });
+      expect(linked.isError).toBe(false);
+      expect(linked.data.updated.sort()).toEqual([a, b].sort());
+      expect(linked.data.failed).toEqual([
+        { id: 'nao-existe', error: 'Transação não encontrada' },
+      ]);
+      expect(linked.data.invoice).toMatchObject({
+        remainder: 2200,
+        purchaseCount: 2,
+        status: 'partial',
+      });
+      // Agosto perde as compras; setembro continua somando o valor pago.
+      expect(await spent(token, 8)).toBe(0);
+      expect(await spent(token, 9)).toBe(3200);
+
+      const items = (
+        await callTool(token, 'listTransactions', { month: 9, year: 2026 })
+      ).data.items as Array<Record<string, unknown>>;
+      expect(items.find((t) => t.id === a)).toMatchObject({
+        date: '2026-09-10',
+        purchaseDate: '2026-08-15',
+        invoiceRole: 'purchase',
+        invoiceId,
+      });
+
+      const unlinked = await callTool(token, 'linkTransactionsToInvoice', {
+        ids: [b],
+        invoiceId: null,
+      });
+      expect(unlinked.data.updated).toEqual([b]);
+      expect(await spent(token, 8)).toBe(300);
+      expect(
+        (await callTool(token, 'getInvoice', { invoiceId })).data.remainder,
+      ).toBe(2500);
+
+      // O não discriminado e transferências não são compras.
+      const remainderId = (await callTool(token, 'getInvoice', { invoiceId }))
+        .data.remainderTransactionId;
+      const reserveBoxId = crypto.randomUUID();
+      await db.insert(schema.box).values({
+        id: reserveBoxId,
+        vaultId: vault.id,
+        name: 'Reserva',
+        isDefault: false,
+        type: 'saving',
+        createdAt: new Date(),
+      });
+      const transfer = await callTool(token, 'createTransfer', {
+        fromEstratoId: vault.boxId,
+        toEstratoId: reserveBoxId,
+        amount: 10,
+        date: '2026-09-11',
+      });
+      expect(transfer.isError).toBe(false);
+      const transferSide = (
+        await callTool(token, 'listTransactions', { month: 9, year: 2026 })
+      ).data.items.find(
+        (t: { transferId: string | null }) =>
+          t.transferId === transfer.data.transferId,
+      ).id as string;
+
+      const refused = await callTool(token, 'linkTransactionsToInvoice', {
+        ids: [remainderId, transferSide],
+        invoiceId,
+      });
+      expect(refused.isError).toBe(true);
+      const errors = Object.fromEntries(
+        JSON.parse(refused.text).failed.map(
+          (f: { id: string; error: string }) => [f.id, f.error],
+        ),
+      );
+      expect(errors[remainderId]).toMatch(/não discriminada/);
+      expect(errors[transferSide]).toMatch(/Transferência/);
+    });
+
+    it('muda uma compra de fatura sem contar duas vezes', async () => {
+      const vault = await createVault();
+      const token = await connect(vault);
+      const first = await registerInvoice(vault); // 3200 em 10/09
+      const second = (
+        await callTool(token, 'createInvoice', {
+          amount: 500,
+          paymentDate: '2026-09-25',
+        })
+      ).data.id as string;
+      const p = await addPurchase(token, 400, '2026-08-15', vault.categoryId);
+
+      await callTool(token, 'linkTransactionsToInvoice', {
+        ids: [p],
+        invoiceId: first,
+      });
+      expect(await spent(token, 9)).toBe(3700);
+
+      const moved = await callTool(token, 'linkTransactionsToInvoice', {
+        ids: [p],
+        invoiceId: second,
+      });
+      expect(moved.data.invoice).toMatchObject({ id: second, remainder: 100 });
+      const invoices = (await callTool(token, 'listInvoices')).data.invoices;
+      expect(
+        invoices.find((i: { id: string }) => i.id === first),
+      ).toMatchObject({ remainder: 3200, purchaseCount: 0 });
+      expect(await spent(token, 9)).toBe(3700);
+    });
+
+    it('createInvoice liga as compras informadas na mesma chamada', async () => {
+      const vault = await createVault();
+      const token = await connect(vault);
+      const p = await addPurchase(token, 1200, '2026-08-15', vault.categoryId);
+
+      const created = await callTool(token, 'createInvoice', {
+        amount: 2000,
+        paymentDate: '2026-09-10',
+        transactionIds: [p, 'nao-existe'],
+      });
+      expect(created.isError).toBe(false);
+      expect(created.data).toMatchObject({
+        remainder: 800,
+        purchaseCount: 1,
+        status: 'partial',
+        linkFailed: [{ id: 'nao-existe', error: 'Transação não encontrada' }],
+      });
+      expect(await spent(token, 8)).toBe(0);
+      expect(await spent(token, 9)).toBe(2000);
+    });
+
+    it('não liga transações nem usa faturas de outro vault', async () => {
+      const mine = await createVault();
+      const other = await createVault();
+      const myToken = await connect(mine);
+      const otherToken = await connect(other);
+      const myInvoice = await registerInvoice(mine);
+      const myPurchase = await addPurchase(
+        myToken,
+        100,
+        '2026-08-15',
+        mine.categoryId,
+      );
+      const otherInvoice = (
+        await callTool(otherToken, 'createInvoice', {
+          amount: 999,
+          paymentDate: '2026-09-10',
+        })
+      ).data.id as string;
+
+      // A fatura de outro vault não existe para mim, e vice-versa.
+      expect(
+        (
+          await callTool(myToken, 'linkTransactionsToInvoice', {
+            ids: [myPurchase],
+            invoiceId: otherInvoice,
+          })
+        ).isError,
+      ).toBe(true);
+      const foreign = await callTool(otherToken, 'linkTransactionsToInvoice', {
+        ids: [myPurchase],
+        invoiceId: otherInvoice,
+      });
+      expect(foreign.isError).toBe(true);
+      expect(foreign.text).toMatch(/Transação não encontrada/);
+
+      expect(
+        (await callTool(myToken, 'getInvoice', { invoiceId: myInvoice })).data
+          .purchaseCount,
+      ).toBe(0);
+    });
+  });
+
   describe('createInvoice', () => {
     const septemberSpent = async (token: string) =>
       (await callTool(token, 'getBudgetSummary', { month: 9, year: 2026 })).data
