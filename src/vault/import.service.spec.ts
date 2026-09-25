@@ -1099,8 +1099,8 @@ describe('ImportService', () => {
     });
   });
 
-  describe('fatura de cartão', () => {
-    /** Extrato do cartão de um ciclo, com o total da fatura em LEDGERBAL. */
+  describe('cartão e pagamento de fatura', () => {
+    /** Extrato do cartão de um ciclo (03/08 a 02/09). */
     const cartao = (
       lines: Line[],
       ledgerBalance: string | null,
@@ -1143,7 +1143,7 @@ ${ledgerBalance === null ? '' : `<LEDGERBAL>\n<BALAMT>${ledgerBalance}\n<DTASOF>
 
     const ingestCartao = async (
       lines: Line[],
-      ledgerBalance: string | null = '-3200.00',
+      ledgerBalance: string | null = '-2050.00',
       accountId?: string,
     ) => {
       const [error, batches] = await service.ingest({
@@ -1164,178 +1164,190 @@ ${ledgerBalance === null ? '' : `<LEDGERBAL>\n<BALAMT>${ledgerBalance}\n<DTASOF>
         memo: 'Pagamento recebido',
         date: '20260805',
       },
+      {
+        fitId: 'C4',
+        amount: '-300.00',
+        memo: 'Saldo em atraso',
+        date: '20260803',
+      },
     ];
 
-    /** Registra a fatura de R$ 3.200 paga em 10/09 a partir da conta corrente. */
-    const registrarFatura = async (amount = '-3200.00') => {
+    /** Importa o débito de R$ 3.200 em 10/09 e o confirma como pagamento. */
+    const pagarFatura = async (
+      amount = '-3200.00',
+      target: { cardId?: string; invoiceId?: string } = {},
+    ) => {
       const [batch] = await ingest([
         { fitId: 'P1', amount, memo: 'PAGAMENTO FATURA', date: '20260910' },
       ]);
-      const [error, result] = await service.confirmAsInvoice({
+      const [error, result] = await service.confirmAsInvoicePayment({
         vaultId: vault.id,
         entryIds: await pendingIds(batch.id),
+        ...target,
       });
       expect(error).toBeNull();
       expect(result!.confirmed).toBe(1);
-      return result!.invoiceIds[0];
+      return result!;
     };
 
-    const remainder = (invoiceId: string) =>
-      [...vault.transactions.values()].find(
-        (t) => t.invoiceId === invoiceId && t.isInvoiceRemainder,
-      );
     const spent = (month: number) =>
       vault.totalSpentAmount({ month, year: 2026 }, { includeAll: true });
     const income = (month: number) =>
       vault.totalIncomeAmount({ month, year: 2026 }, { includeAll: true });
+    const remainders = () =>
+      [...vault.transactions.values()].filter((t) => t.isInvoiceRemainder);
 
-    it('should register the invoice and count the full amount on the payment date', async () => {
-      const invoiceId = await registrarFatura();
-
-      expect(remainder(invoiceId)!.amount).toBe(3200);
-      expect(spent(9)).toBe(3200);
-      const [, list] = await invoiceService.listInvoices(vault.id);
-      expect(list!.invoices).toHaveLength(1);
-      expect(list!.invoices[0]).toMatchObject({
-        amount: 3200,
-        remainder: 3200,
-        status: 'awaiting',
-      });
-    });
-
-    it('should link a card statement imported after the payment and shrink the remainder', async () => {
-      const invoiceId = await registrarFatura();
+    it('o extrato do cartão cria o cartão e a fatura do período; as compras esperam o pagamento', async () => {
       const batch = await ingestCartao(compras);
-      expect(batch.invoiceId).toBe(invoiceId);
 
-      await service.confirmBatch({ vaultId: vault.id, batchId: batch.id });
-
-      expect(remainder(invoiceId)!.amount).toBe(1150);
-      expect(spent(8)).toBe(0);
-      expect(spent(9)).toBe(3200);
-      // "Pagamento recebido" foi ignorado na leitura: nunca vira receita.
-      expect(income(8) + income(9)).toBe(0);
-      const [, list] = await invoiceService.listInvoices(vault.id);
-      expect(list!.invoices[0]).toMatchObject({
-        itemized: 2050,
-        remainder: 1150,
-        status: 'partial',
-        cardLabel: 'Cartão cartao-1',
+      const card = [...vault.cards.values()][0];
+      expect(card).toMatchObject({
+        name: 'Cartão cartao-1',
+        closingDay: 2,
+        dueDay: 9,
+        boxId: box.id,
+        accountKey: batch.accountKey,
       });
-      expect(list!.unlinkedStatements).toHaveLength(0);
-    });
+      const invoice = vault.invoices.get(batch.invoiceId!)!;
+      expect(invoice.periodStart).toEqual(new Date(Date.UTC(2026, 7, 3)));
+      expect(invoice.closingDate).toEqual(new Date(Date.UTC(2026, 8, 2)));
 
-    it('should pick up purchases confirmed before the payment was registered', async () => {
-      // Sem LEDGERBAL que bata, só a soma das compras: 2.050.
-      const batch = await ingestCartao(compras, null);
-      await service.confirmBatch({ vaultId: vault.id, batchId: batch.id });
-      expect(spent(8)).toBe(2050);
-
-      const [, before] = await invoiceService.listInvoices(vault.id);
-      expect(before!.unlinkedStatements).toEqual([
-        expect.objectContaining({
-          batchId: batch.id,
-          purchaseCount: 2,
-          total: 2050,
-        }),
-      ]);
-
-      const invoiceId = await registrarFatura('-2050.00');
-
-      expect(remainder(invoiceId)).toBeUndefined();
-      expect(spent(8)).toBe(0);
-      expect(spent(9)).toBe(2050);
-      const [, after] = await invoiceService.listInvoices(vault.id);
-      expect(after!.invoices[0].status).toBe('detailed');
-      expect(after!.unlinkedStatements).toHaveLength(0);
-    });
-
-    it('should leave the link to the user when the amount does not match', async () => {
-      const invoiceId = await registrarFatura();
-      const batch = await ingestCartao(compras, '-999.00');
-      expect(batch.invoiceId).toBeNull();
-      await service.confirmBatch({ vaultId: vault.id, batchId: batch.id });
-      expect(remainder(invoiceId)!.amount).toBe(3200);
-
-      const [error] = await invoiceService.setBatchInvoice({
+      // "Pagamento recebido" e o saldo da fatura anterior não chegam à triagem.
+      const [, review] = await service.getReview({
         vaultId: vault.id,
         batchId: batch.id,
-        invoiceId,
+        status: 'dismissed',
+      });
+      expect(review!.entries.items.map((e) => e.fitId).sort()).toEqual([
+        'C3',
+        'C4',
+      ]);
+
+      await service.confirmBatch({ vaultId: vault.id, batchId: batch.id });
+      expect(spent(8)).toBe(0);
+      expect(income(8) + income(9)).toBe(0);
+      expect(vault.getCardPayable(card.id)).toBe(2050);
+
+      // Um segundo extrato da mesma conta cai no mesmo cartão.
+      await ingestCartao(
+        [{ fitId: 'D1', amount: '-10.00', memo: 'PADARIA', date: '20260905' }],
+        null,
+      );
+      expect(vault.cards.size).toBe(1);
+    });
+
+    it('o pagamento sugere o cartão e a fatura, paga as compras e o resto fica não discriminado', async () => {
+      const cardBatch = await ingestCartao(compras);
+      await service.confirmBatch({ vaultId: vault.id, batchId: cardBatch.id });
+
+      const [bank] = await ingest([
+        { fitId: 'P1', amount: '-3200.00', memo: 'PAGAMENTO FATURA', date: '20260910' },
+      ]);
+      const [, groups] = await service.getGroups({
+        vaultId: vault.id,
+        batchId: bank.id,
+      });
+      expect(groups![0]).toMatchObject({
+        suggestsInvoice: true,
+        suggestedInvoicePayment: {
+          cardName: 'Cartão cartao-1',
+          invoiceId: cardBatch.invoiceId,
+        },
+      });
+
+      const [, result] = await service.confirmAsInvoicePayment({
+        vaultId: vault.id,
+        entryIds: groups![0].entryIds,
+      });
+      expect(result!.invoiceIds).toEqual([cardBatch.invoiceId]);
+      expect(spent(8)).toBe(0);
+      expect(spent(9)).toBe(3200);
+      expect(remainders().map((t) => t.amount)).toEqual([1150]);
+
+      const [, list] = await invoiceService.listInvoices(vault.id);
+      expect(list!.invoices[0]).toMatchObject({
+        purchasesTotal: 2050,
+        paid: 3200,
+        overpaid: 1150,
+        notItemized: 1150,
+        status: 'overpaid',
+      });
+      // A linha da conta corrente não virou transação própria.
+      const [, confirmed] = await service.getReview({
+        vaultId: vault.id,
+        batchId: bank.id,
+        status: 'confirmed',
+      });
+      expect(confirmed!.entries.items[0].transactionId).toBeNull();
+    });
+
+    it('pagamento antes do extrato: cria um cartão, conta tudo como não discriminado e o extrato depois o detalha', async () => {
+      const result = await pagarFatura();
+      expect(vault.cards.size).toBe(1);
+      const card = [...vault.cards.values()][0];
+      expect(card.accountKey).toBeNull();
+      expect(spent(9)).toBe(3200);
+      expect(remainders()[0].amount).toBe(3200);
+
+      const batch = await ingestCartao(compras);
+      // O cartão criado pelo pagamento assume a conta do extrato, e a fatura
+      // paga é a do período do extrato.
+      expect(vault.cards.size).toBe(1);
+      expect(card.accountKey).toBe(batch.accountKey);
+      expect(batch.invoiceId).toBe(result.invoiceIds[0]);
+
+      await service.confirmBatch({ vaultId: vault.id, batchId: batch.id });
+      expect(spent(8)).toBe(0);
+      expect(spent(9)).toBe(3200);
+      expect(remainders()[0].amount).toBe(1150);
+    });
+
+    it('um pagamento informado à mão recebe o débito importado em vez de virar outro', async () => {
+      const [, card] = await invoiceService.createCard(vault.id, {
+        name: 'Nubank',
+        closingDay: 2,
+        dueDay: 9,
+      });
+      const [error, manual] = await invoiceService.addPayment(vault.id, {
+        cardId: card!.id,
+        amount: 3200,
+        date: new Date(Date.UTC(2026, 8, 8)),
       });
       expect(error).toBeNull();
-      expect(remainder(invoiceId)!.amount).toBe(1150);
+      expect(manual!.payment.imported).toBe(false);
 
-      // Desfazer devolve as compras para a data delas.
-      await invoiceService.setBatchInvoice({
-        vaultId: vault.id,
-        batchId: batch.id,
-        invoiceId: null,
-      });
-      expect(remainder(invoiceId)!.amount).toBe(3200);
-      expect(spent(8)).toBe(2050);
+      const result = await pagarFatura();
+      expect(result.paymentIds).toEqual([manual!.payment.id]);
+      expect(vault.payments.size).toBe(1);
+      const payment = vault.payments.get(manual!.payment.id)!;
+      expect(payment.imported).toBe(true);
+      expect(payment.date).toEqual(new Date(Date.UTC(2026, 8, 10)));
+      expect(spent(9)).toBe(3200);
     });
 
-    it('should not link automatically when two invoices match', async () => {
-      await registrarFatura();
-      const [second] = await ingest([
-        {
-          fitId: 'P2',
-          amount: '-3200.00',
-          memo: 'PAGAMENTO FATURA',
-          date: '20260912',
-        },
-      ]);
-      await service.confirmAsInvoice({
-        vaultId: vault.id,
-        entryIds: await pendingIds(second.id),
-      });
-
-      const batch = await ingestCartao(compras);
-      expect(batch.invoiceId).toBeNull();
-    });
-
-    it('should refuse linking a checking account statement', async () => {
-      const invoiceId = await registrarFatura();
+    it('extrato antigo pode ser marcado sem fatura; extrato de conta corrente não', async () => {
       const [bank] = await ingest([
         { fitId: 'X1', amount: '-10.00', memo: 'PADARIA' },
       ]);
-      const [error] = await invoiceService.setBatchInvoice({
-        vaultId: vault.id,
-        batchId: bank.id,
-        invoiceId,
-      });
-      expect(error).not.toBeNull();
+      expect(
+        (await invoiceService.setBatchNoInvoice(vault.id, bank.id, true))[0],
+      ).not.toBeNull();
+      expect(
+        (await invoiceService.setBatchInvoice(vault.id, bank.id, null))[0],
+      ).not.toBeNull();
     });
 
-    it('should delete the invoice and put the purchases back on their dates', async () => {
-      const invoiceId = await registrarFatura();
-      const batch = await ingestCartao(compras);
-      await service.confirmBatch({ vaultId: vault.id, batchId: batch.id });
-
-      const [error] = await invoiceService.deleteInvoice({
-        vaultId: vault.id,
-        invoiceId,
-      });
-
-      expect(error).toBeNull();
-      expect(spent(8)).toBe(2050);
-      expect(spent(9)).toBe(0);
-      const [, list] = await invoiceService.listInvoices(vault.id);
-      expect(list!.invoices).toHaveLength(0);
-      expect(list!.unlinkedStatements).toHaveLength(1);
-    });
-
-    it('should not register an invoice from another vault entry or an income line', async () => {
+    it('não confirma pagamento de outro vault nem de uma linha de receita', async () => {
       const [batch] = await ingest([
         { fitId: 'R1', amount: '100.00', memo: 'ESTORNO FATURA' },
       ]);
-      const [, result] = await service.confirmAsInvoice({
+      const [, result] = await service.confirmAsInvoicePayment({
         vaultId: vault.id,
         entryIds: await pendingIds(batch.id),
       });
       expect(result!.confirmed).toBe(0);
 
-      const [otherError] = await service.confirmAsInvoice({
+      const [otherError] = await service.confirmAsInvoicePayment({
         vaultId: 'outro-vault',
         entryIds: await pendingIds(batch.id),
       });

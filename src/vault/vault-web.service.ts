@@ -388,7 +388,10 @@ export class VaultWebService {
       });
 
       if (error !== null) {
+        // Recusas de regra (linha derivada de fatura, compra de cartão…) são
+        // 400; só "não encontrado" é 404.
         const isValidationError =
+          !/não encontrad/i.test(error) ||
           error === 'Alocação não pertence a este vault' ||
           error === 'Alocação não encontrada' ||
           error ===
@@ -458,7 +461,10 @@ export class VaultWebService {
       });
       if (error !== null) {
         return left({
-          type: VaultErrorType.INTERNAL_ERROR,
+          // Linha derivada de fatura e afins são recusas de regra (400).
+          type: /não encontrad/i.test(error)
+            ? VaultErrorType.VAULT_NOT_FOUND
+            : VaultErrorType.BAD_REQUEST,
           message: error,
         });
       }

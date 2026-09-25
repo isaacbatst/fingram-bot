@@ -19,7 +19,7 @@ import {
 } from './repositories/import-entry.repository';
 import { PlanQueryService } from '@/plan/shared/plan-query.service';
 import { CardInvoiceService, isInvoiceLine } from './card-invoice.service';
-import { CardInvoice } from './domain/card-invoice';
+import { Card, startOfUtcDay, addDays } from './domain/card';
 import { OfxParseError, OfxStatement, parseOfx } from '@/shared/ofx-parser';
 
 export type ImportReview = {
@@ -45,10 +45,22 @@ export type ImportGroup = {
   /** Parece a quitação de uma fatura — não é gasto novo, e sim o pagamento dela. */
   looksLikeSettlement: boolean;
   /**
-   * Débito de pagamento de fatura na conta corrente: a triagem propõe registrar
-   * a fatura, que conta como gasto desde já e espera o extrato do cartão.
+   * Débito de pagamento de fatura na conta corrente: a triagem propõe
+   * "Pagamento de fatura" (`POST /vault/import/confirm-invoice-payment`).
    */
   suggestsInvoice: boolean;
+  /**
+   * Cartão e fatura sugeridos para o pagamento (só com `suggestsInvoice` e um
+   * lançamento). `invoiceId` null: a fatura sugerida ainda não existe e é
+   * criada ao confirmar. Null sem cartão cadastrado.
+   */
+  suggestedInvoicePayment: {
+    cardId: string;
+    cardName: string;
+    invoiceId: string | null;
+    closingDate: Date;
+    dueDate: Date;
+  } | null;
   /**
    * Pagamento planejado cuja parcela prevista bate com o valor e o mês do grupo.
    * Só para despesas de um lançamento: parcela é pagamento único no mês.
@@ -180,21 +192,23 @@ export class ImportService {
 
     if (batch.kind === 'creditcard') {
       // "Pagamento recebido" no cartão é a quitação de uma fatura: o mesmo
-      // evento que o débito na conta corrente. Nunca é receita, então nem
-      // chega à triagem.
+      // evento que o débito na conta corrente. Nunca é receita. O saldo da
+      // fatura anterior (rotativo) também não é compra. Nenhum dos dois chega
+      // à triagem.
       for (const entry of entries) {
-        if (entry.type === 'income' && !isInvoiceLine(entry)) entry.dismiss();
+        if (!isInvoiceLine(entry)) entry.dismiss();
       }
 
-      // A fatura pode ter sido registrada antes de o extrato chegar.
-      const invoice = this.cardInvoiceService.findInvoiceForStatement(
+      // O extrato cai no cartão da conta (criado na hora se for novo) e na
+      // fatura do período dele; as compras confirmadas entram nela.
+      const [error] = this.cardInvoiceService.attachStatement(
         vault,
-        await this.importBatchRepository.findByVaultId(input.vaultId),
         batch,
         entries,
       );
-      if (invoice) {
-        this.cardInvoiceService.applyBatchLink(vault, batch, [], invoice.id);
+      if (error !== null) {
+        this.logger.warn(`Extrato de cartão sem fatura: ${error}`);
+      } else {
         await this.vaultRepository.update(vault);
       }
     }
@@ -310,6 +324,10 @@ export class ImportService {
     const pending = await this.importEntryRepository.findPendingByBatchId(
       batch.id,
     );
+    const vault =
+      batch.kind === 'bank'
+        ? await this.vaultRepository.findById(input.vaultId)
+        : null;
 
     const byKey = new Map<string, ImportEntry[]>();
     for (const entry of pending) {
@@ -337,11 +355,22 @@ export class ImportService {
         ),
       };
     });
-    const withInvoice = groups.map((g) => ({
-      ...g,
-      suggestsInvoice:
-        g.looksLikeSettlement && g.type === 'expense' && batch.kind === 'bank',
-    }));
+    const withInvoice = groups.map((g) => {
+      const suggestsInvoice =
+        g.looksLikeSettlement && g.type === 'expense' && batch.kind === 'bank';
+      return {
+        ...g,
+        suggestsInvoice,
+        suggestedInvoicePayment:
+          suggestsInvoice && vault
+            ? this.cardInvoiceService.suggestPaymentTarget(vault, {
+                amount: g.totalAmount / g.count,
+                date: g.firstDate,
+                boxId: batch.boxId,
+              })
+            : null,
+      };
+    });
 
     // Biggest groups first: the user clears the most lines with the fewest decisions,
     // and sees the count drop quickly.
@@ -478,8 +507,8 @@ export class ImportService {
       this.materialize(vault, entry, defaultBox?.id ?? null);
       confirmed.push(entry);
 
-      // Compra de um extrato de cartão já ligado a uma fatura: entra nela e
-      // passa a contar na data de pagamento.
+      // Compra de um extrato de cartão: entra na fatura dele e só conta
+      // quando um pagamento de fatura a pagar.
       if (!batches.has(entry.batchId)) {
         batches.set(
           entry.batchId,
@@ -488,7 +517,7 @@ export class ImportService {
       }
       const invoiceId = batches.get(entry.batchId)?.invoiceId;
       if (invoiceId && isInvoiceLine(entry) && entry.transactionId) {
-        vault.linkToInvoice(entry.transactionId, invoiceId);
+        vault.linkPurchase(entry.transactionId, { invoiceId });
       }
     }
 
@@ -662,40 +691,56 @@ export class ImportService {
   }
 
   /**
-   * Registers a card invoice from its payment on the checking account, instead
-   * of ignoring the line.
+   * Confirms checking-account debits as card invoice payments, instead of
+   * ignoring them or booking them as spending.
    *
-   * Ignoring the payment left nothing to check the card purchases against: a
-   * statement never imported meant spending silently missing. Registering it
-   * counts the whole amount now, as "não discriminado", and the card statement
-   * purchases shrink that part as they are linked — the payment month always
-   * adds up to what was paid.
+   * A payment is never spending by itself: it makes the card purchases it
+   * covers count on its date, and whatever the known purchases do not explain
+   * counts as "não discriminado" until the card statement arrives. The month of
+   * the payment always adds up to what was paid.
    *
-   * The card statement may have arrived first: a matching one still without an
-   * invoice is linked right away, so the remainder starts reduced.
+   * Target: `invoiceId` (explicit), else `cardId` (invoice suggested by date),
+   * else the suggested card for the account's estrato. With no card at all, a
+   * "Cartão" is created with days guessed from the payment date (due on that
+   * day, closing a week before); the first card statement imported later takes
+   * it over (`CardInvoiceService.cardForStatement`).
+   *
+   * A payment registered by hand before (MCP) that matches the line — same
+   * estrato, same amount to the cent, up to 7 days apart — receives the line
+   * instead of a second payment being created.
    */
-  async confirmAsInvoice(input: {
+  async confirmAsInvoicePayment(input: {
     vaultId: string;
     entryIds: string[];
+    cardId?: string;
+    invoiceId?: string;
   }): Promise<
     Either<
       string,
-      { confirmed: number; skipped: string[]; invoiceIds: string[] }
+      {
+        confirmed: number;
+        skipped: string[];
+        paymentIds: string[];
+        invoiceIds: string[];
+      }
     >
   > {
     const vault = await this.vaultRepository.findById(input.vaultId);
     if (!vault) return left('Dados não encontrados');
+    if (input.invoiceId && !vault.invoices.get(input.invoiceId)) {
+      return left('Fatura não encontrada');
+    }
+    if (input.cardId && !vault.cards.get(input.cardId)) {
+      return left('Cartão não encontrado');
+    }
     const defaultBox = await this.boxRepository.findDefaultByVaultId(
-      input.vaultId,
-    );
-    const batches = await this.importBatchRepository.findByVaultId(
       input.vaultId,
     );
 
     const confirmed: ImportEntry[] = [];
-    const linked: ImportBatch[] = [];
     const skipped: string[] = [];
-    const invoiceIds: string[] = [];
+    const paymentIds: string[] = [];
+    const invoiceIds = new Set<string>();
 
     for (const entryId of input.entryIds) {
       const entry = await this.loadEntry(input.vaultId, entryId);
@@ -710,64 +755,83 @@ export class ImportService {
         continue;
       }
 
-      // A fatura pode ter sido criada à mão antes (pelo assistente, via MCP):
-      // o débito é o pagamento dela, não uma fatura nova.
-      const awaiting = vault.findInvoiceAwaitingPayment({
+      const awaiting = vault.findPaymentAwaitingLine({
         amount: entry.amount,
         date: entry.date,
         boxId,
       });
-      let invoice: CardInvoice;
+      let paymentId: string;
+      let invoiceId: string;
       if (awaiting) {
-        vault.attachPaymentLine(awaiting.id, entry.date);
-        invoice = awaiting;
+        vault.attachImportedLine(awaiting.id, {
+          date: entry.date,
+          importEntryId: entry.id,
+        });
+        paymentId = awaiting.id;
+        invoiceId = awaiting.invoiceId;
       } else {
-        const [error, created] = vault.registerInvoice({
+        const card = this.resolvePaymentCard(vault, input, entry, boxId);
+        if (!card) {
+          skipped.push(entryId);
+          continue;
+        }
+        const [error, payment] = vault.addPayment({
+          invoiceId: input.invoiceId,
+          cardId: card.id,
           amount: entry.amount,
-          paymentDate: entry.date,
+          date: entry.date,
           boxId,
+          imported: true,
+          importEntryId: entry.id,
         });
         if (error !== null) {
           skipped.push(entryId);
           continue;
         }
-        invoice = created;
+        paymentId = payment.id;
+        invoiceId = payment.invoiceId;
       }
-      invoiceIds.push(invoice.id);
-
-      const hasStatement = batches.some((b) => b.invoiceId === invoice.id);
-      const match = hasStatement
-        ? null
-        : await this.cardInvoiceService.findStatementForInvoice(
-            invoice,
-            batches,
-          );
-      if (match) {
-        this.cardInvoiceService.applyBatchLink(
-          vault,
-          match.batch,
-          match.entries,
-          invoice.id,
-        );
-        linked.push(match.batch);
-      }
-
-      const remainder = [...vault.transactions.values()].find(
-        (t) => t.invoiceId === invoice.id && t.isInvoiceRemainder,
-      );
-      entry.confirm(remainder?.id ?? null);
+      paymentIds.push(paymentId);
+      invoiceIds.add(invoiceId);
+      entry.confirm(null);
       confirmed.push(entry);
     }
 
     await this.vaultRepository.update(vault);
-    for (const batch of linked) {
-      await this.importBatchRepository.update(batch);
-    }
     for (const entry of confirmed) {
       await this.importEntryRepository.update(entry);
     }
 
-    return right({ confirmed: confirmed.length, skipped, invoiceIds });
+    return right({
+      confirmed: confirmed.length,
+      skipped,
+      paymentIds,
+      invoiceIds: [...invoiceIds],
+    });
+  }
+
+  private resolvePaymentCard(
+    vault: Vault,
+    input: { cardId?: string; invoiceId?: string },
+    entry: ImportEntry,
+    boxId: string,
+  ): Card | null {
+    if (input.invoiceId) return vault.cardOfInvoice(input.invoiceId);
+    if (input.cardId) return vault.cards.get(input.cardId) ?? null;
+    const suggestion = this.cardInvoiceService.suggestPaymentTarget(vault, {
+      amount: entry.amount,
+      date: entry.date,
+      boxId,
+    });
+    if (suggestion) return vault.cards.get(suggestion.cardId) ?? null;
+    const day = startOfUtcDay(entry.date);
+    const [error, card] = vault.addCard({
+      name: 'Cartão',
+      closingDay: addDays(day, -7).getUTCDate(),
+      dueDay: day.getUTCDate(),
+      boxId,
+    });
+    return error === null ? card : null;
   }
 
   /** Confirms every still-pending entry of a batch. */

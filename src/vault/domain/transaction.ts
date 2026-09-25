@@ -20,7 +20,19 @@ type ConstructorParams = {
   withdrawalType: 'withdrawal' | 'realization' | null;
   invoiceId?: string | null;
   purchaseDate?: Date | null;
+  invoiceRole?: InvoiceRole | null;
+  sourceTransactionId?: string | null;
+  paymentId?: string | null;
 };
+
+/**
+ * Papel de uma transação no cartão de crédito:
+ * - `purchase`: compra (ou estorno) de uma fatura. Não conta sozinha em nada.
+ * - `part`: a parte de uma compra paga por um pagamento. Conta na data dele.
+ * - `remainder`: o que um pagamento pagou além das compras conhecidas.
+ * `part` e `remainder` são derivados: o `Vault` os recalcula.
+ */
+export type InvoiceRole = 'purchase' | 'part' | 'remainder';
 
 type CreateParams = {
   amount: number;
@@ -35,6 +47,10 @@ type CreateParams = {
   allocationId?: string;
   withdrawalType?: 'withdrawal' | 'realization' | null;
   invoiceId?: string | null;
+  invoiceRole?: InvoiceRole | null;
+  purchaseDate?: Date | null;
+  sourceTransactionId?: string | null;
+  paymentId?: string | null;
 };
 
 export class Transaction {
@@ -57,7 +73,10 @@ export class Transaction {
       allocationId: params.allocationId ?? null,
       withdrawalType: params.withdrawalType ?? null,
       invoiceId: params.invoiceId ?? null,
-      purchaseDate: null,
+      purchaseDate: params.purchaseDate ?? null,
+      invoiceRole: params.invoiceRole ?? null,
+      sourceTransactionId: params.sourceTransactionId ?? null,
+      paymentId: params.paymentId ?? null,
     });
   }
 
@@ -80,13 +99,15 @@ export class Transaction {
   public date: Date = new Date();
   public allocationId: string | null = null;
   public withdrawalType: 'withdrawal' | 'realization' | null = null;
-  /** Fatura de cartão a que pertence — ver `isInvoiceRemainder`/`isInvoicePurchase`. */
+  /** Fatura (ciclo do cartão) a que pertence — ver `invoiceRole`. */
   public invoiceId: string | null = null;
-  /**
-   * Data em que a compra foi feita, quando ligada a uma fatura. Nesse caso
-   * `date` é a data de pagamento da fatura, que é quando a compra conta.
-   */
+  public invoiceRole: InvoiceRole | null = null;
+  /** Numa parte (`part`): a data em que a compra foi feita. */
   public purchaseDate: Date | null = null;
+  /** Numa parte: a compra de que ela é parte. */
+  public sourceTransactionId: string | null = null;
+  /** Numa parte ou não discriminado: o pagamento que a fez contar. */
+  public paymentId: string | null = null;
 
   private constructor(params: ConstructorParams) {
     this.id = params.id;
@@ -105,16 +126,37 @@ export class Transaction {
     this.withdrawalType = params.withdrawalType;
     this.invoiceId = params.invoiceId ?? null;
     this.purchaseDate = params.purchaseDate ?? null;
+    this.invoiceRole = params.invoiceRole ?? null;
+    this.sourceTransactionId = params.sourceTransactionId ?? null;
+    this.paymentId = params.paymentId ?? null;
   }
 
-  /** O que a fatura ainda não detalhou. Calculado pela fatura, não editável. */
+  /** Compra de cartão: só conta pelas partes que os pagamentos pagam. */
+  get isCardPurchase(): boolean {
+    return this.invoiceRole === 'purchase';
+  }
+
+  /** Não discriminado de um pagamento. Calculado, não editável. */
   get isInvoiceRemainder(): boolean {
-    return this.invoiceId !== null && this.purchaseDate === null;
+    return this.invoiceRole === 'remainder';
   }
 
-  /** Compra do extrato do cartão ligada a uma fatura. */
-  get isInvoicePurchase(): boolean {
-    return this.invoiceId !== null && this.purchaseDate !== null;
+  /** Parte de uma compra paga por um pagamento. Calculada, não editável. */
+  get isInvoicePart(): boolean {
+    return this.invoiceRole === 'part';
+  }
+
+  /** Linha derivada (parte ou não discriminado), mantida pelo `Vault`. */
+  get isInvoiceDerived(): boolean {
+    return this.isInvoicePart || this.isInvoiceRemainder;
+  }
+
+  /**
+   * Entra em saldo, orçamento e totais. A compra de cartão fica de fora: quem
+   * conta são as partes dela, na data do pagamento que a paga.
+   */
+  get countsInLedger(): boolean {
+    return !this.isCardPurchase;
   }
   commit(): Either<string, boolean> {
     if (this.isCommitted) {
@@ -141,12 +183,10 @@ export class Transaction {
       date: this.date,
       allocationId: this.allocationId,
       invoiceId: this.invoiceId,
-      invoiceRole: this.isInvoiceRemainder
-        ? 'remainder'
-        : this.isInvoicePurchase
-          ? 'purchase'
-          : null,
+      invoiceRole: this.invoiceRole,
       purchaseDate: this.purchaseDate,
+      purchaseId: this.sourceTransactionId,
+      paymentId: this.paymentId,
     };
   }
 }

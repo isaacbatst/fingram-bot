@@ -81,6 +81,20 @@ describe('normalizeDescription', () => {
   });
 });
 
+describe('isCarriedBalanceDescription', () => {
+  it('reconhece o saldo da fatura anterior, mas não juros nem compras', async () => {
+    const { isCarriedBalanceDescription } = await import('./import-entry');
+    expect(isCarriedBalanceDescription('Saldo em atraso')).toBe(true);
+    expect(isCarriedBalanceDescription('SALDO ANTERIOR')).toBe(true);
+    expect(isCarriedBalanceDescription('Saldo restante da fatura anterior')).toBe(
+      true,
+    );
+    expect(isCarriedBalanceDescription('Juros de rotativo')).toBe(false);
+    expect(isCarriedBalanceDescription('IOF de atraso')).toBe(false);
+    expect(isCarriedBalanceDescription('Mercado Saldo Bom')).toBe(false);
+  });
+});
+
 describe('isSettlementDescription', () => {
   it('should recognise the bill payment seen from the checking account', () => {
     expect(isSettlementDescription('PAGAMENTO FATURA CARTAO', 'bank')).toBe(true);

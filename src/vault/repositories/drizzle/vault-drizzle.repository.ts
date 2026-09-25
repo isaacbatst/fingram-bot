@@ -14,7 +14,9 @@ import {
   budget,
   vaultCategory,
   box,
-  cardInvoice,
+  card,
+  cardCycle,
+  cardPayment,
 } from '@/shared/persistence/drizzle/schema';
 import * as schema from '@/shared/persistence/drizzle/schema';
 import { Box, BoxType } from '../../domain/box';
@@ -22,7 +24,9 @@ import {
   BudgetStartDayOverride,
   BudgetStartDaySchedule,
 } from '../../domain/budget-period';
-import { CardInvoice } from '../../domain/card-invoice';
+import { CardInvoice, CardPayment } from '../../domain/card-invoice';
+import { Card } from '../../domain/card';
+import { InvoiceRole } from '../../domain/transaction';
 import { Category } from '../../domain/category';
 import { Transaction } from '../../domain/transaction';
 import { Vault } from '../../domain/vault';
@@ -65,22 +69,57 @@ export class VaultDrizzleRepository extends VaultRepository {
       );
     }
 
-    const invoiceChanges = vaultEntity.invoicesTracker.getChanges();
-
-    // Faturas novas antes das transações: o não discriminado e as compras
-    // ligadas apontam para elas.
-    for (const i of invoiceChanges.new) {
+    const boxChanges = vaultEntity.boxesTracker.getChanges();
+    // Estratos novos primeiro: cartões e pagamentos apontam para eles.
+    for (const b of boxChanges.new) {
       queries.push(
-        this.db.insert(cardInvoice).values({
-          id: i.id,
-          vaultId: i.vaultId,
-          boxId: i.boxId,
-          amount: i.amount,
-          paymentDate: i.paymentDate,
-          cardLabel: i.cardLabel,
-          hasPaymentLine: i.hasPaymentLine,
-          createdAt: i.createdAt,
+        this.db.insert(box).values({
+          id: b.id,
+          vaultId: b.vaultId,
+          name: b.name,
+          goalAmount: b.goalAmount,
+          isDefault: b.isDefault,
+          type: b.type,
+          createdAt: b.createdAt,
         }),
+      );
+    }
+
+    const cardChanges = vaultEntity.cardsTracker.getChanges();
+    const invoiceChanges = vaultEntity.invoicesTracker.getChanges();
+    const paymentChanges = vaultEntity.paymentsTracker.getChanges();
+
+    // Cartão → fatura → pagamento → transações: cada um aponta para o anterior.
+    for (const c of cardChanges.new) {
+      queries.push(this.db.insert(card).values(this.cardRow(c)));
+    }
+    for (const i of invoiceChanges.new) {
+      queries.push(this.db.insert(cardCycle).values(this.invoiceRow(i)));
+    }
+    for (const p of paymentChanges.new) {
+      queries.push(this.db.insert(cardPayment).values(this.paymentRow(p)));
+    }
+    // Atualizados antes das transações: uma compra pode ter mudado para uma
+    // fatura cujo pagamento acabou de mudar, e nada aqui remove linhas.
+    for (const c of cardChanges.dirty) {
+      queries.push(
+        this.db.update(card).set(this.cardRow(c)).where(eq(card.id, c.id)),
+      );
+    }
+    for (const i of invoiceChanges.dirty) {
+      queries.push(
+        this.db
+          .update(cardCycle)
+          .set(this.invoiceRow(i))
+          .where(eq(cardCycle.id, i.id)),
+      );
+    }
+    for (const p of paymentChanges.dirty) {
+      queries.push(
+        this.db
+          .update(cardPayment)
+          .set(this.paymentRow(p))
+          .where(eq(cardPayment.id, p.id)),
       );
     }
 
@@ -106,6 +145,9 @@ export class VaultDrizzleRepository extends VaultRepository {
           withdrawalType: t.withdrawalType ?? null,
           invoiceId: t.invoiceId,
           purchaseDate: t.purchaseDate,
+          invoiceRole: t.invoiceRole,
+          sourceTransactionId: t.sourceTransactionId,
+          paymentId: t.paymentId,
         }),
       );
     }
@@ -139,32 +181,32 @@ export class VaultDrizzleRepository extends VaultRepository {
             withdrawalType: t.withdrawalType ?? null,
             invoiceId: t.invoiceId,
             purchaseDate: t.purchaseDate,
+            invoiceRole: t.invoiceRole,
+            sourceTransactionId: t.sourceTransactionId,
+            paymentId: t.paymentId,
           })
           .where(eq(transaction.id, t.id)),
       );
     }
 
-    for (const i of invoiceChanges.dirty) {
+    // Removidos depois das transações, que deixaram de apontar para eles.
+    const deletedPaymentIds = paymentChanges.deleted.map((p) => p.id);
+    if (deletedPaymentIds.length > 0) {
       queries.push(
         this.db
-          .update(cardInvoice)
-          .set({
-            cardLabel: i.cardLabel,
-            paymentDate: i.paymentDate,
-            hasPaymentLine: i.hasPaymentLine,
-          })
-          .where(eq(cardInvoice.id, i.id)),
+          .delete(cardPayment)
+          .where(inArray(cardPayment.id, deletedPaymentIds)),
       );
     }
-
-    // Depois das transações, que deixam de apontar para a fatura removida.
     const deletedInvoiceIds = invoiceChanges.deleted.map((i) => i.id);
     if (deletedInvoiceIds.length > 0) {
       queries.push(
-        this.db
-          .delete(cardInvoice)
-          .where(inArray(cardInvoice.id, deletedInvoiceIds)),
+        this.db.delete(cardCycle).where(inArray(cardCycle.id, deletedInvoiceIds)),
       );
+    }
+    const deletedCardIds = cardChanges.deleted.map((c) => c.id);
+    if (deletedCardIds.length > 0) {
+      queries.push(this.db.delete(card).where(inArray(card.id, deletedCardIds)));
     }
 
     const budgetChanges = vaultEntity.budgetsTracker.getChanges();
@@ -209,23 +251,6 @@ export class VaultDrizzleRepository extends VaultRepository {
       );
     }
 
-    const boxChanges = vaultEntity.boxesTracker.getChanges();
-
-    // Insert new boxes
-    for (const b of boxChanges.new) {
-      queries.push(
-        this.db.insert(box).values({
-          id: b.id,
-          vaultId: b.vaultId,
-          name: b.name,
-          goalAmount: b.goalAmount,
-          isDefault: b.isDefault,
-          type: b.type,
-          createdAt: b.createdAt,
-        }),
-      );
-    }
-
     // Delete removed boxes
     const deletedBoxIds = boxChanges.deleted.map((b) => b.id);
     if (deletedBoxIds.length > 0) {
@@ -263,6 +288,46 @@ export class VaultDrizzleRepository extends VaultRepository {
     }
 
     vaultEntity.clearChanges();
+  }
+
+  private cardRow(c: Card) {
+    return {
+      id: c.id,
+      vaultId: c.vaultId,
+      name: c.name,
+      closingDay: c.closingDay,
+      dueDay: c.dueDay,
+      boxId: c.boxId,
+      accountKey: c.accountKey,
+      createdAt: c.createdAt,
+    };
+  }
+
+  private invoiceRow(i: CardInvoice) {
+    return {
+      id: i.id,
+      vaultId: i.vaultId,
+      cardId: i.cardId,
+      periodStart: i.periodStart,
+      closingDate: i.closingDate,
+      dueDate: i.dueDate,
+      closed: i.closed,
+      createdAt: i.createdAt,
+    };
+  }
+
+  private paymentRow(p: CardPayment) {
+    return {
+      id: p.id,
+      vaultId: p.vaultId,
+      invoiceId: p.invoiceId,
+      boxId: p.boxId,
+      amount: p.amount,
+      date: p.date,
+      imported: p.imported,
+      importEntryId: p.importEntryId,
+      createdAt: p.createdAt,
+    };
   }
 
   async findById(id: string): Promise<Vault | null> {
@@ -322,29 +387,33 @@ export class VaultDrizzleRepository extends VaultRepository {
             | null,
           invoiceId: t.invoiceId ?? null,
           purchaseDate: t.purchaseDate ?? null,
+          invoiceRole: (t.invoiceRole ?? null) as InvoiceRole | null,
+          sourceTransactionId: t.sourceTransactionId ?? null,
+          paymentId: t.paymentId ?? null,
         }),
       );
     }
 
-    const invoiceRows = await this.db
+    const cards = new Map<string, Card>();
+    for (const c of await this.db
       .select()
-      .from(cardInvoice)
-      .where(eq(cardInvoice.vaultId, row.id));
+      .from(card)
+      .where(eq(card.vaultId, row.id))) {
+      cards.set(c.id, Card.restore(c));
+    }
     const invoices = new Map<string, CardInvoice>();
-    for (const i of invoiceRows) {
-      invoices.set(
-        i.id,
-        CardInvoice.restore({
-          id: i.id,
-          vaultId: i.vaultId,
-          boxId: i.boxId ?? '',
-          amount: i.amount,
-          paymentDate: i.paymentDate,
-          cardLabel: i.cardLabel,
-          hasPaymentLine: i.hasPaymentLine,
-          createdAt: i.createdAt,
-        }),
-      );
+    for (const i of await this.db
+      .select()
+      .from(cardCycle)
+      .where(eq(cardCycle.vaultId, row.id))) {
+      invoices.set(i.id, CardInvoice.restore(i));
+    }
+    const payments = new Map<string, CardPayment>();
+    for (const p of await this.db
+      .select()
+      .from(cardPayment)
+      .where(eq(cardPayment.vaultId, row.id))) {
+      payments.set(p.id, CardPayment.restore(p));
     }
 
     // Load budgets with vault categories
@@ -415,10 +484,10 @@ export class VaultDrizzleRepository extends VaultRepository {
       row.customPrompt ?? '',
       schedule,
       invoices,
+      cards,
+      payments,
     );
-    vaultEntity.transactionsTracker.clearChanges();
-    vaultEntity.budgetsTracker.clearChanges();
-    vaultEntity.boxesTracker.clearChanges();
+    vaultEntity.clearChanges();
 
     return vaultEntity;
   }

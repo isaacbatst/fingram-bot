@@ -6,6 +6,8 @@ export type BreakdownTransaction = {
   boxId: string;
   transferId: string | null;
   allocationId: string | null;
+  /** Compra de cartão (`purchase`) não conta sozinha: contam as partes pagas. */
+  invoiceRole?: string | null;
 };
 
 export type BreakdownGroupBy = 'category' | 'month' | 'categoryAndMonth';
@@ -50,6 +52,7 @@ export function computeSpendingBreakdown(input: {
 
   for (const t of input.transactions) {
     if (t.type !== input.type || t.transferId) continue;
+    if (t.invoiceRole === 'purchase') continue;
     if (t.date < input.range.startDate || t.date > input.range.endDate) {
       continue;
     }

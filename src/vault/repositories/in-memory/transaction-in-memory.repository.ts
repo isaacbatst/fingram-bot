@@ -31,7 +31,9 @@ export class TransactionInMemoryRepository extends TransactionRepository {
       };
     }
 
-    let transactions = Array.from(vault.transactions.values());
+    let transactions = Array.from(vault.transactions.values()).filter(
+      (t) => t.countsInLedger,
+    );
 
     if (filter?.dateRange) {
       const { startDate, endDate } = filter.dateRange;
@@ -140,12 +142,14 @@ export class TransactionInMemoryRepository extends TransactionRepository {
           : null,
         allocationId: transaction.allocationId ?? null,
         invoiceId: transaction.invoiceId,
-        invoiceRole: transaction.isInvoiceRemainder
-          ? 'remainder'
-          : transaction.isInvoicePurchase
-            ? 'purchase'
-            : null,
+        invoiceRole: transaction.invoiceRole,
         purchaseDate: transaction.purchaseDate,
+        purchaseId: transaction.sourceTransactionId,
+        purchaseAmount: transaction.sourceTransactionId
+          ? (vault.transactions.get(transaction.sourceTransactionId)?.amount ??
+            null)
+          : null,
+        paymentId: transaction.paymentId,
       };
     });
 
@@ -169,7 +173,7 @@ export class TransactionInMemoryRepository extends TransactionRepository {
     const transactions = Array.from(vault.transactions.values());
     return transactions
       .filter((t) => {
-        if (!t.isCommitted) return false;
+        if (!t.isCommitted || !t.countsInLedger) return false;
         const date = t.date ?? t.createdAt;
         return date >= startDate && date < endDate;
       })
@@ -193,7 +197,7 @@ export class TransactionInMemoryRepository extends TransactionRepository {
 
     const byDay = new Map<string, { count: number; expenseTotal: number }>();
     for (const t of vault.transactions.values()) {
-      if (!t.isCommitted) continue;
+      if (!t.isCommitted || !t.countsInLedger) continue;
       const date = t.date ?? t.createdAt;
       if (date < startDate || date >= endDate) continue;
 

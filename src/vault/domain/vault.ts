@@ -13,11 +13,23 @@ import { Either, left, right } from './either';
 import { Transaction } from './transaction';
 import { ChangesTracker } from './changes-tracker';
 import {
+  allocateCard,
+  CardAllocation,
   CardInvoice,
-  computeInvoiceBreakdown,
-  INVOICE_REMAINDER_DESCRIPTION,
-  InvoiceBreakdown,
+  CardPayment,
+  computeInvoiceFigures,
+  InvoiceFigures,
+  invoiceRemainderDescription,
+  toCents,
 } from './card-invoice';
+import {
+  addDays,
+  Card,
+  cycleDatesFor,
+  dueDateAfter,
+  startOfUtcDay,
+  validateCardDay,
+} from './card';
 
 // Interfaces para serialização
 export interface SerializedCategory {
@@ -76,11 +88,72 @@ export type BudgetSummary = {
   percentageUsed: number;
 };
 /**
- * Até quantos dias o débito importado pode estar da data informada numa fatura
- * criada à mão para ser reconhecido como o pagamento dela.
+ * Até quantos dias o débito importado pode estar da data de um pagamento
+ * informado à mão para ser reconhecido como a linha dele.
  */
 const PAYMENT_MATCH_DAYS = 7;
+/** Um pagamento até estes dias depois do vencimento ainda paga aquela fatura. */
+const PAYMENT_GRACE_DAYS = 10;
+/** Distância máxima entre o `DTEND` do extrato e o fechamento da fatura. */
+const STATEMENT_MATCH_DAYS = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Por que uma linha derivada da fatura não pode ser editada nem excluída
+ * direto, e o que fazer no lugar. Null para as demais transações.
+ */
+export function derivedTransactionError(transaction: Transaction): string | null {
+  if (transaction.isInvoicePart) {
+    return `Esta transação é a parte de uma compra de cartão paga por um pagamento de fatura, e é recalculada sozinha. Edite ou exclua a compra (id ${transaction.sourceTransactionId}).`;
+  }
+  if (transaction.isInvoiceRemainder) {
+    return `Este é o não discriminado de um pagamento de fatura: encolhe sozinho conforme as compras do cartão chegam. Para mudar o valor, edite ou exclua o pagamento (id ${transaction.paymentId}).`;
+  }
+  return null;
+}
+
+type DerivedSpec = {
+  amount: number;
+  date: Date;
+  boxId: string;
+  categoryId: string | null;
+  allocationId: string | null;
+  withdrawalType: 'withdrawal' | 'realization' | null;
+  description: string;
+  purchaseDate: Date | null;
+  sourceTransactionId: string | null;
+  paymentId: string;
+  invoiceId: string;
+};
+
+/** Aplica os campos calculados numa linha derivada. Diz se algo mudou. */
+function applySpec(tx: Transaction, spec: DerivedSpec): boolean {
+  let changed = false;
+  const set = <K extends keyof DerivedSpec & keyof Transaction>(key: K) => {
+    const current = tx[key] as unknown;
+    const next = spec[key] as unknown;
+    const same =
+      current instanceof Date && next instanceof Date
+        ? current.getTime() === next.getTime()
+        : current === next;
+    if (!same) {
+      (tx as unknown as Record<string, unknown>)[key] = next;
+      changed = true;
+    }
+  };
+  set('amount');
+  set('date');
+  set('boxId');
+  set('categoryId');
+  set('allocationId');
+  set('withdrawalType');
+  set('description');
+  set('purchaseDate');
+  set('sourceTransactionId');
+  set('paymentId');
+  set('invoiceId');
+  return changed;
+}
 
 export class Vault {
   static generateId(): string {
@@ -98,7 +171,9 @@ export class Vault {
     amount: number;
   }>();
   readonly boxesTracker = new ChangesTracker<Box>();
+  readonly cardsTracker = new ChangesTracker<Card>();
   readonly invoicesTracker = new ChangesTracker<CardInvoice>();
+  readonly paymentsTracker = new ChangesTracker<CardPayment>();
 
   constructor(
     public readonly id = Vault.generateId(),
@@ -116,6 +191,8 @@ export class Vault {
       overrides: [],
     },
     public readonly invoices: Map<string, CardInvoice> = new Map(),
+    public readonly cards: Map<string, Card> = new Map(),
+    public readonly payments: Map<string, CardPayment> = new Map(),
   ) {}
 
   get schedule(): BudgetStartDaySchedule {
@@ -194,15 +271,17 @@ export class Vault {
   ): Either<string, Transaction> {
     const transaction = this.transactions.get(id);
     if (!transaction) return left('Transação não encontrada');
-    if (transaction.isInvoiceRemainder) {
-      return left(
-        'O valor não discriminado é calculado pela fatura: importe o extrato do cartão para detalhá-lo, ou exclua a fatura',
-      );
-    }
+    const derivedError = derivedTransactionError(transaction);
+    if (derivedError) return left(derivedError);
 
     if (options.boxId !== undefined) {
       if (!this.boxes.get(options.boxId)) {
         return left('Estrato não encontrado');
+      }
+      if (transaction.isCardPurchase && options.boxId !== transaction.boxId) {
+        return left(
+          'A compra de cartão sai do estrato pagador do cartão: troque o estrato no cartão',
+        );
       }
       transaction.boxId = options.boxId;
     }
@@ -217,11 +296,7 @@ export class Vault {
       transaction.categoryId = options.categoryId;
     }
     if (options.date !== undefined) {
-      // Compra ligada a uma fatura conta na data de pagamento dela; a data que
-      // o usuário vê e corrige é a da compra.
-      if (transaction.isInvoicePurchase)
-        transaction.purchaseDate = options.date;
-      else transaction.date = options.date;
+      transaction.date = options.date;
     }
 
     if (options.allocationId !== undefined) {
@@ -241,236 +316,808 @@ export class Vault {
     }
 
     this.transactionsTracker.registerDirty(transaction);
-    if (transaction.invoiceId) this.recomputeInvoice(transaction.invoiceId);
+    if (transaction.isCardPurchase) this.recomputeInvoiceCard(transaction);
     return right(transaction);
   }
 
   /**
-   * Excluir o não discriminado de uma fatura é excluir a fatura: ele não existe
-   * sem ela. Excluir uma compra ligada faz o não discriminado crescer de volta.
+   * Partes e não discriminado são derivados de compras e pagamentos: não se
+   * excluem diretamente. Excluir uma compra de cartão refaz as partes.
    */
   deleteTransaction(id: string): Either<string, boolean> {
     const transaction = this.transactions.get(id);
     if (!transaction) return left('Transação não encontrada');
-    if (transaction.isInvoiceRemainder) {
-      return this.deleteInvoice(transaction.invoiceId!);
-    }
+    const derivedError = derivedTransactionError(transaction);
+    if (derivedError) return left(derivedError);
     this.transactions.delete(transaction.id);
     this.transactionsTracker.registerDeleted(transaction);
-    if (transaction.invoiceId) this.recomputeInvoice(transaction.invoiceId);
+    if (transaction.isCardPurchase) this.recomputeInvoiceCard(transaction);
     return right(true);
   }
 
-  /**
-   * Registra uma fatura paga. Ela conta como gasto desde já: o que nenhuma
-   * compra ligada detalhou vira a transação "não discriminado", no estrato que
-   * pagou e na data do pagamento.
-   */
-  registerInvoice(input: {
-    amount: number;
-    paymentDate: Date;
-    boxId: string;
-    cardLabel?: string | null;
-    /** Falso para a fatura criada à mão, antes de o débito ser importado. */
-    hasPaymentLine?: boolean;
-  }): Either<string, CardInvoice> {
-    if (!(input.amount > 0)) return left('O valor da fatura deve ser positivo');
-    if (!this.boxes.get(input.boxId)) return left('Estrato não encontrado');
+  // ---------------------------------------------------------------------------
+  // Cartões, faturas (ciclos) e pagamentos. Ver spec-operational §9.
+  // ---------------------------------------------------------------------------
 
+  private defaultBoxId(): string | undefined {
+    return [...this.boxes.values()].find((b) => b.isDefault)?.id;
+  }
+
+  addCard(input: {
+    name: string;
+    closingDay: number;
+    dueDay: number;
+    boxId?: string;
+    accountKey?: string | null;
+  }): Either<string, Card> {
+    const boxId = input.boxId ?? this.defaultBoxId();
+    if (!boxId || !this.boxes.get(boxId)) return left('Estrato não encontrado');
+    if (input.accountKey && this.findCardByAccountKey(input.accountKey)) {
+      return left('Já existe um cartão para esta conta do extrato');
+    }
+    const [error, card] = Card.create({
+      vaultId: this.id,
+      name: input.name,
+      closingDay: input.closingDay,
+      dueDay: input.dueDay,
+      boxId,
+      accountKey: input.accountKey ?? null,
+    });
+    if (error !== null) return left(error);
+    this.cards.set(card.id, card);
+    this.cardsTracker.registerNew(card);
+    return right(card);
+  }
+
+  /**
+   * Os dias novos valem para os ciclos criados daqui em diante; as faturas que
+   * já existem mantêm as datas delas (edite-as com `updateInvoice`). Trocar o
+   * estrato pagador move as compras; os pagamentos já feitos continuam no
+   * estrato de onde o dinheiro saiu.
+   */
+  updateCard(
+    cardId: string,
+    changes: {
+      name?: string;
+      closingDay?: number;
+      dueDay?: number;
+      boxId?: string;
+      accountKey?: string | null;
+    },
+  ): Either<string, Card> {
+    const card = this.cards.get(cardId);
+    if (!card) return left('Cartão não encontrado');
+    if (changes.name !== undefined && !changes.name.trim()) {
+      return left('O nome do cartão é obrigatório');
+    }
+    const dayError =
+      (changes.closingDay !== undefined
+        ? validateCardDay(changes.closingDay, 'fechamento')
+        : null) ??
+      (changes.dueDay !== undefined
+        ? validateCardDay(changes.dueDay, 'vencimento')
+        : null);
+    if (dayError) return left(dayError);
+    if (changes.boxId !== undefined && !this.boxes.get(changes.boxId)) {
+      return left('Estrato não encontrado');
+    }
+    if (changes.accountKey) {
+      const other = this.findCardByAccountKey(changes.accountKey);
+      if (other && other.id !== cardId) {
+        return left('Já existe um cartão para esta conta do extrato');
+      }
+    }
+
+    if (changes.name !== undefined) card.name = changes.name.trim();
+    if (changes.closingDay !== undefined) card.closingDay = changes.closingDay;
+    if (changes.dueDay !== undefined) card.dueDay = changes.dueDay;
+    if (changes.accountKey !== undefined) card.accountKey = changes.accountKey;
+    if (changes.boxId !== undefined && changes.boxId !== card.boxId) {
+      card.boxId = changes.boxId;
+      for (const tx of this.purchasesOfCard(cardId)) {
+        tx.boxId = changes.boxId;
+        this.transactionsTracker.registerDirty(tx);
+      }
+    }
+    this.cardsTracker.registerDirty(card);
+    // O nome entra na descrição do não discriminado.
+    this.recomputeCard(cardId);
+    return right(card);
+  }
+
+  /** Só um cartão sem compras nem pagamentos: o histórico não se perde por engano. */
+  deleteCard(cardId: string): Either<string, true> {
+    const card = this.cards.get(cardId);
+    if (!card) return left('Cartão não encontrado');
+    const invoices = this.invoicesOfCard(cardId);
+    const ids = new Set(invoices.map((i) => i.id));
+    const used =
+      this.purchasesOfCard(cardId).length > 0 ||
+      [...this.payments.values()].some((p) => ids.has(p.invoiceId));
+    if (used) {
+      return left(
+        'O cartão tem compras ou pagamentos de fatura: desligue as compras e exclua os pagamentos antes',
+      );
+    }
+    for (const invoice of invoices) {
+      this.invoices.delete(invoice.id);
+      this.invoicesTracker.registerDeleted(invoice);
+    }
+    this.cards.delete(cardId);
+    this.cardsTracker.registerDeleted(card);
+    return right(true);
+  }
+
+  findCardByAccountKey(accountKey: string): Card | null {
+    return (
+      [...this.cards.values()].find((c) => c.accountKey === accountKey) ?? null
+    );
+  }
+
+  /** Faturas do cartão, da mais antiga para a mais nova. */
+  invoicesOfCard(cardId: string): CardInvoice[] {
+    return [...this.invoices.values()]
+      .filter((i) => i.cardId === cardId)
+      .sort((a, b) => a.closingDate.getTime() - b.closingDate.getTime());
+  }
+
+  private purchasesOfCard(cardId: string): Transaction[] {
+    const ids = new Set(this.invoicesOfCard(cardId).map((i) => i.id));
+    return [...this.transactions.values()].filter(
+      (tx) => tx.isCardPurchase && tx.invoiceId && ids.has(tx.invoiceId),
+    );
+  }
+
+  paymentsOfCard(cardId: string): CardPayment[] {
+    const ids = new Set(this.invoicesOfCard(cardId).map((i) => i.id));
+    return [...this.payments.values()].filter((p) => ids.has(p.invoiceId));
+  }
+
+  cardOfInvoice(invoiceId: string): Card | null {
+    const invoice = this.invoices.get(invoiceId);
+    return invoice ? (this.cards.get(invoice.cardId) ?? null) : null;
+  }
+
+  /**
+   * A fatura do cartão que contém a data, criada pelos dias do cartão se ainda
+   * não existir. Uma fatura nova nunca invade o período das vizinhas (que podem
+   * ter vindo de um extrato, com datas próprias).
+   */
+  invoiceFor(
+    cardId: string,
+    date: Date,
+    options: { dryRun?: boolean } = {},
+  ): Either<string, CardInvoice> {
+    const card = this.cards.get(cardId);
+    if (!card) return left('Cartão não encontrado');
+    const day = startOfUtcDay(date);
+    const invoices = this.invoicesOfCard(cardId);
+    const existing = invoices.find((i) => i.contains(day));
+    if (existing) return right(existing);
+
+    const dates = cycleDatesFor(card, day);
+    let periodStart = dates.periodStart;
+    let closingDate = dates.closingDate;
+    for (const other of invoices) {
+      if (
+        other.closingDate.getTime() < day.getTime() &&
+        other.closingDate.getTime() >= periodStart.getTime()
+      ) {
+        periodStart = addDays(other.closingDate, 1);
+      }
+      if (
+        other.periodStart.getTime() > day.getTime() &&
+        other.periodStart.getTime() <= closingDate.getTime()
+      ) {
+        closingDate = addDays(other.periodStart, -1);
+      }
+    }
     const invoice = CardInvoice.create({
       vaultId: this.id,
-      boxId: input.boxId,
-      amount: input.amount,
-      paymentDate: input.paymentDate,
-      cardLabel: input.cardLabel ?? null,
-      hasPaymentLine: input.hasPaymentLine ?? true,
+      cardId,
+      periodStart,
+      closingDate,
+      dueDate: dueDateAfter(closingDate, card.dueDay),
     });
+    // Numa consulta (dryRun) a fatura sugerida não entra no agregado.
+    if (options.dryRun) return right(invoice);
     this.invoices.set(invoice.id, invoice);
     this.invoicesTracker.registerNew(invoice);
-    this.recomputeInvoice(invoice.id);
     return right(invoice);
   }
 
   /**
-   * A fatura criada à mão que espera por este débito: sem linha de pagamento
-   * ainda, no mesmo estrato, com o mesmo valor ao centavo e paga até
-   * `PAYMENT_MATCH_DAYS` dias de distância. Havendo mais de uma, a de data mais
-   * próxima. É o que impede o débito importado de virar uma segunda fatura.
+   * A fatura que um extrato de cartão detalha. O período do extrato manda:
+   * uma fatura com fechamento a até 5 dias do `DTEND` é ajustada a ele; senão
+   * uma nova é criada com o período do arquivo.
    */
-  findInvoiceAwaitingPayment(payment: {
+  statementInvoice(
+    cardId: string,
+    period: { periodStart: Date | null; periodEnd: Date | null },
+    fallbackDate: Date,
+  ): Either<string, CardInvoice> {
+    const card = this.cards.get(cardId);
+    if (!card) return left('Cartão não encontrado');
+    if (!period.periodEnd) return this.invoiceFor(cardId, fallbackDate);
+
+    const periodEnd = startOfUtcDay(period.periodEnd);
+    const periodStart = period.periodStart
+      ? startOfUtcDay(period.periodStart)
+      : null;
+    const match = this.invoicesOfCard(cardId).find(
+      (i) =>
+        Math.abs(i.closingDate.getTime() - periodEnd.getTime()) <=
+        STATEMENT_MATCH_DAYS * DAY_MS,
+    );
+    if (match) {
+      match.closingDate = periodEnd;
+      if (periodStart && periodStart.getTime() <= periodEnd.getTime()) {
+        match.periodStart = periodStart;
+      }
+      if (match.dueDate.getTime() <= periodEnd.getTime()) {
+        match.dueDate = dueDateAfter(periodEnd, card.dueDay);
+      }
+      this.invoicesTracker.registerDirty(match);
+      this.recomputeCard(cardId);
+      return right(match);
+    }
+
+    const invoice = CardInvoice.create({
+      vaultId: this.id,
+      cardId,
+      periodStart:
+        periodStart && periodStart.getTime() <= periodEnd.getTime()
+          ? periodStart
+          : cycleDatesFor(card, periodEnd).periodStart,
+      closingDate: periodEnd,
+      dueDate: dueDateAfter(periodEnd, card.dueDay),
+    });
+    this.invoices.set(invoice.id, invoice);
+    this.invoicesTracker.registerNew(invoice);
+    this.recomputeCard(cardId);
+    return right(invoice);
+  }
+
+  updateInvoice(
+    invoiceId: string,
+    changes: {
+      periodStart?: Date;
+      closingDate?: Date;
+      dueDate?: Date;
+      closed?: boolean;
+    },
+  ): Either<string, CardInvoice> {
+    const invoice = this.invoices.get(invoiceId);
+    if (!invoice) return left('Fatura não encontrada');
+    const periodStart = changes.periodStart ?? invoice.periodStart;
+    const closingDate = changes.closingDate ?? invoice.closingDate;
+    const dueDate = changes.dueDate ?? invoice.dueDate;
+    if (periodStart.getTime() > closingDate.getTime()) {
+      return left('O início do período deve ser até a data de fechamento');
+    }
+    if (dueDate.getTime() <= closingDate.getTime()) {
+      return left('O vencimento deve ser depois do fechamento');
+    }
+    invoice.periodStart = periodStart;
+    invoice.closingDate = closingDate;
+    invoice.dueDate = dueDate;
+    if (changes.closed !== undefined) invoice.closed = changes.closed;
+    this.invoicesTracker.registerDirty(invoice);
+    this.recomputeCard(invoice.cardId);
+    return right(invoice);
+  }
+
+  /**
+   * Fecha a fatura antes da data (ou na data informada). Compras novas do
+   * cartão passam a cair na próxima.
+   */
+  closeInvoice(invoiceId: string, closingDate?: Date): Either<string, true> {
+    const invoice = this.invoices.get(invoiceId);
+    if (!invoice) return left('Fatura não encontrada');
+    const [error] = this.updateInvoice(invoiceId, {
+      closingDate,
+      dueDate:
+        closingDate && invoice.dueDate.getTime() <= closingDate.getTime()
+          ? dueDateAfter(closingDate, this.cards.get(invoice.cardId)!.dueDay)
+          : undefined,
+      closed: true,
+    });
+    if (error !== null) return left(error);
+    return right(true);
+  }
+
+  /**
+   * A fatura que um pagamento feito na data provavelmente paga: a última
+   * fechada antes dela, se o pagamento cai até alguns dias depois do
+   * vencimento e ela ainda não está paga; senão a fatura em aberto na data
+   * (pagamento antecipado). Uma sugestão — quem chama pode escolher outra.
+   */
+  suggestInvoiceForPayment(
+    cardId: string,
+    date: Date,
+    options: { dryRun?: boolean } = {},
+  ): Either<string, CardInvoice> {
+    const card = this.cards.get(cardId);
+    if (!card) return left('Cartão não encontrado');
+    const day = startOfUtcDay(date);
+    const inWindow = (closing: Date, due: Date) =>
+      closing.getTime() < day.getTime() &&
+      day.getTime() <= due.getTime() + PAYMENT_GRACE_DAYS * DAY_MS;
+
+    const invoices = this.invoicesOfCard(cardId);
+    const candidates = invoices.filter((i) =>
+      inWindow(i.closingDate, i.dueDate),
+    );
+    if (candidates.length > 0) {
+      const unpaid = candidates
+        .reverse()
+        // Sem compras ainda, o total é desconhecido (o extrato do cartão não
+        // chegou): a fatura segue recebendo os pagamentos da janela.
+        .find(
+          (i) =>
+            this.purchasesCents(i.id) === 0 ||
+            this.paidCents(i.id) < this.purchasesCents(i.id),
+        );
+      if (unpaid) return right(unpaid);
+      return this.invoiceFor(cardId, day, options);
+    }
+
+    const current = cycleDatesFor(card, day);
+    const previous = cycleDatesFor(card, addDays(current.periodStart, -1));
+    if (inWindow(previous.closingDate, previous.dueDate)) {
+      return this.invoiceFor(cardId, previous.closingDate, options);
+    }
+    return this.invoiceFor(cardId, day, options);
+  }
+
+  private paidCents(invoiceId: string): number {
+    let total = 0;
+    for (const p of this.payments.values()) {
+      if (p.invoiceId === invoiceId) total += toCents(p.amount);
+    }
+    return total;
+  }
+
+  private purchasesCents(invoiceId: string): number {
+    let total = 0;
+    for (const tx of this.transactions.values()) {
+      if (!tx.isCardPurchase || tx.invoiceId !== invoiceId) continue;
+      total += tx.type === 'expense' ? toCents(tx.amount) : -toCents(tx.amount);
+    }
+    return total;
+  }
+
+  /**
+   * Registra um pagamento de fatura. Sem `invoiceId`, a fatura é sugerida pela
+   * data (`suggestInvoiceForPayment`). O valor passa a contar na data do
+   * pagamento: as compras que ele cobre e, o que sobrar, não discriminado.
+   */
+  addPayment(input: {
+    invoiceId?: string;
+    cardId?: string;
+    amount: number;
+    date: Date;
+    boxId?: string;
+    imported?: boolean;
+    importEntryId?: string | null;
+  }): Either<string, CardPayment> {
+    if (!(input.amount > 0)) return left('O valor do pagamento deve ser positivo');
+    let invoice: CardInvoice | undefined;
+    if (input.invoiceId) {
+      invoice = this.invoices.get(input.invoiceId);
+      if (!invoice) return left('Fatura não encontrada');
+      if (input.cardId && invoice.cardId !== input.cardId) {
+        return left('A fatura não é deste cartão');
+      }
+    } else if (input.cardId) {
+      const [error, suggested] = this.suggestInvoiceForPayment(
+        input.cardId,
+        input.date,
+      );
+      if (error !== null) return left(error);
+      invoice = suggested;
+    } else {
+      return left('Informe o cartão ou a fatura');
+    }
+    const card = this.cards.get(invoice.cardId)!;
+    const boxId = input.boxId ?? card.boxId;
+    if (!this.boxes.get(boxId)) return left('Estrato não encontrado');
+
+    const payment = CardPayment.create({
+      vaultId: this.id,
+      invoiceId: invoice.id,
+      boxId,
+      amount: input.amount,
+      date: input.date,
+      imported: input.imported ?? false,
+      importEntryId: input.importEntryId ?? null,
+    });
+    this.payments.set(payment.id, payment);
+    this.paymentsTracker.registerNew(payment);
+    this.recomputeCard(card.id);
+    return right(payment);
+  }
+
+  updatePayment(
+    paymentId: string,
+    changes: {
+      amount?: number;
+      date?: Date;
+      invoiceId?: string;
+      boxId?: string;
+    },
+  ): Either<string, CardPayment> {
+    const payment = this.payments.get(paymentId);
+    if (!payment) return left('Pagamento não encontrado');
+    if (changes.amount !== undefined && !(changes.amount > 0)) {
+      return left('O valor do pagamento deve ser positivo');
+    }
+    if (changes.invoiceId !== undefined && !this.invoices.get(changes.invoiceId)) {
+      return left('Fatura não encontrada');
+    }
+    if (changes.boxId !== undefined && !this.boxes.get(changes.boxId)) {
+      return left('Estrato não encontrado');
+    }
+    const previousCardId = this.invoices.get(payment.invoiceId)!.cardId;
+    if (changes.amount !== undefined) payment.amount = changes.amount;
+    if (changes.date !== undefined) payment.date = changes.date;
+    if (changes.invoiceId !== undefined) payment.invoiceId = changes.invoiceId;
+    if (changes.boxId !== undefined) payment.boxId = changes.boxId;
+    this.paymentsTracker.registerDirty(payment);
+    const cardId = this.invoices.get(payment.invoiceId)!.cardId;
+    this.recomputeCard(cardId);
+    if (previousCardId !== cardId) this.recomputeCard(previousCardId);
+    return right(payment);
+  }
+
+  /** Remove o pagamento e o que ele fazia contar (partes e não discriminado). */
+  deletePayment(paymentId: string): Either<string, true> {
+    const payment = this.payments.get(paymentId);
+    if (!payment) return left('Pagamento não encontrado');
+    const cardId = this.invoices.get(payment.invoiceId)!.cardId;
+    this.payments.delete(paymentId);
+    this.paymentsTracker.registerDeleted(payment);
+    this.recomputeCard(cardId);
+    return right(true);
+  }
+
+  /**
+   * O pagamento informado à mão que espera por este débito importado: ainda
+   * sem linha do extrato, mesmo estrato, mesmo valor ao centavo e até
+   * `PAYMENT_MATCH_DAYS` dias de distância (o mais próximo). É o que impede o
+   * débito de virar um segundo pagamento.
+   */
+  findPaymentAwaitingLine(line: {
     amount: number;
     date: Date;
     boxId: string;
-  }): CardInvoice | null {
-    const cents = Math.round(payment.amount * 100);
-    const distance = (invoice: CardInvoice) =>
-      Math.abs(invoice.paymentDate.getTime() - payment.date.getTime());
-    const candidates = [...this.invoices.values()].filter(
-      (invoice) =>
-        !invoice.hasPaymentLine &&
-        invoice.boxId === payment.boxId &&
-        Math.round(invoice.amount * 100) === cents &&
-        distance(invoice) <= PAYMENT_MATCH_DAYS * DAY_MS,
+  }): CardPayment | null {
+    const cents = toCents(line.amount);
+    const distance = (p: CardPayment) =>
+      Math.abs(p.date.getTime() - line.date.getTime());
+    const candidates = [...this.payments.values()].filter(
+      (p) =>
+        !p.imported &&
+        p.boxId === line.boxId &&
+        toCents(p.amount) === cents &&
+        distance(p) <= PAYMENT_MATCH_DAYS * DAY_MS,
     );
     candidates.sort((a, b) => distance(a) - distance(b));
     return candidates[0] ?? null;
   }
 
-  /**
-   * O débito importado chegou para uma fatura criada à mão. A data do extrato é
-   * a real: a fatura, o não discriminado e as compras ligadas passam a contar
-   * nela.
-   */
-  attachPaymentLine(
-    invoiceId: string,
-    paymentDate: Date,
-  ): Either<string, true> {
-    const invoice = this.invoices.get(invoiceId);
-    if (!invoice) return left('Fatura não encontrada');
-    if (invoice.hasPaymentLine) {
-      return left('Esta fatura já tem o débito do pagamento');
-    }
-    invoice.hasPaymentLine = true;
-    invoice.paymentDate = paymentDate;
-    this.invoicesTracker.registerDirty(invoice);
-    for (const tx of this.transactions.values()) {
-      if (tx.invoiceId !== invoiceId) continue;
-      tx.date = paymentDate;
-      this.transactionsTracker.registerDirty(tx);
-    }
-    return right(true);
+  /** O débito importado chegou: a data do extrato passa a ser a real. */
+  attachImportedLine(
+    paymentId: string,
+    line: { date: Date; importEntryId: string | null },
+  ): Either<string, CardPayment> {
+    const payment = this.payments.get(paymentId);
+    if (!payment) return left('Pagamento não encontrado');
+    if (payment.imported) return left('Este pagamento já tem o débito do extrato');
+    payment.imported = true;
+    payment.date = line.date;
+    payment.importEntryId = line.importEntryId;
+    this.paymentsTracker.registerDirty(payment);
+    this.recomputeCard(this.invoices.get(payment.invoiceId)!.cardId);
+    return right(payment);
   }
 
   /**
-   * Liga uma compra do cartão a uma fatura. A compra passa a contar na data de
-   * pagamento da fatura, no estrato que pagou, e abate o não discriminado. A
-   * data da compra fica guardada em `purchaseDate`.
+   * Faz de uma transação uma compra de cartão, numa fatura escolhida ou na do
+   * cartão que contém a data dela. Ela deixa de contar na data da compra e
+   * passa a contar pelas partes que os pagamentos pagam; enquanto nenhum paga,
+   * fica "a pagar". Mudar de fatura (ou de cartão) não conta duas vezes.
    */
-  linkToInvoice(
+  linkPurchase(
     transactionId: string,
-    invoiceId: string,
-  ): Either<string, true> {
+    target: { invoiceId: string } | { cardId: string },
+  ): Either<string, Transaction> {
     const transaction = this.transactions.get(transactionId);
     if (!transaction) return left('Transação não encontrada');
-    const invoice = this.invoices.get(invoiceId);
-    if (!invoice) return left('Fatura não encontrada');
-    if (transaction.transferId || transaction.isInvoiceRemainder) {
-      return left('Só compras podem ser ligadas a uma fatura');
+    if (transaction.transferId) {
+      return left('Transferência entre estratos não entra em fatura');
     }
-    if (transaction.invoiceId === invoiceId) return right(true);
-
-    if (transaction.invoiceId) this.unlinkFromInvoice(transactionId);
-
-    transaction.purchaseDate = transaction.date;
-    transaction.date = invoice.paymentDate;
-    transaction.boxId = invoice.boxId;
-    transaction.invoiceId = invoiceId;
+    if (transaction.isInvoiceDerived) {
+      return left(derivedTransactionError(transaction)!);
+    }
+    let invoice: CardInvoice;
+    if ('invoiceId' in target) {
+      const found = this.invoices.get(target.invoiceId);
+      if (!found) return left('Fatura não encontrada');
+      invoice = found;
+    } else {
+      const [error, found] = this.invoiceFor(target.cardId, transaction.date);
+      if (error !== null) return left(error);
+      invoice = found;
+    }
+    const previousCardId =
+      transaction.isCardPurchase && transaction.invoiceId
+        ? this.invoices.get(transaction.invoiceId)?.cardId
+        : undefined;
+    const card = this.cards.get(invoice.cardId)!;
+    transaction.invoiceRole = 'purchase';
+    transaction.invoiceId = invoice.id;
+    transaction.boxId = card.boxId;
+    transaction.purchaseDate = null;
+    transaction.sourceTransactionId = null;
+    transaction.paymentId = null;
     this.transactionsTracker.registerDirty(transaction);
-    this.recomputeInvoice(invoiceId);
-    return right(true);
+    this.recomputeCard(card.id);
+    if (previousCardId && previousCardId !== card.id) {
+      this.recomputeCard(previousCardId);
+    }
+    return right(transaction);
   }
 
-  /** Desfaz o vínculo: a compra volta a contar na data em que foi feita. */
-  unlinkFromInvoice(transactionId: string): Either<string, true> {
+  /** Desfaz: a compra volta a ser uma transação comum, contando na data dela. */
+  unlinkPurchase(transactionId: string): Either<string, Transaction> {
     const transaction = this.transactions.get(transactionId);
-    if (!transaction?.isInvoicePurchase) {
-      return left('A transação não está ligada a uma fatura');
+    if (!transaction?.isCardPurchase) {
+      return left('A transação não é uma compra de cartão');
     }
-    const invoiceId = transaction.invoiceId!;
-    transaction.date = transaction.purchaseDate!;
-    transaction.purchaseDate = null;
+    const cardId = this.invoices.get(transaction.invoiceId!)?.cardId;
+    transaction.invoiceRole = null;
     transaction.invoiceId = null;
     this.transactionsTracker.registerDirty(transaction);
-    this.recomputeInvoice(invoiceId);
-    return right(true);
+    if (cardId) this.recomputeCard(cardId);
+    return right(transaction);
+  }
+
+  private recomputeInvoiceCard(transaction: Transaction): void {
+    const cardId = transaction.invoiceId
+      ? this.invoices.get(transaction.invoiceId)?.cardId
+      : undefined;
+    if (cardId) this.recomputeCard(cardId);
+  }
+
+  /** Distribuição dos pagamentos do cartão pelas compras (ver `allocateCard`). */
+  cardAllocation(cardId: string): CardAllocation {
+    const closing = new Map(
+      this.invoicesOfCard(cardId).map((i) => [i.id, i.closingDate]),
+    );
+    return allocateCard({
+      purchases: this.purchasesOfCard(cardId).map((tx) => ({
+        id: tx.id,
+        type: tx.type,
+        amount: tx.amount,
+        date: tx.date,
+        createdAt: tx.createdAt,
+        invoiceClosingDate: closing.get(tx.invoiceId!)!,
+      })),
+      payments: this.paymentsOfCard(cardId),
+    });
   }
 
   /**
-   * Remove a fatura e o não discriminado dela. As compras ligadas continuam
-   * existindo e voltam a contar na data da compra.
+   * Mantém partes e não discriminado iguais ao que `allocateCard` manda. Cada
+   * linha derivada é identificada por (pagamento, compra) ou (pagamento,
+   * resto), então os ids ficam estáveis entre recálculos; só muda o que mudou.
    */
-  deleteInvoice(invoiceId: string): Either<string, boolean> {
-    const invoice = this.invoices.get(invoiceId);
-    if (!invoice) return left('Fatura não encontrada');
+  recomputeCard(cardId: string): void {
+    const card = this.cards.get(cardId);
+    if (!card) return;
+    const invoiceIds = new Set(this.invoicesOfCard(cardId).map((i) => i.id));
+    const purchases = new Map(
+      this.purchasesOfCard(cardId).map((tx) => [tx.id, tx]),
+    );
+    const allocation = this.cardAllocation(cardId);
+
+    type Spec = {
+      role: 'part' | 'remainder';
+      amount: number;
+      date: Date;
+      boxId: string;
+      categoryId: string | null;
+      allocationId: string | null;
+      withdrawalType: 'withdrawal' | 'realization' | null;
+      description: string;
+      purchaseDate: Date | null;
+      sourceTransactionId: string | null;
+      paymentId: string;
+      invoiceId: string;
+    };
+    const desired = new Map<string, Spec>();
+    for (const part of allocation.parts) {
+      const payment = this.payments.get(part.paymentId)!;
+      const purchase = purchases.get(part.purchaseId)!;
+      desired.set(`${part.paymentId}|${part.purchaseId}`, {
+        role: 'part',
+        amount: part.cents / 100,
+        date: payment.date,
+        boxId: payment.boxId,
+        categoryId: purchase.categoryId,
+        allocationId: purchase.allocationId,
+        withdrawalType: purchase.withdrawalType,
+        description: purchase.description ?? '',
+        purchaseDate: purchase.date,
+        sourceTransactionId: purchase.id,
+        paymentId: payment.id,
+        invoiceId: purchase.invoiceId!,
+      });
+    }
+    for (const remainder of allocation.remainders) {
+      const payment = this.payments.get(remainder.paymentId)!;
+      desired.set(`${remainder.paymentId}|remainder`, {
+        role: 'remainder',
+        amount: remainder.cents / 100,
+        date: payment.date,
+        boxId: payment.boxId,
+        categoryId: null,
+        allocationId: null,
+        withdrawalType: null,
+        description: invoiceRemainderDescription(card.name),
+        purchaseDate: null,
+        sourceTransactionId: null,
+        paymentId: payment.id,
+        invoiceId: payment.invoiceId,
+      });
+    }
 
     for (const tx of [...this.transactions.values()]) {
-      if (tx.invoiceId !== invoiceId) continue;
-      if (tx.isInvoiceRemainder) {
+      if (!tx.isInvoiceDerived) continue;
+      const payment = tx.paymentId ? this.payments.get(tx.paymentId) : null;
+      // Linhas de pagamentos de outros cartões ficam com o recálculo deles;
+      // as de um pagamento que não existe mais são removidas aqui.
+      if (payment && !invoiceIds.has(payment.invoiceId)) continue;
+      const key = `${tx.paymentId}|${tx.isInvoiceRemainder ? 'remainder' : tx.sourceTransactionId}`;
+      const spec = desired.get(key);
+      if (!spec) {
         this.transactions.delete(tx.id);
         this.transactionsTracker.registerDeleted(tx);
-      } else {
-        tx.date = tx.purchaseDate!;
-        tx.purchaseDate = null;
-        tx.invoiceId = null;
-        this.transactionsTracker.registerDirty(tx);
+        continue;
       }
+      desired.delete(key);
+      if (applySpec(tx, spec)) this.transactionsTracker.registerDirty(tx);
     }
-    this.invoices.delete(invoiceId);
-    this.invoicesTracker.registerDeleted(invoice);
-    return right(true);
+
+    for (const spec of desired.values()) {
+      const created = Transaction.create({
+        vaultId: this.id,
+        amount: spec.amount,
+        type: 'expense',
+        date: spec.date,
+        boxId: spec.boxId,
+        description: spec.description,
+        categoryId: spec.categoryId,
+        allocationId: spec.allocationId ?? undefined,
+        withdrawalType: spec.withdrawalType,
+        invoiceId: spec.invoiceId,
+        invoiceRole: spec.role,
+        purchaseDate: spec.purchaseDate,
+        sourceTransactionId: spec.sourceTransactionId,
+        paymentId: spec.paymentId,
+      });
+      this.addTransaction(created);
+      this.commitTransaction(created.id);
+    }
   }
 
-  getInvoiceBreakdown(invoiceId: string): InvoiceBreakdown | null {
-    const invoice = this.invoices.get(invoiceId);
-    if (!invoice) return null;
-    return computeInvoiceBreakdown(
-      invoice.amount,
-      this.invoicePurchases(invoiceId),
-    );
+  /** Recalcula todos os cartões. Usado depois de reprocessar o histórico. */
+  recomputeAllCards(): void {
+    for (const cardId of this.cards.keys()) this.recomputeCard(cardId);
   }
 
-  private invoicePurchases(invoiceId: string): Transaction[] {
-    return [...this.transactions.values()].filter(
-      (tx) => tx.invoiceId === invoiceId && tx.isInvoicePurchase,
-    );
+  /** Quanto das compras do cartão ainda não foi pago por nenhum pagamento. */
+  getCardPayable(cardId: string): number {
+    let cents = 0;
+    for (const value of this.cardAllocation(cardId).uncovered.values()) {
+      cents += value;
+    }
+    return cents / 100;
   }
 
   /**
-   * Mantém o não discriminado igual a `valor pago − compras ligadas`. Quando
-   * chega a zero a transação é removida — uma despesa de R$ 0 só poluiria as
-   * listas — e volta a existir se o valor crescer de novo (uma compra excluída
-   * ou desligada). Compras além do valor pago não geram valor negativo: o
-   * excesso aparece em `getInvoiceBreakdown`.
+   * Números das faturas de um cartão: os de `computeInvoiceFigures` mais o que
+   * ainda está "a pagar" das compras de cada uma e o não discriminado dos
+   * pagamentos dela.
    */
-  private recomputeInvoice(invoiceId: string): void {
-    const invoice = this.invoices.get(invoiceId);
-    if (!invoice) return;
-    const { remainder } = computeInvoiceBreakdown(
-      invoice.amount,
-      this.invoicePurchases(invoiceId),
+  getInvoiceFigures(
+    cardId: string,
+    today: Date = startOfUtcDay(new Date()),
+  ): Map<
+    string,
+    InvoiceFigures & { unpaidPurchases: number; notItemized: number }
+  > {
+    const invoices = this.invoicesOfCard(cardId);
+    const base = computeInvoiceFigures(
+      invoices.map((i) => ({
+        id: i.id,
+        closingDate: i.closingDate,
+        dueDate: i.dueDate,
+        isOpen: i.isOpen(today),
+        purchasesCents: this.purchasesCents(i.id),
+        paidCents: this.paidCents(i.id),
+      })),
+      today,
     );
-    const current = [...this.transactions.values()].find(
-      (tx) => tx.invoiceId === invoiceId && tx.isInvoiceRemainder,
-    );
-
-    if (remainder === 0) {
-      if (current) {
-        this.transactions.delete(current.id);
-        this.transactionsTracker.registerDeleted(current);
-      }
-      return;
+    const allocation = this.cardAllocation(cardId);
+    const unpaid = new Map<string, number>();
+    for (const [purchaseId, cents] of allocation.uncovered) {
+      const invoiceId = this.transactions.get(purchaseId)!.invoiceId!;
+      unpaid.set(invoiceId, (unpaid.get(invoiceId) ?? 0) + cents);
     }
-
-    if (current) {
-      if (current.amount !== remainder) {
-        current.amount = remainder;
-        this.transactionsTracker.registerDirty(current);
-      }
-      return;
+    const notItemized = new Map<string, number>();
+    for (const r of allocation.remainders) {
+      const invoiceId = this.payments.get(r.paymentId)!.invoiceId;
+      notItemized.set(invoiceId, (notItemized.get(invoiceId) ?? 0) + r.cents);
     }
+    const result = new Map<
+      string,
+      InvoiceFigures & { unpaidPurchases: number; notItemized: number }
+    >();
+    for (const invoice of invoices) {
+      result.set(invoice.id, {
+        ...base.get(invoice.id)!,
+        unpaidPurchases: (unpaid.get(invoice.id) ?? 0) / 100,
+        notItemized: (notItemized.get(invoice.id) ?? 0) / 100,
+      });
+    }
+    return result;
+  }
 
-    const created = Transaction.create({
-      vaultId: this.id,
-      amount: remainder,
-      type: 'expense',
-      date: invoice.paymentDate,
-      boxId: invoice.boxId,
-      description: INVOICE_REMAINDER_DESCRIPTION,
-      categoryId: null,
-      invoiceId,
+  /**
+   * Saldo disponível: o saldo de cada estrato menos o que as compras dos
+   * cartões pagos por ele ainda devem ("a pagar"). O total vale para os
+   * estratos de gasto, como `getBalance`.
+   */
+  getAvailableBalances(): {
+    estratos: {
+      boxId: string;
+      balance: number;
+      cardPayable: number;
+      available: number;
+    }[];
+    total: { balance: number; cardPayable: number; available: number };
+  } {
+    const payableByBox = new Map<string, number>();
+    for (const card of this.cards.values()) {
+      const cents = toCents(this.getCardPayable(card.id));
+      payableByBox.set(card.boxId, (payableByBox.get(card.boxId) ?? 0) + cents);
+    }
+    const estratos = [...this.boxes.values()].map((box) => {
+      const balance = this.getBoxBalance(box.id);
+      const cardPayable = (payableByBox.get(box.id) ?? 0) / 100;
+      return {
+        boxId: box.id,
+        balance,
+        cardPayable,
+        available: (toCents(balance) - toCents(cardPayable)) / 100,
+      };
     });
-    this.addTransaction(created);
-    this.commitTransaction(created.id);
+    const spending = estratos.filter(
+      (e) => this.boxes.get(e.boxId)?.type !== 'saving',
+    );
+    const balance = this.getBalance();
+    const cardPayable =
+      spending.reduce((sum, e) => sum + toCents(e.cardPayable), 0) / 100;
+    return {
+      estratos,
+      total: {
+        balance,
+        cardPayable,
+        available: (toCents(balance) - toCents(cardPayable)) / 100,
+      },
+    };
   }
 
   private isSpendingTransaction(transaction: Transaction): boolean {
@@ -504,7 +1151,7 @@ export class Vault {
     };
     let total = 0;
     for (const transaction of this.transactions.values()) {
-      if (!transaction.isCommitted) continue;
+      if (!transaction.isCommitted || !transaction.countsInLedger) continue;
       if (!options?.includeAll && !this.isSpendingTransaction(transaction))
         continue;
       total += sumOrSubtract(transaction.type, transaction.amount);
@@ -538,6 +1185,12 @@ export class Vault {
       if (tx.boxId === boxId)
         return left('Não é possível deletar um estrato com transações');
     }
+    if ([...this.cards.values()].some((c) => c.boxId === boxId)) {
+      return left('Não é possível deletar o estrato pagador de um cartão');
+    }
+    if ([...this.payments.values()].some((p) => p.boxId === boxId)) {
+      return left('Não é possível deletar um estrato com pagamentos de fatura');
+    }
     this.boxes.delete(boxId);
     this.boxesTracker.registerDeleted(box);
     return right(true);
@@ -546,7 +1199,7 @@ export class Vault {
   getBoxBalance(boxId: string): number {
     let total = 0;
     for (const tx of this.transactions.values()) {
-      if (tx.boxId !== boxId || !tx.isCommitted) continue;
+      if (tx.boxId !== boxId || !tx.isCommitted || !tx.countsInLedger) continue;
       total += tx.type === 'income' ? tx.amount : -tx.amount;
     }
     return total;
@@ -688,6 +1341,7 @@ export class Vault {
       const spent = Array.from(this.transactions.values())
         .filter((transaction) => {
           if (
+            !transaction.countsInLedger ||
             transaction.categoryId !== categoryId ||
             transaction.type !== 'expense' ||
             transaction.transferId ||
@@ -744,6 +1398,7 @@ export class Vault {
 
     for (const transaction of this.transactions.values()) {
       if (transaction.type !== 'expense') continue;
+      if (!transaction.countsInLedger) continue;
       if (transaction.allocationId) continue;
 
       if (transaction.transferId) {
@@ -776,6 +1431,7 @@ export class Vault {
 
     for (const transaction of this.transactions.values()) {
       if (transaction.type !== 'income') continue;
+      if (!transaction.countsInLedger) continue;
 
       if (transaction.transferId) {
         if (options?.includeAll) continue;
@@ -804,6 +1460,7 @@ export class Vault {
     // No isSpendingTransaction check needed — unlike totalSpentAmount which handles cross-type transfers.
     for (const transaction of this.transactions.values()) {
       if (transaction.type !== 'expense') continue;
+      if (!transaction.countsInLedger) continue;
       if (!transaction.allocationId) continue;
 
       const transactionDate = new Date(transaction.date);
@@ -822,7 +1479,9 @@ export class Vault {
     this.transactionsTracker.clearChanges();
     this.budgetsTracker.clearChanges();
     this.boxesTracker.clearChanges();
+    this.cardsTracker.clearChanges();
     this.invoicesTracker.clearChanges();
+    this.paymentsTracker.clearChanges();
     this.isDirty = false;
   }
 

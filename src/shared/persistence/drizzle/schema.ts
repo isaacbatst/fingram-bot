@@ -9,6 +9,7 @@ import {
   jsonb,
   integer,
   uniqueIndex,
+  AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 
 // Base categories - used as templates for vault categories
@@ -81,13 +82,27 @@ export const transaction = pgTable('transaction', {
     onDelete: 'set null',
   }),
   withdrawalType: text('withdrawal_type'),
-  // Fatura de cartão a que a transação pertence: o resto não discriminado dela,
-  // ou uma compra do extrato do cartão ligada a ela. A compra passa a contar na
-  // data de pagamento da fatura (`date`) e guarda a data em que foi feita.
-  invoiceId: text('invoice_id').references(() => cardInvoice.id, {
+  // Fatura (ciclo do cartão) a que a transação pertence: a compra, ou a parte
+  // / não discriminado que um pagamento dela fez contar.
+  invoiceId: text('invoice_id').references(() => cardCycle.id, {
     onDelete: 'set null',
   }),
+  // Numa parte: a data em que a compra foi feita (a parte conta na data do
+  // pagamento, que é `date`).
   purchaseDate: timestamp('purchase_date'),
+  // Papel no cartão: 'purchase' (compra; não conta sozinha), 'part' (parte de
+  // uma compra paga por um pagamento, na data dele) ou 'remainder' (não
+  // discriminado de um pagamento). 'part' e 'remainder' são derivados.
+  invoiceRole: text('invoice_role'),
+  // Numa parte: a compra de que ela é parte. Sem FK: parte e compra são
+  // mantidas juntas pelo agregado.
+  sourceTransactionId: text('source_transaction_id'),
+  // Numa parte ou não discriminado: o pagamento que a fez contar.
+  // Tipo explícito: transaction → card_payment → import_entry → transaction
+  // é circular e quebraria a inferência de tipos do drizzle.
+  paymentId: text('payment_id').references((): AnyPgColumn => cardPayment.id, {
+    onDelete: 'cascade',
+  }),
 });
 
 export const budget = pgTable('budget', {
@@ -175,31 +190,80 @@ export const importBatch = pgTable('import_batch', {
   // Lines dropped for falling before `fromDate`. Unlike duplicates, these leave no
   // entry behind, so re-importing without a cutoff brings them back.
   outOfRangeCount: integer('out_of_range_count').notNull().default(0),
-  // Fatura que este extrato de cartão detalha. Só para `kind = 'creditcard'`.
-  invoiceId: text('invoice_id').references(() => cardInvoice.id, {
+  // Fatura (ciclo) que este extrato de cartão detalha. Só para `kind = 'creditcard'`.
+  invoiceId: text('invoice_id').references(() => cardCycle.id, {
     onDelete: 'set null',
   }),
+  // Extrato de cartão marcado como "sem fatura": sai da lista de pendentes.
+  noInvoice: boolean('no_invoice').notNull().default(false),
   createdAt: timestamp('created_at').notNull(),
 });
 
-// Uma fatura de cartão paga, registrada a partir do débito na conta corrente.
-// Conta como gasto desde o registro: o que o extrato do cartão ainda não
-// detalhou vira uma transação "não discriminado" que encolhe conforme as
-// compras são ligadas. Ver `docs/product/spec-operational.md` §9.
-export const cardInvoice = pgTable('card_invoice', {
+// Cartão de crédito. Não é estrato: as compras esperam um pagamento de fatura
+// para contar. `accountKey` é a conta do OFX que faz o extrato cair nele.
+export const card = pgTable(
+  'card',
+  {
+    id: text('id').primaryKey(),
+    vaultId: text('vault_id')
+      .notNull()
+      .references(() => vault.id),
+    name: text('name').notNull(),
+    closingDay: integer('closing_day').notNull(),
+    dueDay: integer('due_day').notNull(),
+    // Estrato pagador: de onde saem os pagamentos da fatura.
+    boxId: text('box_id')
+      .notNull()
+      .references(() => box.id),
+    accountKey: text('account_key'),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('card_vault_account_key_unique')
+      .on(table.vaultId, table.accountKey)
+      .where(sql`${table.accountKey} IS NOT NULL`),
+  ],
+);
+
+// A fatura de verdade: um ciclo do cartão. Não guarda valor — o total vem das
+// compras ligadas e o pago dos pagamentos. Ver spec-operational §9.
+export const cardCycle = pgTable('card_cycle', {
   id: text('id').primaryKey(),
   vaultId: text('vault_id')
     .notNull()
     .references(() => vault.id),
-  // Estrato que pagou (o da conta corrente do débito).
-  boxId: text('box_id').references(() => box.id),
+  cardId: text('card_id')
+    .notNull()
+    .references(() => card.id),
+  periodStart: timestamp('period_start').notNull(),
+  closingDate: timestamp('closing_date').notNull(),
+  dueDate: timestamp('due_date').notNull(),
+  // Fechada à mão antes da data de fechamento.
+  closed: boolean('closed').notNull().default(false),
+  createdAt: timestamp('created_at').notNull(),
+});
+
+// Pagamento de fatura (débito na conta corrente ou antecipação). Nunca é gasto
+// por si: vira as partes das compras que cobre e o não discriminado.
+export const cardPayment = pgTable('card_payment', {
+  id: text('id').primaryKey(),
+  vaultId: text('vault_id')
+    .notNull()
+    .references(() => vault.id),
+  invoiceId: text('invoice_id')
+    .notNull()
+    .references(() => cardCycle.id),
+  // Estrato de onde o dinheiro saiu.
+  boxId: text('box_id')
+    .notNull()
+    .references(() => box.id),
   amount: doublePrecision('amount').notNull(),
-  paymentDate: timestamp('payment_date').notNull(),
-  cardLabel: text('card_label'),
-  // Se o débito do pagamento já foi importado. Uma fatura criada à mão (MCP)
-  // nasce sem ele; quando o extrato traz o pagamento, a linha é ligada a ela em
-  // vez de criar uma segunda fatura. As existentes vieram todas do import.
-  hasPaymentLine: boolean('has_payment_line').notNull().default(true),
+  date: timestamp('date').notNull(),
+  // O débito veio de um extrato importado.
+  imported: boolean('imported').notNull().default(false),
+  importEntryId: text('import_entry_id').references(() => importEntry.id, {
+    onDelete: 'set null',
+  }),
   createdAt: timestamp('created_at').notNull(),
 });
 

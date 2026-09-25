@@ -18,10 +18,20 @@ export interface TransactionDTO {
     description?: string;
   } | null;
   allocationId?: string | null;
-  /** Fatura de cartão a que a transação pertence. */
+  /** Fatura (ciclo do cartão) a que a transação pertence. */
   invoiceId?: string | null;
-  /** `remainder`: o não discriminado da fatura. `purchase`: compra ligada a ela. */
-  invoiceRole?: 'remainder' | 'purchase' | null;
-  /** Data da compra, quando ela conta na data de pagamento da fatura. */
+  /**
+   * `purchase`: compra de cartão (não conta sozinha; não aparece nas listas).
+   * `part`: parte de uma compra paga por um pagamento, na data dele.
+   * `remainder`: não discriminado de um pagamento.
+   */
+  invoiceRole?: 'purchase' | 'part' | 'remainder' | null;
+  /** Numa parte: data em que a compra foi feita. */
   purchaseDate?: Date | null;
+  /** Numa parte: id da compra. */
+  purchaseId?: string | null;
+  /** Numa parte: valor total da compra (a parte pode ser só um pedaço dela). */
+  purchaseAmount?: number | null;
+  /** Numa parte ou não discriminado: id do pagamento de fatura. */
+  paymentId?: string | null;
 }

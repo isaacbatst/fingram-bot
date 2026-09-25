@@ -38,6 +38,7 @@ export class ImportBatchDrizzleRepository extends ImportBatchRepository {
       fromDate: row.fromDate,
       outOfRangeCount: row.outOfRangeCount,
       invoiceId: row.invoiceId,
+      noInvoice: row.noInvoice,
       createdAt: row.createdAt,
     });
   }
@@ -60,6 +61,7 @@ export class ImportBatchDrizzleRepository extends ImportBatchRepository {
       fromDate: batch.fromDate,
       outOfRangeCount: batch.outOfRangeCount,
       invoiceId: batch.invoiceId,
+      noInvoice: batch.noInvoice,
       createdAt: batch.createdAt,
     };
   }
