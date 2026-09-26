@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { BoxRepository } from '@/vault/repositories/box.repository';
 import {
+  AggregationTransaction,
   DailyActivity,
   TransactionRepository,
 } from '@/vault/repositories/transaction.repository';
@@ -99,12 +100,36 @@ export class VaultQueryService {
 
     const result: RealMonthData[] = [];
 
+    // Estrato balances at the start of each period: everything before the
+    // first period, then rolled forward with each period's transactions.
+    // Periods are consecutive and in order (plan months).
+    const balances: Record<string, number> = {};
+    const addToBalances = (txs: AggregationTransaction[]) => {
+      for (const t of txs) {
+        if (!t.boxId) continue;
+        balances[t.boxId] =
+          (balances[t.boxId] ?? 0) +
+          (t.type === 'income' ? t.amount : -t.amount);
+      }
+    };
+    if (periods.length > 0) {
+      addToBalances(
+        await this.transactionRepo.findCommittedByPeriod(
+          vaultId,
+          new Date(0),
+          periods[0].startDate,
+        ),
+      );
+    }
+
     for (const period of periods) {
+      const openingBalances = { ...balances };
       const txs = await this.transactionRepo.findCommittedByPeriod(
         vaultId,
         period.startDate,
         period.endDate,
       );
+      addToBalances(txs);
 
       const expenses = txs.filter((t) => t.type === 'expense');
       const incomes = txs.filter((t) => t.type === 'income');
@@ -169,6 +194,7 @@ export class VaultQueryService {
         realCostOfLiving,
         allocationPayments,
         allocationRealizations,
+        openingBalances,
       });
     }
 

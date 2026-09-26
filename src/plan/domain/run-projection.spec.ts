@@ -1858,4 +1858,159 @@ describe('runProjection', () => {
       expect(result[3].cash).toBe(cashMonth2 + 4000 + 850);
     });
   });
+
+  describe('anchoring on real estrato balances', () => {
+    const premises: Premises = {
+      salaryChangePoints: [{ month: 0, amount: 10000 }],
+      costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+    };
+    const linked = (
+      id: string,
+      estratoId: string,
+      realizationMode: 'manual' | 'never' = 'never',
+      monthly = 1000,
+    ) =>
+      Allocation.restore({
+        id,
+        planId: 'plan-1',
+        label: id,
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: monthly }],
+        realizationMode,
+        scheduledMovements: [],
+        estratoId,
+        createdAt: new Date(),
+      });
+    const month = (
+      m: number,
+      openingBalances: Record<string, number>,
+      rest: Partial<RealMonthData> = {},
+    ): RealMonthData => ({
+      month: m,
+      realIncome: 0,
+      realCostOfLiving: 0,
+      allocationPayments: [],
+      allocationRealizations: [],
+      openingBalances,
+      ...rest,
+    });
+
+    it('starts the plan from the money that already exists in the estratos', () => {
+      const result = runProjection(
+        premises,
+        [linked('acoes', 'box-acoes')],
+        defaultStartDate,
+        2,
+        [month(0, { main: 10000, 'box-acoes': 5000 })],
+        0,
+      );
+      // Disponível = unlinked estratos + salary - cost of living - aporte
+      expect(result[0].cash).toBe(10000 + 10000 - 6000 - 1000);
+      expect(result[0].allocations.acoes).toBe(5000 + 1000);
+      expect(result[0].totalWealth).toBe(13000 + 6000);
+      expect(result[1].cash).toBe(13000 + 3000);
+    });
+
+    it('sums every estrato not linked to a Reserva of the plan into Disponível', () => {
+      const result = runProjection(
+        premises,
+        [],
+        defaultStartDate,
+        1,
+        [month(0, { main: 1000, nubank: 250, 'other-plan-reserve': 750 })],
+        0,
+      );
+      expect(result[0].cash).toBe(2000 + 4000);
+    });
+
+    it('ends each past month on the real balances, whatever the flows say', () => {
+      // Month 0: a big down payment came out of money saved before the plan.
+      const result = runProjection(
+        premises,
+        [linked('acoes', 'box-acoes')],
+        defaultStartDate,
+        4,
+        [
+          month(
+            0,
+            { main: 60000, 'box-acoes': 5000 },
+            { realIncome: 10000, realCostOfLiving: 56000 },
+          ),
+          // Shares sold, recorded as an expense in the linked estrato.
+          month(
+            1,
+            { main: 14000, 'box-acoes': 5000 },
+            { realIncome: 10000, realCostOfLiving: 9000 },
+          ),
+          month(2, { main: 15000, 'box-acoes': 1000 }),
+        ],
+        2,
+      );
+      expect(result[0].cash).toBe(14000);
+      expect(result[0].allocations.acoes).toBe(5000);
+      expect(result[1].cash).toBe(15000);
+      expect(result[1].allocations.acoes).toBe(1000);
+      expect(result[1].totalWealth).toBe(16000);
+      // Current month and on: projected from the real start of the month.
+      expect(result[2].cash).toBe(15000 + 10000 - 6000 - 1000);
+      expect(result[2].allocations.acoes).toBe(1000 + 1000);
+      expect(result[3].cash).toBe(18000 + 3000);
+    });
+
+    it('keeps a linked manual Reserva in hand equal to its estrato balance', () => {
+      const result = runProjection(
+        premises,
+        [linked('casamento', 'box-casa', 'manual', 2000)],
+        defaultStartDate,
+        3,
+        [
+          month(
+            0,
+            { main: 0, 'box-casa': 8000 },
+            {
+              allocationPayments: [{ allocationId: 'casamento', amount: 2000 }],
+              allocationRealizations: [
+                { allocationId: 'casamento', amount: 3000 },
+              ],
+            },
+          ),
+          month(1, { main: 4000, 'box-casa': 7000 }),
+        ],
+        1,
+      );
+      const emMaos = (m: number) =>
+        result[m].allocationAccumulated!.casamento -
+        result[m].allocationRealized!.casamento;
+      expect(emMaos(0)).toBe(7000);
+      expect(result[0].allocations.casamento).toBe(7000);
+      expect(result[0].allocationRealized!.casamento).toBe(3000);
+      expect(emMaos(1)).toBe(9000);
+      expect(result[1].cash).toBe(4000 + 10000 - 6000 - 2000);
+    });
+
+    it('does not anchor an unlinked Reserva (its money is in Disponível)', () => {
+      const unlinked = Allocation.restore({
+        id: 'viagem',
+        planId: 'plan-1',
+        label: 'Viagem',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: 500 }],
+        realizationMode: 'never',
+        scheduledMovements: [],
+        estratoId: null,
+        initialBalance: 1500,
+        createdAt: new Date(),
+      });
+      const result = runProjection(
+        premises,
+        [unlinked],
+        defaultStartDate,
+        1,
+        [month(0, { main: 3000 })],
+        0,
+      );
+      expect(result[0].cash).toBe(3000 + 10000 - 6000 - 500);
+      expect(result[0].allocations.viagem).toBe(2000);
+    });
+  });
 });

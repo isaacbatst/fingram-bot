@@ -41,6 +41,8 @@ export interface RealMonthData {
   realCostOfLiving: number;
   allocationPayments: { allocationId: string; amount: number }[];
   allocationRealizations: { allocationId: string; amount: number }[];
+  /** Real balance of each estrato (by id) at the start of the month. */
+  openingBalances?: Record<string, number>;
 }
 
 export interface MonthData {

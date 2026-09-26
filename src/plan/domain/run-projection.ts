@@ -93,6 +93,27 @@ export function runProjection(
   let cash = 0;
   const result: MonthData[] = [];
 
+  // Real estrato balances replace the simulated state: Disponível is every
+  // estrato not linked to a Reserva of this plan, and a linked Reserva holds
+  // exactly its estrato's balance. Money that existed before the plan, and
+  // movements the flows don't capture, then never become a permanent gap.
+  const linkedReservas = allocations.filter(
+    (a) => a.realizationMode !== 'immediate' && a.estratoId,
+  );
+  const linkedEstratoIds = new Set(linkedReservas.map((a) => a.estratoId!));
+  const anchor = (balances: Record<string, number>) => {
+    cash = 0;
+    for (const [estratoId, balance] of Object.entries(balances)) {
+      if (!linkedEstratoIds.has(estratoId)) cash += balance;
+    }
+    for (const allocation of linkedReservas) {
+      const inHand = balances[allocation.estratoId!] ?? 0;
+      allocationBalances[allocation.id] = inHand;
+      allocationAccumulated[allocation.id] =
+        allocationRealized[allocation.id] + inHand;
+    }
+  };
+
   for (let i = 0; i < totalMonths; i++) {
     const start = new Date(startDate);
     const date = new Date(
@@ -101,6 +122,7 @@ export function runProjection(
 
     const rd = realDataMap.get(i);
     const isReal = !!rd && currentMonth !== undefined && i < currentMonth;
+    if (rd?.openingBalances) anchor(rd.openingBalances);
 
     const income = isReal
       ? rd.realIncome
@@ -352,6 +374,8 @@ export function runProjection(
 
     const surplus = income - costOfLiving - allocationOutflows;
     cash += surplus;
+    const nextOpening = realDataMap.get(i + 1)?.openingBalances;
+    if (isReal && nextOpening) anchor(nextOpening);
 
     let totalWealth = cash;
     let totalCommitted = 0;
