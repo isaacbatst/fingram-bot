@@ -189,6 +189,118 @@ describe('Plan API (integration)', () => {
     });
   });
 
+  describe('Projection anchored on real estrato balances', () => {
+    it('starts from money saved before the plan and follows real balances', async () => {
+      const now = new Date();
+      const monthStart = (offset: number, day = 1) =>
+        new Date(
+          Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset, day),
+        );
+      // Plan started 3 months ago: months 0-2 are past, month 3 is current.
+      const startDate = monthStart(-3);
+
+      const main = crypto.randomUUID();
+      const acoes = crypto.randomUUID();
+      await db.insert(schema.box).values([
+        {
+          id: main,
+          vaultId,
+          name: 'Conta',
+          type: 'spending',
+          isDefault: true,
+          createdAt: new Date(),
+        },
+        {
+          id: acoes,
+          vaultId,
+          name: 'Ações',
+          type: 'saving',
+          isDefault: false,
+          createdAt: new Date(),
+        },
+      ]);
+      const tx = (
+        amount: number,
+        type: 'income' | 'expense',
+        date: Date,
+        boxId: string,
+        transferId?: string,
+      ) =>
+        createTestTransaction(db, {
+          vaultId,
+          amount,
+          type,
+          date,
+          boxId,
+          transferId,
+        });
+      // Before the plan: savings, and 5k moved to the shares estrato.
+      await tx(60000, 'income', monthStart(-4, 5), main);
+      const transferId = crypto.randomUUID();
+      await tx(5000, 'expense', monthStart(-4, 10), main, transferId);
+      await tx(5000, 'income', monthStart(-4, 10), acoes, transferId);
+      // Month 0: down payment paid with the savings.
+      await tx(50000, 'expense', monthStart(-3, 10), main);
+      // Month 1: shares sold, recorded as an expense in the shares estrato.
+      await tx(4000, 'expense', monthStart(-2, 5), acoes);
+      // Not committed: must not count.
+      await createTestTransaction(db, {
+        vaultId,
+        amount: 999,
+        type: 'income',
+        date: monthStart(-2, 6),
+        boxId: main,
+        committed: false,
+      });
+
+      const createRes = await request(app.getHttpServer())
+        .post('/plans')
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({
+          name: 'Plano ancorado',
+          startDate: startDate.toISOString().slice(0, 10),
+          premises: {
+            salaryChangePoints: [{ month: 0, amount: 10000 }],
+            costOfLivingChangePoints: [{ month: 0, amount: 6000 }],
+          },
+          allocations: [
+            {
+              label: 'Ações',
+              target: 0,
+              monthlyAmount: [{ month: 0, amount: 1000 }],
+              realizationMode: 'never',
+              scheduledMovements: [],
+            },
+          ],
+        })
+        .expect(201);
+      const planId = createRes.body.id;
+      const allocationId = createRes.body.allocations[0].id;
+      await request(app.getHttpServer())
+        .patch(`/plans/${planId}/allocations/${allocationId}`)
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .send({ estratoId: acoes })
+        .expect(200);
+
+      const res = await request(app.getHttpServer())
+        .get(`/plans/${planId}/projection?months=5`)
+        .set('Cookie', `vault_access_token=${vaultToken}`)
+        .expect(200);
+      const at = (m: number) => ({
+        cash: res.body[m].cash,
+        acoes: res.body[m].allocations[allocationId],
+        totalWealth: res.body[m].totalWealth,
+      });
+
+      expect(at(0)).toEqual({ cash: 5000, acoes: 5000, totalWealth: 10000 });
+      expect(at(1)).toEqual({ cash: 5000, acoes: 1000, totalWealth: 6000 });
+      expect(at(2)).toEqual({ cash: 5000, acoes: 1000, totalWealth: 6000 });
+      // Current month: real start of the month + planned flows.
+      expect(at(3)).toEqual({ cash: 8000, acoes: 2000, totalWealth: 10000 });
+      expect(at(4)).toEqual({ cash: 11000, acoes: 3000, totalWealth: 14000 });
+    });
+  });
+
   describe('Financing', () => {
     it('should create a plan with SAC financing and return projection', async () => {
       const createRes = await request(app.getHttpServer())
