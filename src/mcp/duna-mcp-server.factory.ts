@@ -169,7 +169,7 @@ export class DunaMcpServerFactory {
           'Valores monetários estão em reais (BRL). Ao responder, formate como R$ 1.234,56 e datas como "10 de novembro de 2025".',
           'Para registrar uma transação, busque as categorias com getCategories e use a mais provável; o usuário pode corrigir depois.',
           'Categorias são do usuário: prefira uma existente. Crie com createCategory só quando o usuário pedir ou nenhuma servir, e confirme o nome com ele antes. Para renomear ou ajustar a descrição, updateCategory.',
-          'O orçamento é mensal, mas o período pode não começar no dia 1: use getBudgetSummary para saber as datas do período.',
+          'O orçamento é mensal, mas o período pode não começar no dia 1: use getBudgetSummary para saber as datas do período. O valor orçado é um por categoria e vale para todos os meses; para mudá-lo, setBudgets.',
           'Para totais e comparações (por categoria, por mês, por estrato), use getSpendingBreakdown em vez de somar listTransactions.',
           'Fatura de cartão: o pagamento da fatura vira uma fatura (importado do extrato da conta, ou com createInvoice quando o usuário conta que pagou) com uma parte "não discriminada" que conta no mês do pagamento. As compras do extrato do cartão ligadas a ela contam na data do pagamento (a data da compra fica em purchaseDate) e abatem o não discriminado. Use listInvoices para saber o que falta detalhar.',
           'Para corrigir uma transação, use editTransaction com o id de listTransactions (só os campos enviados mudam); para recategorizar várias de uma vez, categorizeTransactions.',
@@ -182,7 +182,83 @@ export class DunaMcpServerFactory {
     this.registerWriteTools(server, vaultId);
     this.registerInvoiceTools(server, vaultId);
     this.registerCategoryTools(server, vaultId);
+    this.registerBudgetTools(server, vaultId);
     return server;
+  }
+
+  private registerBudgetTools(server: McpServer, vaultId: string) {
+    server.registerTool(
+      'setBudgets',
+      {
+        title: 'Definir orçamento',
+        description:
+          'Define o valor mensal do orçamento de categorias de despesa. O orçamento é um valor por categoria que vale para todos os meses (não há valor diferente por mês). Só as categorias enviadas mudam; 0 zera o orçamento da categoria. Retorna todos os orçamentos e, se houver plano, o teto de custo de vida.',
+        inputSchema: {
+          budgets: z
+            .array(
+              z.object({
+                categoryId: z
+                  .string()
+                  .describe('ID da categoria (ver getCategories)'),
+                amount: z
+                  .number()
+                  .min(0)
+                  .describe('Valor mensal em R$ para a categoria'),
+              }),
+            )
+            .min(1),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ budgets }) => {
+        // VaultService.setBudgets skips unknown categories silently, so check
+        // them all first: nothing is saved unless every item is valid.
+        const categories = await this.vaultService.getCategories(vaultId);
+        for (const { categoryId } of budgets) {
+          const category = categories.find((c) => c.id === categoryId);
+          if (!category) {
+            return error(`Categoria não encontrada: ${categoryId}`);
+          }
+          if (category.transactionType === 'income') {
+            return error(
+              `A categoria "${category.name}" é de receita; o orçamento vale só para despesas`,
+            );
+          }
+        }
+
+        const [err, vault] = await this.vaultService.setBudgets({
+          vaultId,
+          budgets: budgets.map((b) => ({
+            categoryCode: b.categoryId,
+            amount: b.amount,
+          })),
+        });
+        if (err !== null) return error(err);
+        const [, ceiling] =
+          await this.vaultWebService.getBudgetCeiling(vaultId);
+
+        return json({
+          budgets: [...vault.budgets.values()].map((b) => ({
+            categoryId: b.category.id,
+            categoryName: b.category.name,
+            budgeted: round(b.amount),
+          })),
+          totalBudgeted: round(vault.totalBudgetedAmount()),
+          planCeiling: ceiling
+            ? {
+                costOfLivingCeiling: round(ceiling.ceiling),
+                buffer: round(ceiling.buffer),
+                overBudget: ceiling.overBudget,
+              }
+            : null,
+        });
+      },
+    );
   }
 
   private registerCategoryTools(server: McpServer, vaultId: string) {
