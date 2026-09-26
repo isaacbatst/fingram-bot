@@ -384,6 +384,7 @@ describe('MCP server + OAuth (integration)', () => {
           'listPlans',
           'listTransactions',
           'removeAllocation',
+          'setBudgets',
           'updateAllocation',
           'updateCategory',
           'updatePremises',
@@ -400,6 +401,7 @@ describe('MCP server + OAuth (integration)', () => {
         'editTransfer',
         'createCategory',
         'updateCategory',
+        'setBudgets',
       ]) {
         expect(byName[name].annotations.readOnlyHint, name).toBe(false);
         expect(byName[name].annotations.destructiveHint, name).toBe(false);
@@ -1661,6 +1663,136 @@ describe('MCP server + OAuth (integration)', () => {
     });
   });
 
+  describe('budgets', () => {
+    type BudgetItem = {
+      categoryId: string;
+      budgeted: number;
+      spent: number;
+    };
+
+    async function budgetedIn(
+      token: string,
+      month: number,
+      year: number,
+      categoryId: string,
+    ) {
+      const summary = await callTool(token, 'getBudgetSummary', {
+        month,
+        year,
+      });
+      return (summary.data.budgets as BudgetItem[]).find(
+        (b) => b.categoryId === categoryId,
+      );
+    }
+
+    it('sets the budget of categories for every month and updates only the ones sent', async () => {
+      const vault = await createVault();
+      const { access_token } = await connect(vault.token);
+      const pets = await callTool(access_token, 'createCategory', {
+        name: 'Pets',
+        transactionType: 'expense',
+      });
+      const gym = await callTool(access_token, 'createCategory', {
+        name: 'Academia',
+        transactionType: 'both',
+      });
+
+      const set = await callTool(access_token, 'setBudgets', {
+        budgets: [
+          { categoryId: pets.data.id, amount: 200 },
+          { categoryId: gym.data.id, amount: 150.5 },
+        ],
+      });
+      expect(set.isError).toBe(false);
+      expect(set.data.budgets).toEqual(
+        expect.arrayContaining([
+          { categoryId: pets.data.id, categoryName: 'Pets', budgeted: 200 },
+          {
+            categoryId: gym.data.id,
+            categoryName: 'Academia',
+            budgeted: 150.5,
+          },
+        ]),
+      );
+      expect(set.data.totalBudgeted).toBe(350.5);
+      expect(set.data.planCeiling).toBeNull();
+
+      // One value per category: every period shows it.
+      expect(
+        await budgetedIn(access_token, 1, 2026, pets.data.id),
+      ).toMatchObject({ budgeted: 200 });
+      expect(
+        await budgetedIn(access_token, 7, 2026, pets.data.id),
+      ).toMatchObject({ budgeted: 200 });
+
+      const updated = await callTool(access_token, 'setBudgets', {
+        budgets: [{ categoryId: pets.data.id, amount: 0 }],
+      });
+      expect(updated.data.totalBudgeted).toBe(150.5);
+      const stored = await db
+        .select()
+        .from(schema.budget)
+        .where(eq(schema.budget.vaultId, vault.id));
+      expect(
+        Object.fromEntries(stored.map((b) => [b.categoryId, b.amount])),
+      ).toEqual({ [pets.data.id]: 0, [gym.data.id]: 150.5 });
+    });
+
+    it('saves nothing when a category is unknown, of income or of another vault', async () => {
+      const vault = await createVault();
+      const other = await createVault();
+      const { access_token } = await connect(vault.token);
+      const otherToken = (await connect(other.token)).access_token;
+      const pets = await callTool(access_token, 'createCategory', {
+        name: 'Pets',
+        transactionType: 'expense',
+      });
+      const salary = await callTool(access_token, 'createCategory', {
+        name: 'Bônus',
+        transactionType: 'income',
+      });
+      const foreign = await callTool(otherToken, 'createCategory', {
+        name: 'Viagem',
+        transactionType: 'expense',
+      });
+
+      const cases: [string, string][] = [
+        ['inexistente', 'Categoria não encontrada: inexistente'],
+        [foreign.data.id, `Categoria não encontrada: ${foreign.data.id}`],
+        [
+          salary.data.id,
+          'A categoria "Bônus" é de receita; o orçamento vale só para despesas',
+        ],
+      ];
+      for (const [categoryId, message] of cases) {
+        const res = await callTool(access_token, 'setBudgets', {
+          budgets: [
+            { categoryId: pets.data.id, amount: 100 },
+            { categoryId, amount: 50 },
+          ],
+        });
+        expect(res.isError, categoryId).toBe(true);
+        expect(res.text).toBe(message);
+      }
+
+      const negative = await callTool(access_token, 'setBudgets', {
+        budgets: [{ categoryId: pets.data.id, amount: -1 }],
+      });
+      expect(negative.isError).toBe(true);
+
+      const stored = await db
+        .select()
+        .from(schema.budget)
+        .where(eq(schema.budget.vaultId, vault.id));
+      expect(stored).toEqual([]);
+      const otherStored = await db
+        .select()
+        .from(schema.budget)
+        .where(eq(schema.budget.vaultId, other.id));
+      expect(otherStored).toEqual([]);
+    });
+  });
+
   describe('real MCP client', () => {
     it('initializes and calls tools through the SDK client over HTTP', async () => {
       const vault = await createVault();
@@ -1683,7 +1815,7 @@ describe('MCP server + OAuth (integration)', () => {
         expect(client.getInstructions()).toContain('Duna');
 
         const { tools } = await client.listTools();
-        expect(tools.length).toBe(36);
+        expect(tools.length).toBe(37);
 
         const result = await client.callTool({
           name: 'getBudgetSummary',
