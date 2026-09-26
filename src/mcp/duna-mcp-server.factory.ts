@@ -232,6 +232,7 @@ export class DunaMcpServerFactory {
     this.registerInvoiceTools(server, vaultId);
     this.registerCategoryTools(server, vaultId);
     this.registerBudgetTools(server, vaultId);
+    this.registerEstratoTools(server, vaultId);
     return server;
   }
 
@@ -306,6 +307,139 @@ export class DunaMcpServerFactory {
               }
             : null,
         });
+      },
+    );
+  }
+
+  private registerEstratoTools(server: McpServer, vaultId: string) {
+    const toItem = (b: {
+      id: string;
+      name: string;
+      type: 'spending' | 'saving';
+      isDefault: boolean;
+      goalAmount: number | null;
+    }) => ({
+      id: b.id,
+      name: b.name,
+      kind: b.type === 'saving' ? 'reserva' : 'corrente',
+      isDefault: b.isDefault,
+      goalAmount: b.goalAmount,
+    });
+    const name = z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .describe('Nome do estrato, ex.: "Anual lote fev/27"');
+    const kind = z
+      .enum(['corrente', 'reserva'])
+      .describe(
+        'corrente = conta do dia a dia; reserva = dinheiro guardado (só reservas podem ser vinculadas a uma alocação do plano)',
+      );
+    const toType = (k: 'corrente' | 'reserva') =>
+      k === 'reserva' ? ('saving' as const) : ('spending' as const);
+
+    server.registerTool(
+      'createEstrato',
+      {
+        title: 'Criar estrato',
+        description:
+          'Cria um estrato (conta corrente ou reserva, como uma caixinha do banco) com saldo zero. Para pôr dinheiro nele, use createTransfer a partir de outro estrato. Retorna o estrato com o id.',
+        inputSchema: {
+          name,
+          kind,
+          goalAmount: z
+            .number()
+            .positive()
+            .optional()
+            .describe('Meta em R$ (opcional)'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: false,
+          openWorldHint: false,
+        },
+      },
+      async (input) => {
+        const [err, box] = await this.vaultService.createBox({
+          vaultId,
+          name: input.name,
+          type: toType(input.kind),
+          goalAmount: input.goalAmount,
+        });
+        if (err !== null) return error(err);
+        return json(toItem(box));
+      },
+    );
+
+    server.registerTool(
+      'updateEstrato',
+      {
+        title: 'Editar estrato',
+        description:
+          'Renomeia um estrato, muda o tipo ou a meta, pelo id (de listEstratos). Só os campos enviados mudam; goalAmount: null remove a meta. Saldo e transações não mudam.',
+        inputSchema: {
+          estratoId: z.string().describe('ID do estrato (ver listEstratos)'),
+          name: name.optional(),
+          kind: kind.optional(),
+          goalAmount: z
+            .number()
+            .positive()
+            .nullable()
+            .optional()
+            .describe('Meta em R$; null remove a meta'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ estratoId, name, kind, goalAmount }) => {
+        if (
+          name === undefined &&
+          kind === undefined &&
+          goalAmount === undefined
+        ) {
+          return error('Envie ao menos um campo para alterar');
+        }
+        const [err, box] = await this.vaultService.editBox({
+          vaultId,
+          boxId: estratoId,
+          name,
+          type: kind === undefined ? undefined : toType(kind),
+          goalAmount,
+        });
+        if (err !== null) return error(err);
+        return json(toItem(box));
+      },
+    );
+
+    server.registerTool(
+      'deleteEstrato',
+      {
+        title: 'Excluir estrato',
+        description:
+          'Exclui um estrato vazio, pelo id. Recusa o estrato padrão, estrato com transações (inclusive transferências), estrato pagador de um cartão e estrato com pagamentos de fatura. Uma alocação do plano vinculada a ele perde o vínculo.',
+        inputSchema: {
+          estratoId: z.string().describe('ID do estrato (ver listEstratos)'),
+        },
+        annotations: {
+          readOnlyHint: false,
+          destructiveHint: true,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async ({ estratoId }) => {
+        const [err] = await this.vaultService.deleteBox({
+          vaultId,
+          boxId: estratoId,
+        });
+        if (err !== null) return error(err);
+        return json({ deleted: estratoId });
       },
     );
   }

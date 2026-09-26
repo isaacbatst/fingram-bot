@@ -359,7 +359,9 @@ describe('MCP server + OAuth (integration)', () => {
           'closeInvoice',
           'createCard',
           'createCategory',
+          'createEstrato',
           'createTransfer',
+          'deleteEstrato',
           'deleteInvoicePayment',
           'deleteTransaction',
           'dismissDuplicate',
@@ -388,6 +390,7 @@ describe('MCP server + OAuth (integration)', () => {
           'setBudgets',
           'updateAllocation',
           'updateCategory',
+          'updateEstrato',
           'updatePremises',
         ].sort(),
       );
@@ -403,11 +406,14 @@ describe('MCP server + OAuth (integration)', () => {
         'createCategory',
         'updateCategory',
         'setBudgets',
+        'createEstrato',
+        'updateEstrato',
       ]) {
         expect(byName[name].annotations.readOnlyHint, name).toBe(false);
         expect(byName[name].annotations.destructiveHint, name).toBe(false);
       }
       expect(byName.deleteTransfer.annotations.destructiveHint).toBe(true);
+      expect(byName.deleteEstrato.annotations.destructiveHint).toBe(true);
       for (const name of [
         'listCards',
         'listInvoices',
@@ -1664,6 +1670,149 @@ describe('MCP server + OAuth (integration)', () => {
     });
   });
 
+  describe('estratos', () => {
+    type EstratoItem = {
+      id: string;
+      name: string;
+      kind: 'corrente' | 'reserva';
+      isDefault: boolean;
+      goalAmount: number | null;
+    };
+    const list = async (token: string) =>
+      (await callTool(token, 'listEstratos')).data as (EstratoItem & {
+        balance: number;
+      })[];
+
+    it('creates, edits and deletes an estrato', async () => {
+      const vault = await createVault();
+      const { access_token } = await connect(vault.token);
+
+      const created = await callTool(access_token, 'createEstrato', {
+        name: '  Anual lote fev/27 ',
+        kind: 'reserva',
+        goalAmount: 13500,
+      });
+      expect(created.isError).toBe(false);
+      const id = (created.data as EstratoItem).id;
+      expect(created.data).toEqual({
+        id,
+        name: 'Anual lote fev/27',
+        kind: 'reserva',
+        isDefault: false,
+        goalAmount: 13500,
+      });
+      expect((await list(access_token)).find((e) => e.id === id)).toMatchObject(
+        { name: 'Anual lote fev/27', kind: 'reserva', balance: 0 },
+      );
+
+      const renamed = await callTool(access_token, 'updateEstrato', {
+        estratoId: id,
+        name: 'Anual fev/27',
+      });
+      expect(renamed.data).toEqual({
+        id,
+        name: 'Anual fev/27',
+        kind: 'reserva',
+        isDefault: false,
+        goalAmount: 13500,
+      });
+
+      const cleared = await callTool(access_token, 'updateEstrato', {
+        estratoId: id,
+        kind: 'corrente',
+        goalAmount: null,
+      });
+      expect(cleared.data).toMatchObject({
+        name: 'Anual fev/27',
+        kind: 'corrente',
+        goalAmount: null,
+      });
+      expect((await list(access_token)).find((e) => e.id === id)).toMatchObject(
+        { kind: 'corrente', goalAmount: null },
+      );
+
+      const deleted = await callTool(access_token, 'deleteEstrato', {
+        estratoId: id,
+      });
+      expect(deleted.data).toEqual({ deleted: id });
+      expect((await list(access_token)).some((e) => e.id === id)).toBe(false);
+    });
+
+    it('refuses invalid input, the default estrato and an estrato with transactions', async () => {
+      const vault = await createVault();
+      const { access_token } = await connect(vault.token);
+      const main = (await list(access_token)).find((e) => e.isDefault)!.id;
+
+      for (const args of [
+        { name: '   ', kind: 'reserva' },
+        { name: 'X', kind: 'poupança' },
+        { name: 'X', kind: 'reserva', goalAmount: -1 },
+      ]) {
+        const res = await callTool(access_token, 'createEstrato', args);
+        expect(res.isError, JSON.stringify(args)).toBe(true);
+      }
+
+      const empty = await callTool(access_token, 'updateEstrato', {
+        estratoId: main,
+      });
+      expect(empty.isError).toBe(true);
+
+      const defaultDelete = await callTool(access_token, 'deleteEstrato', {
+        estratoId: main,
+      });
+      expect(defaultDelete.isError).toBe(true);
+
+      const box = (
+        await callTool(access_token, 'createEstrato', {
+          name: 'Caixinha',
+          kind: 'reserva',
+        })
+      ).data as EstratoItem;
+      const transfer = await callTool(access_token, 'createTransfer', {
+        fromEstratoId: main,
+        toEstratoId: box.id,
+        amount: 100,
+        date: '2026-01-15',
+      });
+      expect(transfer.isError).toBe(false);
+      const withTransactions = await callTool(access_token, 'deleteEstrato', {
+        estratoId: box.id,
+      });
+      expect(withTransactions.isError).toBe(true);
+      expect((await list(access_token)).some((e) => e.id === box.id)).toBe(
+        true,
+      );
+    });
+
+    it("cannot edit or delete another vault's estrato", async () => {
+      const mine = await createVault();
+      const other = await createVault();
+      const myToken = (await connect(mine.token)).access_token;
+      const otherToken = (await connect(other.token)).access_token;
+
+      const box = (
+        await callTool(myToken, 'createEstrato', {
+          name: 'Minha',
+          kind: 'reserva',
+        })
+      ).data as EstratoItem;
+      expect((await list(otherToken)).some((e) => e.id === box.id)).toBe(false);
+
+      const edit = await callTool(otherToken, 'updateEstrato', {
+        estratoId: box.id,
+        name: 'Hackeado',
+      });
+      expect(edit.isError).toBe(true);
+      const del = await callTool(otherToken, 'deleteEstrato', {
+        estratoId: box.id,
+      });
+      expect(del.isError).toBe(true);
+      expect((await list(myToken)).find((e) => e.id === box.id)).toMatchObject({
+        name: 'Minha',
+      });
+    });
+  });
+
   describe('budgets', () => {
     type BudgetItem = {
       categoryId: string;
@@ -1816,7 +1965,7 @@ describe('MCP server + OAuth (integration)', () => {
         expect(client.getInstructions()).toContain('Duna');
 
         const { tools } = await client.listTools();
-        expect(tools.length).toBe(38);
+        expect(tools.length).toBe(41);
 
         const result = await client.callTool({
           name: 'getBudgetSummary',
