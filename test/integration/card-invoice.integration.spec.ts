@@ -539,6 +539,48 @@ describe('Cartões, faturas e pagamentos (integration)', () => {
     ]);
   });
 
+  it('dispensa um par que não é duplicata, sem apagar os lançamentos', async () => {
+    await importCard();
+    const manualId = await createTx({
+      amount: 500,
+      type: 'expense',
+      date: '2026-08-13',
+      description: 'cinema com a Ana',
+    });
+    const [pair] = (await get('/vault/invoices/duplicates')).body.pairs;
+    const body = {
+      manualTransactionId: manualId,
+      importedTransactionId: pair.imported.transactionId,
+    };
+
+    // Outro vault não consegue dispensar um par que não é dele.
+    const other = await createTestVault(db);
+    await request(app.getHttpServer())
+      .post('/vault/invoices/duplicates/dismiss')
+      .set('Cookie', `vault_access_token=${other.token}`)
+      .send(body)
+      .expect(400);
+    // Um par inventado também não.
+    await post('/vault/invoices/duplicates/dismiss', {
+      ...body,
+      importedTransactionId: manualId,
+    }).expect(400);
+
+    await post('/vault/invoices/duplicates/dismiss', body).expect(201);
+    expect((await get('/vault/invoices/duplicates')).body.pairs).toEqual([]);
+
+    // Os dois lançamentos continuam; a dispensa some com eles.
+    const rows = await db.select().from(schema.transaction);
+    expect(rows.map((t) => t.id)).toEqual(
+      expect.arrayContaining([manualId, pair.imported.transactionId]),
+    );
+    expect(await db.select().from(schema.duplicateDismissal)).toHaveLength(1);
+    await post('/vault/delete-transaction', {
+      transactionId: manualId,
+    }).expect(201);
+    expect(await db.select().from(schema.duplicateDismissal)).toHaveLength(0);
+  });
+
   it('confere a fatura com o extrato: linhas faltando e compras à mão', async () => {
     const batch = await upload(cardOfx(PURCHASES));
     const pending = (

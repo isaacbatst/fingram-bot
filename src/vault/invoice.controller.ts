@@ -176,6 +176,27 @@ export class InvoiceController {
     return { pairs };
   }
 
+  /** "Não é duplicata": o par deixa de ser sugerido. */
+  @Post('duplicates/dismiss')
+  async dismissDuplicate(
+    @VaultSession() vaultId: string,
+    @Body()
+    data: { manualTransactionId?: string; importedTransactionId?: string },
+  ) {
+    if (!data.manualTransactionId || !data.importedTransactionId) {
+      throw new BadRequestException(
+        'manualTransactionId e importedTransactionId são obrigatórios',
+      );
+    }
+    const [error] = await this.cardInvoiceService.dismissDuplicate({
+      vaultId,
+      manualTransactionId: data.manualTransactionId,
+      importedTransactionId: data.importedTransactionId,
+    });
+    if (error !== null) fail(error);
+    return { dismissed: true };
+  }
+
   @Get('reprocess/preview')
   async reprocessPreview(@VaultSession() vaultId: string) {
     const [error, report] =

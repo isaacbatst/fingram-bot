@@ -375,3 +375,28 @@ export const oauthToken = pgTable('oauth_token', {
   lastUsedAt: timestamp('last_used_at'),
   createdAt: timestamp('created_at').notNull(),
 });
+
+// Pares que o aviso de duplicata sugeriu e o usuário disse que não são a mesma
+// compra (lançamento manual x compra importada do extrato do cartão). Somem
+// junto com qualquer um dos dois lançamentos.
+export const duplicateDismissal = pgTable(
+  'duplicate_dismissal',
+  {
+    vaultId: text('vault_id')
+      .notNull()
+      .references(() => vault.id, { onDelete: 'cascade' }),
+    manualTransactionId: text('manual_transaction_id')
+      .notNull()
+      .references(() => transaction.id, { onDelete: 'cascade' }),
+    importedTransactionId: text('imported_transaction_id')
+      .notNull()
+      .references(() => transaction.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('duplicate_dismissal_pair_unique').on(
+      table.manualTransactionId,
+      table.importedTransactionId,
+    ),
+  ],
+);

@@ -820,7 +820,7 @@ export class DunaMcpServerFactory {
       {
         title: 'Duplicatas suspeitas',
         description:
-          'Pares de transação lançada à mão x compra importada de extrato de cartão com o mesmo valor e datas até 3 dias (confidence high quando a descrição também parece). Mostre ao usuário e, se ele confirmar, remova a lançada à mão com deleteTransaction.',
+          'Pares de transação lançada à mão x compra importada de extrato de cartão com o mesmo valor e datas até 3 dias (confidence high quando a descrição também parece). Mostre ao usuário: se for a mesma compra, remova a lançada à mão com deleteTransaction; se não for, dispense o par com dismissDuplicate. Pares dispensados não voltam.',
         inputSchema: {
           invoiceId: z.string().optional().describe('Só pares desta fatura'),
         },
@@ -833,6 +833,35 @@ export class DunaMcpServerFactory {
         );
         if (err !== null) return error(err);
         return json(pairs);
+      },
+    );
+
+    server.registerTool(
+      'dismissDuplicate',
+      {
+        title: 'Não é duplicata',
+        description:
+          'Dispensa um par de listSuspectedDuplicates que o usuário confirmou não ser a mesma compra: o par deixa de ser sugerido (os dois lançamentos continuam). Só aceita um par que está sendo sugerido agora.',
+        inputSchema: {
+          manualTransactionId: z
+            .string()
+            .describe('manual.transactionId do par'),
+          importedTransactionId: z
+            .string()
+            .describe('imported.transactionId do par'),
+        },
+        annotations: write(false, true),
+      },
+      async ({ manualTransactionId, importedTransactionId }) => {
+        const [err] = await this.cardInvoiceService.dismissDuplicate({
+          vaultId,
+          manualTransactionId,
+          importedTransactionId,
+        });
+        if (err !== null) return error(err);
+        return json({
+          dismissed: { manualTransactionId, importedTransactionId },
+        });
       },
     );
 

@@ -395,6 +395,21 @@ describe('MCP: faturas de cartão (integration)', () => {
         confidence: 'high',
       }),
     ]);
+    // Não é a mesma compra: o par é dispensado e não volta.
+    const dismissed = await callTool(token, 'dismissDuplicate', {
+      manualTransactionId: dup.data[0].manual.transactionId,
+      importedTransactionId: dup.data[0].imported.transactionId,
+    });
+    expect(dismissed.isError).toBe(false);
+    expect((await callTool(token, 'listSuspectedDuplicates')).data).toEqual([]);
+    expect(
+      (
+        await callTool(token, 'dismissDuplicate', {
+          manualTransactionId: tx.data.id,
+          importedTransactionId: tx.data.id,
+        })
+      ).isError,
+    ).toBe(true);
 
     const linked = await callTool(token, 'linkTransactionsToInvoice', {
       ids: [tx.data.id, 'nao-existe'],

@@ -19,6 +19,7 @@ import { Vault } from './domain/vault';
 import { VaultRepository } from './repositories/vault.repository';
 import { ImportBatchRepository } from './repositories/import-batch.repository';
 import { ImportEntryRepository } from './repositories/import-entry.repository';
+import { DuplicateDismissalRepository } from './repositories/duplicate-dismissal.repository';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Distância máxima, em dias, entre as datas de um par suspeito de duplicata. */
@@ -266,6 +267,7 @@ export class CardInvoiceService {
     private readonly vaultRepository: VaultRepository,
     private readonly importBatchRepository: ImportBatchRepository,
     private readonly importEntryRepository: ImportEntryRepository,
+    private readonly duplicateDismissalRepository: DuplicateDismissalRepository,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -1018,9 +1020,46 @@ export class CardInvoiceService {
     if (error !== null) return left(error);
     const entries = await this.importEntryRepository.findAllByVaultId(vaultId);
     const batches = await this.importBatchRepository.findByVaultId(vaultId);
-    return right(
-      this.findDuplicates(vault, entries, batches, filter.invoiceId),
+    const dismissed = new Set(
+      (await this.duplicateDismissalRepository.findByVaultId(vaultId)).map(
+        (d) => `${d.manualTransactionId}|${d.importedTransactionId}`,
+      ),
     );
+    return right(
+      this.findDuplicates(vault, entries, batches, filter.invoiceId).filter(
+        (pair) =>
+          !dismissed.has(
+            `${pair.manual.transactionId}|${pair.imported.transactionId}`,
+          ),
+      ),
+    );
+  }
+
+  /**
+   * "Não é duplicata": o par deixa de ser sugerido. Só aceita um par que está
+   * sendo sugerido agora para este vault, então não dá para gravar dispensa
+   * de transações de outro vault nem de pares que não existem.
+   */
+  async dismissDuplicate(input: {
+    vaultId: string;
+    manualTransactionId: string;
+    importedTransactionId: string;
+  }): Promise<Either<string, true>> {
+    const [error, pairs] = await this.listDuplicates(input.vaultId);
+    if (error !== null) return left(error);
+    const suggested = pairs.some(
+      (pair) =>
+        pair.manual.transactionId === input.manualTransactionId &&
+        pair.imported.transactionId === input.importedTransactionId,
+    );
+    if (!suggested) {
+      return left('Esse par não está entre as duplicatas suspeitas');
+    }
+    await this.duplicateDismissalRepository.save(input.vaultId, {
+      manualTransactionId: input.manualTransactionId,
+      importedTransactionId: input.importedTransactionId,
+    });
+    return right(true);
   }
 
   private findDuplicates(

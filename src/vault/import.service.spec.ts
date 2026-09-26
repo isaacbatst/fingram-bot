@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { ImportService } from './import.service';
+import { DuplicateDismissalInMemoryRepository } from './repositories/in-memory/duplicate-dismissal-in-memory.repository';
 import { CardInvoiceService } from './card-invoice.service';
 import { Vault } from './domain/vault';
 import { Box } from './domain/box';
@@ -147,6 +148,7 @@ describe('ImportService', () => {
         vaultRepo,
         batchRepo,
         entryRepo,
+        new DuplicateDismissalInMemoryRepository(),
       )),
     );
   });
