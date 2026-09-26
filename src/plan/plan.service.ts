@@ -34,6 +34,61 @@ interface CreateAllocationInput {
   initialBalance?: number;
 }
 
+const MONTHLY_AMOUNT_NEGATIVE =
+  'Aporte mensal não pode ser negativo. Para tirar dinheiro de uma reserva, use uma movimentação de saída (type "out")';
+
+/**
+ * Validates the scheduled movements of an allocation being added or edited.
+ * A movement into a Pagamento that isn't a financing is refused: the engine
+ * would add it to that allocation's balance and still charge its own payment
+ * from cash, counting the money twice. To pay a Pagamento with a Reserva, the
+ * Reserva moves the money out to cash in the payment month instead.
+ */
+function validateScheduledMovements(
+  movements: AllocationScheduledMovement[],
+  realizationMode: RealizationMode,
+  planAllocations: Allocation[],
+  selfId?: string,
+): string | null {
+  for (const m of movements) {
+    if (!Number.isInteger(m.month) || m.month < 0) {
+      return 'Mês da movimentação deve ser um inteiro não negativo';
+    }
+    if (!(m.amount > 0)) {
+      return 'Valor da movimentação deve ser maior que zero';
+    }
+    if (!m.label?.trim()) {
+      return 'Label da movimentação é obrigatória';
+    }
+    if (m.type === 'in') {
+      if (m.destinationBoxId) {
+        return 'Só movimentações de saída (out) têm destino';
+      }
+      continue;
+    }
+    if (realizationMode === 'immediate') {
+      return 'Alocações immediate não suportam scheduled movements do tipo out';
+    }
+    if (m.additionalToMonthly) {
+      return 'additionalToMonthly só vale para movimentações de entrada (in)';
+    }
+    if (!m.destinationBoxId) continue;
+    if (m.destinationBoxId === selfId) {
+      return 'Destino da movimentação não pode ser a própria alocação';
+    }
+    const destination = planAllocations.find(
+      (a) => a.id === m.destinationBoxId,
+    );
+    if (!destination) {
+      return 'Destino da movimentação não é uma alocação deste plano';
+    }
+    if (destination.realizationMode === 'immediate' && !destination.financing) {
+      return 'Saída para um Pagamento contaria o valor duas vezes. Para pagar com a reserva, faça a saída sem destino (vai para o disponível) no mês do pagamento';
+    }
+  }
+  return null;
+}
+
 @Injectable()
 export class PlanService {
   private readonly logger = new Logger(PlanService.name);
@@ -306,6 +361,15 @@ export class PlanService {
     if (input.realizationMode === 'onCompletion' && (!input.target || input.target <= 0)) {
       return left('Modo onCompletion requer target > 0');
     }
+    if (input.monthlyAmount.some((cp) => cp.amount < 0)) {
+      return left(MONTHLY_AMOUNT_NEGATIVE);
+    }
+    const movementsError = validateScheduledMovements(
+      input.scheduledMovements,
+      input.realizationMode,
+      await this.planQuery.listAllocationsByPlanId(planId),
+    );
+    if (movementsError) return left(movementsError);
 
     const allocation = Allocation.create({ ...input, planId });
     await this.allocationRepo.create(allocation);
@@ -320,13 +384,15 @@ export class PlanService {
       target?: number;
       monthlyAmount?: ChangePoint[];
       yieldRate?: number;
+      scheduledMovements?: AllocationScheduledMovement[];
     },
   ): Promise<Either<string, Allocation>> {
     if (
       updates.label === undefined &&
       updates.target === undefined &&
       updates.monthlyAmount === undefined &&
-      updates.yieldRate === undefined
+      updates.yieldRate === undefined &&
+      updates.scheduledMovements === undefined
     ) {
       return left('Pelo menos um campo deve ser fornecido');
     }
@@ -349,7 +415,21 @@ export class PlanService {
     }
 
     if (updates.monthlyAmount !== undefined) {
+      if (updates.monthlyAmount.some((cp) => cp.amount < 0)) {
+        return left(MONTHLY_AMOUNT_NEGATIVE);
+      }
       allocation.monthlyAmount = updates.monthlyAmount;
+    }
+
+    if (updates.scheduledMovements !== undefined) {
+      const movementsError = validateScheduledMovements(
+        updates.scheduledMovements,
+        allocation.realizationMode,
+        await this.planQuery.listAllocationsByPlanId(allocation.planId),
+        allocation.id,
+      );
+      if (movementsError) return left(movementsError);
+      allocation.scheduledMovements = updates.scheduledMovements;
     }
 
     if (updates.yieldRate !== undefined) {

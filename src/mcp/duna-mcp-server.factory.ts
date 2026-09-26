@@ -31,6 +31,37 @@ const changePoints = z
     'Change points: cada item vale do seu mês em diante, até o próximo item',
   );
 
+const scheduledMovements = z
+  .array(
+    z.object({
+      month: z
+        .number()
+        .int()
+        .min(0)
+        .describe('Mês relativo ao início do plano (0 = mês de início)'),
+      amount: z.number().positive().describe('Valor em R$'),
+      label: z.string().min(1).describe('Descrição, ex.: "Anual 2027"'),
+      type: z
+        .enum(['in', 'out'])
+        .describe(
+          'in = pagamento pontual que sai do disponível para a alocação (num Pagamento, substitui a parcela do mês salvo additionalToMonthly); out = saque de uma reserva, limitado ao saldo dela',
+        ),
+      destinationBoxId: z
+        .string()
+        .optional()
+        .describe(
+          'Só em out: outra reserva (ou financiamento, como amortização extra) do mesmo plano que recebe o valor. Sem destino, o valor volta para o disponível. Não aponte para um Pagamento: o valor contaria duas vezes',
+        ),
+      additionalToMonthly: z
+        .boolean()
+        .optional()
+        .describe('Só em in: cobra também o aporte mensal naquele mês'),
+    }),
+  )
+  .describe(
+    'Movimentações pontuais da alocação. Para juntar dinheiro para um pagamento planejado (ex.: a anual de um Pagamento): crie uma reserva manual com o aporte nos meses anteriores e uma out sem destino no mês do pagamento, do mesmo valor. O pagamento continua no Pagamento; a saída devolve o dinheiro ao disponível e nada conta duas vezes. Não use reserva onCompletion para isso (a realização já conta como gasto) nem aporte negativo',
+  );
+
 const period = {
   month: z
     .number()
@@ -1215,6 +1246,7 @@ export class DunaMcpServerFactory {
             realizationMode: a.realizationMode,
             yieldRate: a.yieldRate,
             financing: a.financing,
+            scheduledMovements: a.scheduledMovements,
           })),
         });
       },
@@ -1386,7 +1418,7 @@ export class DunaMcpServerFactory {
       {
         title: 'Adicionar alocação',
         description:
-          'Adiciona uma alocação ao plano: uma reserva (acumula até uma meta) ou um pagamento planejado mensal.',
+          'Adiciona uma alocação ao plano: uma reserva (acumula até uma meta) ou um pagamento planejado mensal, com movimentações pontuais opcionais.',
         inputSchema: {
           planId: z.string().describe('ID do plano'),
           label: z.string().min(1).describe('Nome da alocação'),
@@ -1404,6 +1436,7 @@ export class DunaMcpServerFactory {
             .number()
             .optional()
             .describe('Rendimento anual (0.12 = 12%). Só para reservas'),
+          scheduledMovements: scheduledMovements.optional(),
         },
         annotations: {
           readOnlyHint: false,
@@ -1422,7 +1455,7 @@ export class DunaMcpServerFactory {
             monthlyAmount: input.monthlyAmount,
             realizationMode: input.realizationMode,
             yieldRate: input.yieldRate,
-            scheduledMovements: [],
+            scheduledMovements: input.scheduledMovements ?? [],
           },
         );
         if (err !== null) return error(err);
@@ -1432,6 +1465,7 @@ export class DunaMcpServerFactory {
           target: allocation.target,
           monthlyAmount: allocation.monthlyAmount,
           realizationMode: allocation.realizationMode,
+          scheduledMovements: allocation.scheduledMovements,
         });
       },
     );
@@ -1441,7 +1475,7 @@ export class DunaMcpServerFactory {
       {
         title: 'Atualizar alocação',
         description:
-          'Atualiza nome, meta, aporte mensal ou rendimento de uma alocação. Envie só o que deve mudar.',
+          'Atualiza nome, meta, aporte mensal, rendimento ou movimentações pontuais de uma alocação. Envie só o que deve mudar; scheduledMovements substitui a lista inteira (leia a atual com getPlan).',
         inputSchema: {
           allocationId: z.string().describe('ID da alocação'),
           label: z.string().min(1).optional(),
@@ -1451,6 +1485,7 @@ export class DunaMcpServerFactory {
             .number()
             .optional()
             .describe('Rendimento anual (0.12 = 12%)'),
+          scheduledMovements: scheduledMovements.optional(),
         },
         annotations: {
           readOnlyHint: false,
@@ -1472,6 +1507,7 @@ export class DunaMcpServerFactory {
           target: allocation.target,
           monthlyAmount: allocation.monthlyAmount,
           yieldRate: allocation.yieldRate,
+          scheduledMovements: allocation.scheduledMovements,
         });
       },
     );

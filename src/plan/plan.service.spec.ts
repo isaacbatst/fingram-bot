@@ -725,6 +725,194 @@ describe('PlanService', () => {
     });
   });
 
+  describe('scheduled movements on add/update', () => {
+    async function planWithLote() {
+      const [, created] = await service.create({
+        vaultId: testVaultId,
+        name: 'Test Plan',
+        startDate: new Date('2030-01-01'),
+        premises: defaultPremises,
+        allocations: [
+          {
+            label: 'Lote',
+            target: 100000,
+            monthlyAmount: [{ month: 0, amount: 1000 }],
+            realizationMode: 'immediate',
+            scheduledMovements: [
+              { month: 4, amount: 3000, label: 'Anual', type: 'in' },
+            ],
+          },
+          {
+            label: 'Reserva',
+            target: 0,
+            monthlyAmount: [{ month: 0, amount: 500 }],
+            realizationMode: 'never',
+            scheduledMovements: [],
+          },
+        ],
+      });
+      return {
+        planId: created!.plan.id,
+        loteId: created!.allocations[0].id,
+        reservaId: created!.allocations[1].id,
+      };
+    }
+
+    it('adds a provision that pays the lote annual via an out to cash, with no double count', async () => {
+      const { planId } = await planWithLote();
+      const [baseErr, base] = await service.getProjection(planId, testVaultId, 6);
+      expect(baseErr).toBeNull();
+
+      const [error] = await service.addAllocation(planId, testVaultId, {
+        label: 'Anual lote',
+        target: 3000,
+        monthlyAmount: [
+          { month: 0, amount: 0 },
+          { month: 1, amount: 1000 },
+        ],
+        realizationMode: 'manual',
+        scheduledMovements: [
+          { month: 4, amount: 3000, label: 'Paga a anual', type: 'out' },
+        ],
+      });
+      expect(error).toBeNull();
+
+      const [, withProvision] = await service.getProjection(
+        planId,
+        testVaultId,
+        6,
+      );
+      // Cash dips while the provision fills (months 1-3), then matches the
+      // plan without it from the payment month on.
+      expect(withProvision![3].cash).toBe(base![3].cash - 3000);
+      expect(withProvision![4].cash).toBe(base![4].cash);
+      expect(withProvision![5].cash).toBe(base![5].cash);
+    });
+
+    it('replaces scheduled movements on update and keeps them on the allocation', async () => {
+      const { reservaId, loteId } = await planWithLote();
+      const movements = [
+        { month: 2, amount: 800, label: 'Saque', type: 'out' as const },
+      ];
+      const [error, updated] = await service.updateAllocation(
+        reservaId,
+        testVaultId,
+        { scheduledMovements: movements },
+      );
+      expect(error).toBeNull();
+      expect(updated!.scheduledMovements).toEqual(movements);
+
+      const [clearError, cleared] = await service.updateAllocation(
+        loteId,
+        testVaultId,
+        { scheduledMovements: [] },
+      );
+      expect(clearError).toBeNull();
+      expect(cleared!.scheduledMovements).toEqual([]);
+    });
+
+    it('rejects an out movement into a Pagamento (would count twice)', async () => {
+      const { reservaId, loteId } = await planWithLote();
+      const [error] = await service.updateAllocation(reservaId, testVaultId, {
+        scheduledMovements: [
+          {
+            month: 4,
+            amount: 3000,
+            label: 'Paga a anual',
+            type: 'out',
+            destinationBoxId: loteId,
+          },
+        ],
+      });
+      expect(error).toContain('duas vezes');
+    });
+
+    it('accepts an out movement into another Reserva of the plan', async () => {
+      const { planId, reservaId } = await planWithLote();
+      const [, other] = await service.addAllocation(planId, testVaultId, {
+        label: 'Casamento',
+        target: 5000,
+        monthlyAmount: [{ month: 0, amount: 100 }],
+        realizationMode: 'manual',
+        scheduledMovements: [],
+      });
+      const [error] = await service.updateAllocation(reservaId, testVaultId, {
+        scheduledMovements: [
+          {
+            month: 3,
+            amount: 500,
+            label: 'Reforço',
+            type: 'out',
+            destinationBoxId: other!.id,
+          },
+        ],
+      });
+      expect(error).toBeNull();
+    });
+
+    it.each([
+      ['destination outside the plan', { destinationBoxId: 'other' }],
+      ['non-positive amount', { amount: 0 }],
+      ['negative month', { month: -1 }],
+      ['fractional month', { month: 1.5 }],
+      ['empty label', { label: ' ' }],
+      ['additionalToMonthly on out', { additionalToMonthly: true }],
+    ])('rejects an out movement with %s', async (_, override) => {
+      const { reservaId } = await planWithLote();
+      const [error] = await service.updateAllocation(reservaId, testVaultId, {
+        scheduledMovements: [
+          { month: 2, amount: 100, label: 'Saque', type: 'out', ...override },
+        ],
+      });
+      expect(error).not.toBeNull();
+    });
+
+    it('rejects an out movement to itself', async () => {
+      const { reservaId } = await planWithLote();
+      const [error] = await service.updateAllocation(reservaId, testVaultId, {
+        scheduledMovements: [
+          {
+            month: 2,
+            amount: 100,
+            label: 'Saque',
+            type: 'out',
+            destinationBoxId: reservaId,
+          },
+        ],
+      });
+      expect(error).not.toBeNull();
+    });
+
+    it('rejects an out movement on a Pagamento', async () => {
+      const { loteId } = await planWithLote();
+      const [error] = await service.updateAllocation(loteId, testVaultId, {
+        scheduledMovements: [
+          { month: 2, amount: 100, label: 'Saque', type: 'out' },
+        ],
+      });
+      expect(error).not.toBeNull();
+    });
+
+    it('rejects a negative monthly amount on add and update', async () => {
+      const { planId, reservaId } = await planWithLote();
+      const [addError] = await service.addAllocation(planId, testVaultId, {
+        label: 'Saque',
+        target: 0,
+        monthlyAmount: [{ month: 0, amount: -100 }],
+        realizationMode: 'manual',
+        scheduledMovements: [],
+      });
+      expect(addError).toContain('negativo');
+
+      const [updateError] = await service.updateAllocation(
+        reservaId,
+        testVaultId,
+        { monthlyAmount: [{ month: 3, amount: -500 }] },
+      );
+      expect(updateError).toContain('negativo');
+    });
+  });
+
   describe('removeAllocation', () => {
     it('should remove an allocation', async () => {
       const [, created] = await service.create({
