@@ -32,6 +32,8 @@ export abstract class ImportEntryRepository {
    * correctly refuses to recreate lines it has already seen.
    */
   abstract countPendingByVault(vaultId: string): Promise<Map<string, number>>;
+  /** Every entry of a vault, in any state. Backs history reprocessing. */
+  abstract findAllByVaultId(vaultId: string): Promise<ImportEntry[]>;
   /** Used to detach an entry when the transaction it created is deleted. */
   abstract findByTransactionId(
     transactionId: string,

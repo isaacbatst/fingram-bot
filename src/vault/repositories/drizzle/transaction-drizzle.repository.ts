@@ -11,6 +11,7 @@ import {
   gte,
   lt,
   lte,
+  ne,
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import {
@@ -29,6 +30,16 @@ import {
 } from '@/shared/persistence/drizzle/schema';
 import { Paginated } from '../../domain/paginated';
 import { TransactionDTO } from '../../dto/transaction.dto,';
+import { InvoiceRole } from '../../domain/transaction';
+
+/**
+ * Compra de cartão não conta sozinha: quem aparece e soma são as partes que os
+ * pagamentos pagam (e o não discriminado). Ver `Transaction.countsInLedger`.
+ */
+const countsInLedger = or(
+  isNull(transaction.invoiceRole),
+  ne(transaction.invoiceRole, 'purchase'),
+)!;
 
 @Injectable()
 export class TransactionDrizzleRepository extends TransactionRepository {
@@ -83,9 +94,12 @@ export class TransactionDrizzleRepository extends TransactionRepository {
     conditions.push(
       or(isNull(transaction.transferId), eq(transaction.type, 'expense'))!,
     );
+    conditions.push(countsInLedger);
 
     // Self-join to get the income side of transfers (for transferToBoxId)
     const incomeTransfer = alias(transaction, 'income_transfer');
+    // Numa parte de compra de cartão, a compra inteira (para mostrar o valor total).
+    const sourcePurchase = alias(transaction, 'source_purchase');
 
     if (filter?.boxId) {
       conditions.push(
@@ -118,9 +132,17 @@ export class TransactionDrizzleRepository extends TransactionRepository {
         allocationId: transaction.allocationId,
         invoiceId: transaction.invoiceId,
         purchaseDate: transaction.purchaseDate,
+        invoiceRole: transaction.invoiceRole,
+        sourceTransactionId: transaction.sourceTransactionId,
+        paymentId: transaction.paymentId,
+        purchaseAmount: sourcePurchase.amount,
       })
       .from(transaction)
       .leftJoin(vaultCategory, eq(transaction.categoryId, vaultCategory.id))
+      .leftJoin(
+        sourcePurchase,
+        eq(sourcePurchase.id, transaction.sourceTransactionId),
+      )
       .leftJoin(
         incomeTransfer,
         and(
@@ -157,12 +179,11 @@ export class TransactionDrizzleRepository extends TransactionRepository {
         : null,
       allocationId: row.allocationId ?? null,
       invoiceId: row.invoiceId ?? null,
-      invoiceRole: row.invoiceId
-        ? row.purchaseDate
-          ? 'purchase'
-          : 'remainder'
-        : null,
+      invoiceRole: (row.invoiceRole ?? null) as InvoiceRole | null,
       purchaseDate: row.purchaseDate ?? null,
+      purchaseId: row.sourceTransactionId ?? null,
+      purchaseAmount: row.purchaseAmount ?? null,
+      paymentId: row.paymentId ?? null,
     }));
 
     // Count total (same joins and conditions as data query)
@@ -206,6 +227,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
           eq(transaction.committed, true),
           gte(transaction.date, startDate),
           lt(transaction.date, endDate),
+          countsInLedger,
         ),
       );
 
@@ -242,6 +264,7 @@ export class TransactionDrizzleRepository extends TransactionRepository {
           eq(transaction.committed, true),
           gte(transaction.date, startDate),
           lt(transaction.date, endDate),
+          countsInLedger,
         ),
       )
       .groupBy(day);

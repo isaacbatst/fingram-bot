@@ -95,6 +95,12 @@ export class ImportEntryInMemoryRepository extends ImportEntryRepository {
     return counts;
   }
 
+  async findAllByVaultId(vaultId: string): Promise<ImportEntry[]> {
+    return [...this.entries.values()]
+      .filter((e) => e.vaultId === vaultId)
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+  }
+
   async findByTransactionId(
     transactionId: string,
   ): Promise<ImportEntry | null> {

@@ -305,29 +305,36 @@ export class ImportController {
   }
 
   /**
-   * Registra a fatura de cartão a partir do débito de pagamento na conta
-   * corrente. Confirma na hora: a fatura passa a contar como gasto, e o que o
-   * extrato do cartão ainda não detalhou aparece como "não discriminado".
+   * Confirma débitos de pagamento de fatura da conta corrente como pagamentos
+   * de fatura. O pagamento não é gasto: faz contar, na data dele, as compras do
+   * cartão que ele paga, e o resto como "não discriminado". Destino: a fatura
+   * informada, ou o cartão (fatura sugerida pela data), ou o cartão sugerido
+   * pelo estrato da conta (`suggestedInvoicePayment` dos grupos).
    */
-  @Post('confirm-invoice')
-  async confirmInvoice(
+  @Post('confirm-invoice-payment')
+  async confirmInvoicePayment(
     @VaultSession() vaultId: string,
-    @Body() data: { entryIds?: string[] },
+    @Body() data: { entryIds?: string[]; cardId?: string; invoiceId?: string },
   ) {
     if (!data.entryIds?.length) {
       throw new BadRequestException('Nenhum lançamento informado');
     }
 
-    const [error, result] = await this.importService.confirmAsInvoice({
+    const [error, result] = await this.importService.confirmAsInvoicePayment({
       vaultId,
       entryIds: data.entryIds,
+      cardId: data.cardId,
+      invoiceId: data.invoiceId,
     });
     if (error !== null) throw new BadRequestException(error);
 
     return result;
   }
 
-  /** Liga um extrato de cartão a uma fatura, ou desliga com `invoiceId: null`. */
+  /**
+   * Liga um extrato de cartão (antigo, sem fatura) a uma fatura, levando as
+   * compras confirmadas dele; `invoiceId: null` desliga.
+   */
   @Post('batch/invoice')
   async setBatchInvoice(
     @VaultSession() vaultId: string,
@@ -335,11 +342,29 @@ export class ImportController {
   ) {
     if (!data.batchId) throw new BadRequestException('batchId é obrigatório');
 
-    const [error, batch] = await this.cardInvoiceService.setBatchInvoice({
+    const [error, batch] = await this.cardInvoiceService.setBatchInvoice(
       vaultId,
-      batchId: data.batchId,
-      invoiceId: data.invoiceId ?? null,
-    });
+      data.batchId,
+      data.invoiceId ?? null,
+    );
+    if (error !== null) throw new BadRequestException(error);
+
+    return this.batchToDTO(batch);
+  }
+
+  /** Marca um extrato de cartão como "sem fatura" (sai dos pendentes), ou desmarca. */
+  @Post('batch/no-invoice')
+  async setBatchNoInvoice(
+    @VaultSession() vaultId: string,
+    @Body() data: { batchId?: string; noInvoice?: boolean },
+  ) {
+    if (!data.batchId) throw new BadRequestException('batchId é obrigatório');
+
+    const [error, batch] = await this.cardInvoiceService.setBatchNoInvoice(
+      vaultId,
+      data.batchId,
+      data.noInvoice !== false,
+    );
     if (error !== null) throw new BadRequestException(error);
 
     return this.batchToDTO(batch);
@@ -411,6 +436,7 @@ export class ImportController {
       fromDate: batch.fromDate,
       outOfRangeCount: batch.outOfRangeCount,
       invoiceId: batch.invoiceId,
+      noInvoice: batch.noInvoice,
       createdAt: batch.createdAt,
     };
   }

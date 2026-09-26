@@ -38,6 +38,20 @@ export function isSettlementDescription(
   return false;
 }
 
+/**
+ * Linha do extrato do cartão que traz o saldo da fatura anterior não paga
+ * (rotativo). Não é compra: as compras daquela fatura já estão nela, e somar
+ * de novo contaria duas vezes. Juros, IOF e multa são compras normais.
+ */
+export function isCarriedBalanceDescription(value: string): boolean {
+  const text = normalizeDescription(value);
+  return (
+    /\bSALDO\b.*\b(ANTERIOR|ATRASO|RESTANTE|DEVEDOR|TRANSFERIDO|ROTATIVO)\b/.test(
+      text,
+    ) || /\bVALOR EM ATRASO\b/.test(text)
+  );
+}
+
 export function normalizeDescription(value: string): string {
   const collapsed = value.trim().toUpperCase().replace(/\s+/g, ' ');
   const withoutTrailingNumber = collapsed.replace(/\s+[\d.\-/]+$/, '');

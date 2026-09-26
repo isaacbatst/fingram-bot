@@ -5,8 +5,13 @@ import { z } from 'zod';
 import { PlanService } from '@/plan/plan.service';
 import { VaultService } from '@/vault/vault.service';
 import { VaultWebService } from '@/vault/vault-web.service';
-import { CardInvoiceService, InvoiceView } from '@/vault/card-invoice.service';
-import { Vault } from '@/vault/domain/vault';
+import {
+  CardInvoiceService,
+  CardView,
+  InvoiceView,
+  PaymentView,
+} from '@/vault/card-invoice.service';
+import { derivedTransactionError, Vault } from '@/vault/domain/vault';
 import { Category, CATEGORY_NAME_MAX_LENGTH } from '@/vault/domain/category';
 import { TransactionDTO } from '@/vault/dto/transaction.dto,';
 import { computeSpendingBreakdown } from './spending-breakdown';
@@ -100,12 +105,17 @@ function toTransactionItem(t: TransactionDTO) {
     transferToEstratoId: t.transferToBoxId,
     allocationId: t.allocationId ?? null,
     invoiceId: t.invoiceId ?? null,
-    // 'purchase': compra de uma fatura de cartão, contada na data do pagamento
-    // da fatura; 'remainder': a parte da fatura ainda não discriminada.
+    // 'part': parte de uma compra de cartão paga por um pagamento de fatura,
+    // contada na data dele (purchaseDate/purchaseAmount são da compra);
+    // 'remainder': não discriminado de um pagamento. Compras de cartão ainda
+    // não pagas não aparecem aqui (ver getInvoice).
     invoiceRole: t.invoiceRole ?? null,
+    purchaseId: t.purchaseId ?? null,
     purchaseDate: t.purchaseDate
       ? t.purchaseDate.toISOString().slice(0, 10)
       : null,
+    purchaseAmount: t.purchaseAmount ?? null,
+    paymentId: t.paymentId ?? null,
   };
 }
 
@@ -126,8 +136,16 @@ function describeTransfer(vault: Vault, transferId: string) {
   };
 }
 
-const INVOICE_REMAINDER_ERROR =
-  'Esta transação é a parte não discriminada de uma fatura de cartão: ela se ajusta sozinha conforme as compras são ligadas. Para removê-la, use deleteInvoice (as compras da fatura voltam às datas em que foram feitas).';
+/** Linhas derivadas da fatura apontam a tool certa (a compra ou o pagamento). */
+function derivedError(
+  t: Parameters<typeof derivedTransactionError>[0],
+): string | null {
+  const message = derivedTransactionError(t);
+  if (!message) return null;
+  return t.isInvoicePart
+    ? `${message} Use editTransaction/deleteTransaction com esse id.`
+    : `${message} Use updateInvoicePayment/deleteInvoicePayment, ou linkTransactionsToInvoice para ligar as compras que faltam.`;
+}
 
 function transferSideError(transferId: string, tool: string): string {
   return `Esta transação é um lado de uma transferência entre estratos (transferId ${transferId}). Use ${tool} para alterar a transferência inteira.`;
@@ -171,7 +189,7 @@ export class DunaMcpServerFactory {
           'Categorias são do usuário: prefira uma existente. Crie com createCategory só quando o usuário pedir ou nenhuma servir, e confirme o nome com ele antes. Para renomear ou ajustar a descrição, updateCategory.',
           'O orçamento é mensal, mas o período pode não começar no dia 1: use getBudgetSummary para saber as datas do período. O valor orçado é um por categoria e vale para todos os meses; para mudá-lo, setBudgets.',
           'Para totais e comparações (por categoria, por mês, por estrato), use getSpendingBreakdown em vez de somar listTransactions.',
-          'Fatura de cartão: o pagamento da fatura vira uma fatura (importado do extrato da conta, ou com createInvoice quando o usuário conta que pagou) com uma parte "não discriminada" que conta no mês do pagamento. As compras do extrato do cartão ligadas a ela contam na data do pagamento (a data da compra fica em purchaseDate) e abatem o não discriminado. Use listInvoices para saber o que falta detalhar.',
+          'Cartão de crédito: cartões são cadastrados (listCards) e cada fatura é um ciclo do cartão (listInvoices). Compras de cartão só contam no orçamento quando um pagamento de fatura as paga, na data do pagamento, em ordem de data de compra (uma compra pode ser dividida entre dois pagamentos: listTransactions mostra as partes com invoiceRole "part", purchaseDate e purchaseAmount). O que um pagamento paga além das compras conhecidas conta como "não discriminado" (invoiceRole "remainder") até as compras chegarem. Compras ainda não pagas ficam "a pagar" (getInvoice, listCards.payable) e o saldo disponível desconta isso (listEstratos.available). Quando o usuário contar que pagou a fatura, use addInvoicePayment.',
           'Para corrigir uma transação, use editTransaction com o id de listTransactions (só os campos enviados mudam); para recategorizar várias de uma vez, categorizeTransactions.',
           'Transferências entre estratos (isTransfer) são um par de lançamentos: altere ou remova com editTransfer/deleteTransfer, pelo transferId.',
         ].join('\n'),
@@ -347,106 +365,181 @@ export class DunaMcpServerFactory {
   }
 
   private registerInvoiceTools(server: McpServer, vaultId: string) {
+    const day = (date: Date | null) =>
+      date ? date.toISOString().slice(0, 10) : null;
+    const toCardItem = (card: CardView) => ({
+      id: card.id,
+      name: card.name,
+      closingDay: card.closingDay,
+      dueDay: card.dueDay,
+      payingEstratoId: card.boxId,
+      accountKey: card.accountKey,
+      payable: round(card.payable),
+      currentInvoiceId: card.currentInvoiceId,
+    });
     const toInvoiceItem = (invoice: InvoiceView) => ({
       id: invoice.id,
-      amount: invoice.amount,
-      paymentDate: invoice.paymentDate.toISOString().slice(0, 10),
-      estratoId: invoice.boxId,
-      cardLabel: invoice.cardLabel,
-      paymentImported: invoice.hasPaymentLine,
+      cardId: invoice.cardId,
+      cardName: invoice.cardName,
+      periodStart: day(invoice.periodStart),
+      closingDate: day(invoice.closingDate),
+      dueDate: day(invoice.dueDate),
       status: invoice.status,
-      itemized: invoice.itemized,
-      remainder: invoice.remainder,
-      excess: invoice.excess,
+      purchasesTotal: round(invoice.purchasesTotal),
+      carriedIn: round(invoice.carriedIn),
+      total: round(invoice.total),
+      paid: round(invoice.paid),
+      remaining: round(invoice.remaining),
+      overpaid: round(invoice.overpaid),
+      carriedOut: round(invoice.carriedOut),
+      unpaidPurchases: round(invoice.unpaidPurchases),
+      notItemized: round(invoice.notItemized),
       purchaseCount: invoice.purchaseCount,
-      statements: invoice.statements.map((st) => ({
-        statementId: st.batchId,
-        accountLabel: st.accountLabel,
+      paymentCount: invoice.paymentCount,
+      statements: invoice.statements.map((s) => ({
+        statementId: s.batchId,
+        accountLabel: s.accountLabel,
+        periodStart: day(s.periodStart),
+        periodEnd: day(s.periodEnd),
+        ledgerBalance: s.ledgerBalance,
       })),
     });
+    const toPaymentItem = (payment: PaymentView) => ({
+      id: payment.id,
+      invoiceId: payment.invoiceId,
+      date: day(payment.date),
+      amount: payment.amount,
+      estratoId: payment.boxId,
+      imported: payment.imported,
+      notItemized: round(payment.notItemized),
+      notItemizedTransactionId: payment.notItemizedTransactionId,
+      parts: payment.parts,
+    });
+    const readOnly = { readOnlyHint: true, openWorldHint: false };
+    const write = (destructive: boolean, idempotent: boolean) => ({
+      readOnlyHint: false,
+      destructiveHint: destructive,
+      idempotentHint: idempotent,
+      openWorldHint: false,
+    });
+    const dayField = (label: string) =>
+      z.string().date().optional().describe(`${label} (AAAA-MM-DD)`);
+    const toDay = (value?: string) =>
+      value ? new Date(`${value}T00:00:00.000Z`) : undefined;
 
     server.registerTool(
-      'listInvoices',
+      'listCards',
       {
-        title: 'Listar faturas de cartão',
+        title: 'Listar cartões',
         description:
-          'Lista as faturas de cartão, da mais recente para a mais antiga: valor pago, data do pagamento, quanto já foi detalhado com as compras do extrato do cartão (itemized), o que falta detalhar (remainder), o excedente quando as compras passam do valor pago (excess) e a situação (awaiting, partial, detailed, exceeded). Traz também os extratos de cartão com compras confirmadas que ainda não pertencem a nenhuma fatura.',
-        annotations: { readOnlyHint: true, openWorldHint: false },
+          'Cartões de crédito cadastrados: dias de fechamento e vencimento, estrato pagador, quanto das compras ainda está a pagar (payable) e a fatura em aberto.',
+        annotations: readOnly,
       },
       async () => {
-        const [err, result] =
-          await this.cardInvoiceService.listInvoices(vaultId);
+        const [err, cards] = await this.cardInvoiceService.listCards(vaultId);
         if (err !== null) return error(err);
-        return json({
-          invoices: result.invoices.map(toInvoiceItem),
-          unlinkedStatements: result.unlinkedStatements.map((st) => ({
-            statementId: st.batchId,
-            accountLabel: st.accountLabel,
-            periodStart: st.periodStart?.toISOString().slice(0, 10) ?? null,
-            periodEnd: st.periodEnd?.toISOString().slice(0, 10) ?? null,
-            purchaseCount: st.purchaseCount,
-            total: st.total,
-          })),
-        });
+        return json(cards.map(toCardItem));
       },
     );
 
     server.registerTool(
-      'createInvoice',
+      'createCard',
       {
-        title: 'Registrar fatura de cartão',
+        title: 'Cadastrar cartão',
         description:
-          'Registra uma fatura de cartão paga, quando o usuário conta que pagou e o extrato da conta ainda não foi importado. O valor passa a contar no mês do pagamento como "não discriminado" até as compras do extrato do cartão serem ligadas. Quando o extrato da conta trouxer o débito, ele é reconhecido como o pagamento desta fatura (mesmo valor e estrato, até 7 dias de diferença) e a data passa a ser a do extrato. Confira listInvoices antes: se já houver fatura de mesmo valor em data próxima, a criação é recusada, a menos que allowDuplicate seja true. Compras já registradas podem ser ligadas na mesma chamada (transactionIds); as que não puderem voltam em linkFailed.',
+          'Cadastra um cartão de crédito. O cartão não é estrato: as compras dele só contam quando um pagamento de fatura as paga. Um extrato de cartão importado de uma conta desconhecida já cria o cartão sozinho; use esta tool quando o usuário quiser cadastrar antes.',
         inputSchema: {
-          amount: z.number().positive().describe('Valor pago em R$'),
-          paymentDate: z
+          name: z.string().min(1).describe('Nome do cartão (ex.: "Nubank")'),
+          closingDay: z
+            .number()
+            .int()
+            .min(1)
+            .max(31)
+            .describe('Dia do fechamento'),
+          dueDay: z.number().int().min(1).max(31).describe('Dia do vencimento'),
+          payingEstratoId: z
             .string()
-            .date()
-            .describe('Data do pagamento (AAAA-MM-DD)'),
-          estratoId: z
-            .string()
-            .optional()
-            .describe('Estrato que pagou (padrão: o estrato padrão)'),
-          cardLabel: z
-            .string()
-            .optional()
-            .describe('Nome do cartão, ex.: "Nubank"'),
-          allowDuplicate: z
-            .boolean()
             .optional()
             .describe(
-              'Confirma que é outra fatura, mesmo havendo uma de mesmo valor em data próxima',
-            ),
-          transactionIds: z
-            .array(z.string())
-            .max(200)
-            .optional()
-            .describe(
-              'Compras (ids de listTransactions) para ligar já à fatura criada',
+              'Estrato de onde saem os pagamentos (padrão: o estrato padrão)',
             ),
         },
-        annotations: {
-          readOnlyHint: false,
-          destructiveHint: false,
-          idempotentHint: false,
-          openWorldHint: false,
-        },
+        annotations: write(false, false),
       },
       async (input) => {
-        const [err, invoice] = await this.cardInvoiceService.createInvoice({
-          vaultId,
-          amount: input.amount,
-          // Como as demais datas: AAAA-MM-DD vira meia-noite UTC.
-          paymentDate: new Date(input.paymentDate),
-          boxId: input.estratoId,
-          cardLabel: input.cardLabel ?? null,
-          allowDuplicate: input.allowDuplicate,
-          transactionIds: input.transactionIds,
+        const [err, card] = await this.cardInvoiceService.createCard(vaultId, {
+          name: input.name,
+          closingDay: input.closingDay,
+          dueDay: input.dueDay,
+          boxId: input.payingEstratoId,
         });
         if (err !== null) return error(err);
+        return json(toCardItem(card));
+      },
+    );
+
+    server.registerTool(
+      'updateCard',
+      {
+        title: 'Editar cartão',
+        description:
+          'Edita nome, dias de fechamento/vencimento ou estrato pagador de um cartão. Os dias novos valem para as faturas criadas daqui em diante; para corrigir uma fatura existente use updateInvoice. Só os campos enviados mudam.',
+        inputSchema: {
+          cardId: z.string().describe('ID do cartão (listCards)'),
+          name: z.string().min(1).optional(),
+          closingDay: z.number().int().min(1).max(31).optional(),
+          dueDay: z.number().int().min(1).max(31).optional(),
+          payingEstratoId: z.string().optional(),
+        },
+        annotations: write(false, true),
+      },
+      async ({ cardId, ...fields }) => {
+        if (Object.values(fields).every((v) => v === undefined)) {
+          return error('Informe ao menos um campo para alterar');
+        }
+        const [err, card] = await this.cardInvoiceService.updateCard(
+          vaultId,
+          cardId,
+          {
+            name: fields.name,
+            closingDay: fields.closingDay,
+            dueDay: fields.dueDay,
+            boxId: fields.payingEstratoId,
+          },
+        );
+        if (err !== null) return error(err);
+        return json(toCardItem(card));
+      },
+    );
+
+    server.registerTool(
+      'listInvoices',
+      {
+        title: 'Listar faturas',
+        description:
+          'Faturas (ciclos) dos cartões, da mais nova para a mais antiga: período, fechamento, vencimento, total (compras + saldo transferido), pago, restante, pago a mais, compras ainda a pagar, não discriminado e status (open, closed, partial, paid, overpaid, overdue). Também lista extratos de cartão antigos ainda sem fatura (pendingStatements) — use previewInvoiceReprocess para convertê-los.',
+        inputSchema: {
+          cardId: z.string().optional().describe('Só as faturas deste cartão'),
+        },
+        annotations: readOnly,
+      },
+      async ({ cardId }) => {
+        const [err, result] = await this.cardInvoiceService.listInvoices(
+          vaultId,
+          { cardId },
+        );
+        if (err !== null) return error(err);
         return json({
-          ...toInvoiceItem(invoice.invoice),
-          linkFailed: invoice.linkFailed,
+          invoices: result.invoices.map(toInvoiceItem),
+          pendingStatements: result.pendingStatements.map((s) => ({
+            statementId: s.batchId,
+            accountLabel: s.accountLabel,
+            periodStart: day(s.periodStart),
+            periodEnd: day(s.periodEnd),
+            purchaseCount: s.purchaseCount,
+            total: s.total,
+            cardId: s.cardId,
+          })),
         });
       },
     );
@@ -454,93 +547,204 @@ export class DunaMcpServerFactory {
     server.registerTool(
       'getInvoice',
       {
-        title: 'Detalhar fatura de cartão',
+        title: 'Detalhar fatura',
         description:
-          'Detalha uma fatura de cartão: os mesmos dados de listInvoices, as compras ligadas a ela (com a data da compra) e a transação do não discriminado, se ainda houver.',
+          'Uma fatura com as compras (data da compra, quanto já foi pago e as partes: cada pedaço pago por um pagamento, na data dele) e os pagamentos (partes que cada um pagou e o não discriminado). Uma compra pode ser dividida entre dois pagamentos.',
         inputSchema: { invoiceId: z.string().describe('ID da fatura') },
-        annotations: { readOnlyHint: true, openWorldHint: false },
+        annotations: readOnly,
       },
       async ({ invoiceId }) => {
-        const [err, result] =
-          await this.cardInvoiceService.listInvoices(vaultId);
+        const [err, detail] = await this.cardInvoiceService.getInvoice(
+          vaultId,
+          invoiceId,
+        );
         if (err !== null) return error(err);
-        const invoice = result.invoices.find((i) => i.id === invoiceId);
-        if (!invoice) return error('Fatura não encontrada');
-
-        const [vaultErr, vault] = await this.vaultService.getVault({ vaultId });
-        if (vaultErr !== null) return error(vaultErr);
-        const categories = new Map(
-          (await this.vaultService.getCategories(vaultId)).map((c) => [
-            c.id,
-            c.name,
-          ]),
-        );
-        const linked = [...vault.transactions.values()].filter(
-          (t) => t.invoiceId === invoiceId,
-        );
-        const remainder = linked.find((t) => t.isInvoiceRemainder);
-        const purchases = linked
-          .filter((t) => t.isInvoicePurchase)
-          .sort((a, b) => a.purchaseDate!.getTime() - b.purchaseDate!.getTime())
-          .map((t) => ({
-            id: t.id,
-            purchaseDate: t.purchaseDate!.toISOString().slice(0, 10),
-            type: t.type,
-            amount: t.amount,
-            description: t.description ?? '',
-            category: t.categoryId
-              ? {
-                  id: t.categoryId,
-                  name: categories.get(t.categoryId) ?? null,
-                }
-              : null,
-          }));
-
         return json({
-          ...toInvoiceItem(invoice),
-          remainderTransactionId: remainder?.id ?? null,
-          purchases,
+          ...toInvoiceItem(detail.invoice),
+          purchases: detail.purchases.map((p) => ({
+            id: p.id,
+            purchaseDate: day(p.date),
+            description: p.description,
+            amount: p.amount,
+            type: p.type,
+            categoryId: p.categoryId,
+            paid: round(p.paid),
+            unpaid: round(p.unpaid),
+            fromStatement: p.fromStatement,
+            parts: p.parts.map((part) => ({
+              ...part,
+              date: day(part.date),
+            })),
+          })),
+          payments: detail.payments.map(toPaymentItem),
         });
       },
     );
 
     server.registerTool(
-      'linkStatementToInvoice',
+      'addInvoicePayment',
       {
-        title: 'Ligar extrato do cartão a uma fatura',
+        title: 'Registrar pagamento de fatura',
         description:
-          'Liga um extrato de cartão (statementId, de listInvoices) à fatura que ele detalha: as compras confirmadas dele passam a contar na data do pagamento da fatura e abatem o não discriminado. invoiceId: null desliga, e as compras voltam às datas em que foram feitas.',
+          'Registra um pagamento de fatura de cartão (inclusive antecipado). O pagamento não é gasto: na data dele passam a contar as compras do cartão que ele paga (em ordem de data de compra, dividindo uma compra se preciso) e o que sobrar como "não discriminado". Informe amount e date, ou transactionId de uma despesa comum já lançada que era, na verdade, o pagamento (ela é removida para não contar duas vezes). Sem invoiceId, a fatura é sugerida pela data dentro do cartão. Quando o extrato da conta trouxer o débito, ele é reconhecido como este pagamento (mesmo estrato e valor, até 7 dias). Recusa um pagamento igual já existente, a menos que allowDuplicate.',
         inputSchema: {
-          statementId: z.string().describe('ID do extrato de cartão'),
+          cardId: z.string().optional().describe('Cartão (listCards)'),
           invoiceId: z
             .string()
-            .nullable()
-            .describe('ID da fatura, ou null para desligar'),
+            .optional()
+            .describe(
+              'Fatura paga (listInvoices). Omita para sugerir pela data',
+            ),
+          amount: z.number().positive().optional().describe('Valor em R$'),
+          date: dayField('Data do pagamento'),
+          estratoId: z
+            .string()
+            .optional()
+            .describe(
+              'Estrato de onde saiu o dinheiro (padrão: o pagador do cartão)',
+            ),
+          transactionId: z
+            .string()
+            .optional()
+            .describe('Despesa já lançada que é o pagamento (vira pagamento)'),
+          allowDuplicate: z.boolean().optional(),
         },
-        annotations: {
-          readOnlyHint: false,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: false,
-        },
+        annotations: write(false, false),
       },
-      async ({ statementId, invoiceId }) => {
-        const [err] = await this.cardInvoiceService.setBatchInvoice({
+      async (input) => {
+        if (!input.cardId && !input.invoiceId) {
+          return error('Informe cardId ou invoiceId');
+        }
+        const [err, result] = await this.cardInvoiceService.addPayment(
           vaultId,
-          batchId: statementId,
-          invoiceId,
-        });
+          {
+            cardId: input.cardId,
+            invoiceId: input.invoiceId,
+            amount: input.amount,
+            date: toDay(input.date),
+            boxId: input.estratoId,
+            transactionId: input.transactionId,
+            allowDuplicate: input.allowDuplicate,
+          },
+        );
         if (err !== null) return error(err);
-        const [listErr, result] =
-          await this.cardInvoiceService.listInvoices(vaultId);
-        if (listErr !== null) return error(listErr);
-        const invoice = invoiceId
-          ? result.invoices.find((i) => i.id === invoiceId)
-          : undefined;
         return json({
-          statementId,
-          invoice: invoice ? toInvoiceItem(invoice) : null,
+          payment: toPaymentItem(result.payment),
+          invoice: toInvoiceItem(result.invoice),
         });
+      },
+    );
+
+    server.registerTool(
+      'updateInvoicePayment',
+      {
+        title: 'Editar pagamento de fatura',
+        description:
+          'Corrige valor, data, fatura ou estrato de um pagamento de fatura (id em getInvoice). As partes e o não discriminado são recalculados. Só os campos enviados mudam.',
+        inputSchema: {
+          paymentId: z.string().describe('ID do pagamento'),
+          amount: z.number().positive().optional(),
+          date: dayField('Nova data'),
+          invoiceId: z.string().optional().describe('Mover para outra fatura'),
+          estratoId: z.string().optional(),
+        },
+        annotations: write(false, true),
+      },
+      async ({ paymentId, ...fields }) => {
+        if (Object.values(fields).every((v) => v === undefined)) {
+          return error('Informe ao menos um campo para alterar');
+        }
+        const [err, result] = await this.cardInvoiceService.updatePayment(
+          vaultId,
+          paymentId,
+          {
+            amount: fields.amount,
+            date: toDay(fields.date),
+            invoiceId: fields.invoiceId,
+            boxId: fields.estratoId,
+          },
+        );
+        if (err !== null) return error(err);
+        return json({
+          payment: toPaymentItem(result.payment),
+          invoice: toInvoiceItem(result.invoice),
+        });
+      },
+    );
+
+    server.registerTool(
+      'deleteInvoicePayment',
+      {
+        title: 'Remover pagamento de fatura',
+        description:
+          'Remove um pagamento de fatura e tudo o que ele fazia contar (partes das compras e não discriminado). As compras que ele pagava voltam a ficar a pagar.',
+        inputSchema: { paymentId: z.string().describe('ID do pagamento') },
+        annotations: write(true, true),
+      },
+      async ({ paymentId }) => {
+        const [err] = await this.cardInvoiceService.deletePayment(
+          vaultId,
+          paymentId,
+        );
+        if (err !== null) return error(err);
+        return json({ deleted: paymentId });
+      },
+    );
+
+    server.registerTool(
+      'closeInvoice',
+      {
+        title: 'Fechar fatura',
+        description:
+          'Fecha uma fatura antes da data de fechamento (ou fecha na data informada). Compras novas do cartão passam a cair na próxima fatura.',
+        inputSchema: {
+          invoiceId: z.string().describe('ID da fatura'),
+          closingDate: dayField('Data de fechamento'),
+        },
+        annotations: write(false, true),
+      },
+      async ({ invoiceId, closingDate }) => {
+        const [err, invoice] = await this.cardInvoiceService.closeInvoice(
+          vaultId,
+          invoiceId,
+          toDay(closingDate),
+        );
+        if (err !== null) return error(err);
+        return json(toInvoiceItem(invoice));
+      },
+    );
+
+    server.registerTool(
+      'updateInvoice',
+      {
+        title: 'Editar fatura',
+        description:
+          'Corrige as datas de uma fatura (início do período, fechamento, vencimento) ou reabre uma fechada à mão (closed: false). As compras ficam na fatura em que estão; para mover compras use linkTransactionsToInvoice.',
+        inputSchema: {
+          invoiceId: z.string().describe('ID da fatura'),
+          periodStart: dayField('Início do período'),
+          closingDate: dayField('Fechamento'),
+          dueDate: dayField('Vencimento'),
+          closed: z.boolean().optional(),
+        },
+        annotations: write(false, true),
+      },
+      async ({ invoiceId, ...fields }) => {
+        if (Object.values(fields).every((v) => v === undefined)) {
+          return error('Informe ao menos um campo para alterar');
+        }
+        const [err, invoice] = await this.cardInvoiceService.updateInvoice(
+          vaultId,
+          invoiceId,
+          {
+            periodStart: toDay(fields.periodStart),
+            closingDate: toDay(fields.closingDate),
+            dueDate: toDay(fields.dueDate),
+            closed: fields.closed,
+          },
+        );
+        if (err !== null) return error(err);
+        return json(toInvoiceItem(invoice));
       },
     );
 
@@ -549,68 +753,118 @@ export class DunaMcpServerFactory {
       {
         title: 'Ligar compras a uma fatura',
         description:
-          'Liga compras avulsas (ids de listTransactions) a uma fatura de cartão: cada uma passa a contar na data do pagamento da fatura, guarda a data da compra em purchaseDate e abate o não discriminado. Serve para compras lançadas à mão ou que caíram na fatura errada (uma compra de outra fatura muda de fatura sem contar duas vezes). invoiceId: null desliga, e as compras voltam às datas em que foram feitas. Transferências e o próprio não discriminado são recusados; cada id é tratado à parte e os que falham voltam em "failed". Para ligar um extrato de cartão inteiro, use linkStatementToInvoice.',
+          'Faz de transações (ids de listTransactions) compras de cartão: numa fatura (invoiceId) ou no cartão (cardId, a fatura sai da data de cada compra). Uma compra de cartão deixa de contar na data dela e passa a contar quando um pagamento a paga; enquanto isso fica "a pagar". Mover de fatura não conta duas vezes. invoiceId: null desliga (a compra volta a contar na data dela). Cada id é tratado à parte; falhas voltam em "failed".',
         inputSchema: {
           ids: z
             .array(z.string())
             .min(1)
-            .max(200)
-            .describe('Ids das transações'),
+            .max(100)
+            .describe('IDs das transações'),
           invoiceId: z
             .string()
             .nullable()
-            .describe('ID da fatura, ou null para desligar'),
+            .optional()
+            .describe('Fatura de destino; null desliga'),
+          cardId: z
+            .string()
+            .optional()
+            .describe('Cartão: a fatura sai da data de cada compra'),
         },
-        annotations: {
-          readOnlyHint: false,
-          destructiveHint: false,
-          idempotentHint: true,
-          openWorldHint: false,
-        },
+        annotations: write(false, true),
       },
-      async ({ ids, invoiceId }) => {
-        const [err, result] = await this.cardInvoiceService.linkTransactions({
+      async ({ ids, invoiceId, cardId }) => {
+        if (invoiceId === undefined && !cardId) {
+          return error('Informe invoiceId (ou null para desligar) ou cardId');
+        }
+        if (invoiceId && cardId)
+          return error('Use invoiceId ou cardId, não os dois');
+        const target = invoiceId ? { invoiceId } : cardId ? { cardId } : null;
+        const [err, result] = await this.cardInvoiceService.linkTransactions(
           vaultId,
-          transactionIds: ids,
-          invoiceId,
-        });
+          ids,
+          target,
+        );
         if (err !== null) return error(err);
         const payload = {
           updated: result.updated,
           failed: result.failed,
           invoice: result.invoice ? toInvoiceItem(result.invoice) : null,
         };
-        if (result.updated.length === 0) {
-          return {
-            isError: true,
-            content: [{ type: 'text', text: JSON.stringify(payload) }],
-          };
-        }
+        if (result.updated.length === 0)
+          return { ...json(payload), isError: true };
         return json(payload);
       },
     );
 
     server.registerTool(
-      'deleteInvoice',
+      'reconcileInvoice',
       {
-        title: 'Excluir fatura de cartão',
+        title: 'Conferir fatura com o extrato',
         description:
-          'Exclui uma fatura de cartão e a parte não discriminada dela. As compras que estavam ligadas continuam registradas e voltam a contar nas datas em que foram feitas; os extratos ficam sem fatura.',
+          'Confere uma fatura contra os extratos de cartão ligados a ela: linhas do arquivo que não são compras desta fatura (missing, com o motivo), compras lançadas à mão que o arquivo não tem (extra), pares suspeitos de duplicata (compra lançada à mão x compra importada, mesmo valor e data próxima) e se o saldo do arquivo bate com o total.',
         inputSchema: { invoiceId: z.string().describe('ID da fatura') },
-        annotations: {
-          readOnlyHint: false,
-          destructiveHint: true,
-          idempotentHint: true,
-          openWorldHint: false,
-        },
+        annotations: readOnly,
       },
       async ({ invoiceId }) => {
-        const [err] = await this.cardInvoiceService.deleteInvoice({
+        const [err, view] = await this.cardInvoiceService.reconcileInvoice(
           vaultId,
           invoiceId,
-        });
+        );
         if (err !== null) return error(err);
-        return json({ deleted: invoiceId });
+        return json(view);
+      },
+    );
+
+    server.registerTool(
+      'listSuspectedDuplicates',
+      {
+        title: 'Duplicatas suspeitas',
+        description:
+          'Pares de transação lançada à mão x compra importada de extrato de cartão com o mesmo valor e datas até 3 dias (confidence high quando a descrição também parece). Mostre ao usuário e, se ele confirmar, remova a lançada à mão com deleteTransaction.',
+        inputSchema: {
+          invoiceId: z.string().optional().describe('Só pares desta fatura'),
+        },
+        annotations: readOnly,
+      },
+      async ({ invoiceId }) => {
+        const [err, pairs] = await this.cardInvoiceService.listDuplicates(
+          vaultId,
+          { invoiceId },
+        );
+        if (err !== null) return error(err);
+        return json(pairs);
+      },
+    );
+
+    server.registerTool(
+      'previewInvoiceReprocess',
+      {
+        title: 'Prévia: reprocessar histórico de cartão',
+        description:
+          'Mostra, sem gravar nada, o que reprocessar o histórico faria: extratos de cartão antigos ganham cartão e fatura e as compras passam a contar na data do pagamento; débitos "pagamento de fatura" ignorados (ou lançados como gasto) viram pagamentos. Devolve, por mês, o total de gastos atual e o novo. Mostre ao usuário antes de applyInvoiceReprocess.',
+        annotations: readOnly,
+      },
+      async () => {
+        const [err, report] =
+          await this.cardInvoiceService.previewReprocess(vaultId);
+        if (err !== null) return error(err);
+        return json(report);
+      },
+    );
+
+    server.registerTool(
+      'applyInvoiceReprocess',
+      {
+        title: 'Reprocessar histórico de cartão',
+        description:
+          'Aplica o reprocessamento mostrado por previewInvoiceReprocess. Muda os meses em que as compras de cartão contam e remove despesas que eram, na verdade, pagamentos de fatura. Só com a confirmação do usuário depois de ver a prévia.',
+        annotations: write(true, true),
+      },
+      async () => {
+        const [err, report] =
+          await this.cardInvoiceService.applyReprocess(vaultId);
+        if (err !== null) return error(err);
+        return json(report);
       },
     );
   }
@@ -736,12 +990,16 @@ export class DunaMcpServerFactory {
       {
         title: 'Listar estratos',
         description:
-          'Lista os estratos do usuário (contas correntes e reservas) com saldo atual e meta. Use o id para filtrar transações e gastos por estrato.',
+          'Lista os estratos do usuário (contas correntes e reservas) com saldo atual, meta, o que está a pagar nos cartões pagos por ele (cardPayable) e o saldo disponível (available = saldo − a pagar). Use o id para filtrar transações e gastos por estrato.',
         annotations: { readOnlyHint: true, openWorldHint: false },
       },
       async () => {
         const [err, boxes] = await this.vaultService.getBoxes(vaultId);
         if (err !== null) return error(err);
+        const [balanceErr, available] =
+          await this.cardInvoiceService.getAvailableBalance(vaultId);
+        if (balanceErr !== null) return error(balanceErr);
+        const byBox = new Map(available.estratos.map((e) => [e.boxId, e]));
         return json(
           boxes.map((b) => ({
             id: b.id,
@@ -749,6 +1007,8 @@ export class DunaMcpServerFactory {
             kind: b.type === 'saving' ? 'reserva' : 'corrente',
             isDefault: b.isDefault,
             balance: round(b.balance),
+            cardPayable: round(byBox.get(b.id)?.cardPayable ?? 0),
+            available: round(byBox.get(b.id)?.available ?? b.balance),
             goalAmount: b.goalAmount ?? null,
             goalProgressPercent:
               b.goalProgress === null ? null : round(b.goalProgress),
@@ -799,7 +1059,9 @@ export class DunaMcpServerFactory {
         const categories = await this.vaultService.getCategories(vaultId);
 
         const result = computeSpendingBreakdown({
-          transactions: vault.transactions.values(),
+          transactions: [...vault.transactions.values()].filter(
+            (t) => t.countsInLedger,
+          ),
           range,
           type: input.type ?? 'expense',
           groupBy: input.groupBy ?? 'category',
@@ -1048,7 +1310,8 @@ export class DunaMcpServerFactory {
         const current = vault.transactions.get(id);
         if (current?.transferId)
           return error(transferSideError(current.transferId, 'deleteTransfer'));
-        if (current?.isInvoiceRemainder) return error(INVOICE_REMAINDER_ERROR);
+        const derived = current ? derivedError(current) : null;
+        if (derived) return error(derived);
         const [err] = await this.vaultService.deleteTransaction({
           vaultId,
           transactionId: id,
@@ -1286,7 +1549,8 @@ export class DunaMcpServerFactory {
         if (current.transferId) {
           return error(transferSideError(current.transferId, 'editTransfer'));
         }
-        if (current.isInvoiceRemainder) return error(INVOICE_REMAINDER_ERROR);
+        const derived = derivedError(current);
+        if (derived) return error(derived);
         if (
           fields.categoryId &&
           fields.allocationId === undefined &&
@@ -1372,12 +1636,9 @@ export class DunaMcpServerFactory {
             });
             continue;
           }
-          if (current.isInvoiceRemainder) {
-            failed.push({
-              id,
-              error:
-                'Parte não discriminada de uma fatura: não tem categoria até as compras serem ligadas',
-            });
+          const derived = derivedError(current);
+          if (derived) {
+            failed.push({ id, error: derived });
             continue;
           }
           if (current.allocationId) {

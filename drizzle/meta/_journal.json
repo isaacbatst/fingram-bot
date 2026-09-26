@@ -106,6 +106,27 @@
       "when": 1790348153787,
       "tag": "0014_invoice_payment_line",
       "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790361498911,
+      "tag": "0015_cards_cycles_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790361499911,
+      "tag": "0016_card_invoice_data",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790361859895,
+      "tag": "0017_drop_card_invoice",
+      "breakpoints": true
     }
   ]
 }

@@ -11,7 +11,7 @@ import { PlanQueryModule } from '@/plan/shared/plan-query.module';
 import { ImportController } from './import.controller';
 import { ImportService } from './import.service';
 import { CardInvoiceService } from './card-invoice.service';
-import { InvoiceController } from './invoice.controller';
+import { CardController, InvoiceController } from './invoice.controller';
 
 @Module({})
 export class ImportModule {
@@ -39,7 +39,7 @@ export class ImportModule {
           sqlite: ImportInMemoryRepositoriesModule,
         }),
       ],
-      controllers: [ImportController, InvoiceController],
+      controllers: [ImportController, InvoiceController, CardController],
       providers: [ImportService, CardInvoiceService],
       exports: [ImportService, CardInvoiceService],
     };

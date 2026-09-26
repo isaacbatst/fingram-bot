@@ -211,6 +211,15 @@ export class ImportEntryDrizzleRepository extends ImportEntryRepository {
     return new Map(rows.map((row) => [row.batchId, row.value]));
   }
 
+  async findAllByVaultId(vaultId: string): Promise<ImportEntry[]> {
+    const rows = await this.db
+      .select()
+      .from(importEntry)
+      .where(eq(importEntry.vaultId, vaultId))
+      .orderBy(asc(importEntry.date));
+    return rows.map((row) => this.toDomain(row));
+  }
+
   async findByTransactionId(
     transactionId: string,
   ): Promise<ImportEntry | null> {
